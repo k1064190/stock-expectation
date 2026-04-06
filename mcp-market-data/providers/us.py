@@ -6,6 +6,7 @@ FMP free tier: 250 calls/day.
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -86,6 +87,138 @@ class USMarketProvider(MarketDataProvider):
         except Exception as e:
             logger.error("All fundamentals providers failed for %s: %s", ticker, e)
             return None
+
+    def get_price_history_batch(
+        self, tickers: list[str], days: int = 30
+    ) -> dict[str, list[OHLCV]]:
+        """Fetch OHLCV for multiple tickers in a single yfinance bulk download.
+
+        FMP does not support batch price history, so yfinance is always used
+        here regardless of whether FMP_API_KEY is set.
+
+        Args:
+            tickers: List of US ticker symbols (e.g., ["NVDA", "AAPL"]).
+            days: Number of calendar days to look back.
+
+        Returns:
+            Dict mapping each ticker to a list of OHLCV bars (oldest first).
+            Tickers with no data map to an empty list.
+        """
+        import yfinance as yf
+
+        if not tickers:
+            return {}
+
+        # Map days to yfinance period string (same logic as _yfinance_price_history).
+        if days <= 5:
+            period = "5d"
+        elif days <= 30:
+            period = "1mo"
+        elif days <= 90:
+            period = "3mo"
+        else:
+            period = "6mo"
+
+        upper_tickers = [t.upper() for t in tickers]
+        df = yf.download(
+            upper_tickers,
+            period=period,
+            group_by="ticker",
+            progress=False,
+            threads=True,
+        )
+
+        result: dict[str, list[OHLCV]] = {}
+
+        for ticker in upper_tickers:
+            try:
+                # When only one ticker is requested yfinance returns a flat
+                # DataFrame (columns: Open, High, Low, Close, Volume).
+                # For multiple tickers the columns are a MultiIndex
+                # (ticker, field).
+                if isinstance(df.columns, type(None)) or df.empty:
+                    result[ticker] = []
+                    continue
+
+                import pandas as pd
+
+                if isinstance(df.columns, pd.MultiIndex):
+                    ticker_df = df[ticker]
+                else:
+                    # Single-ticker flat layout.
+                    ticker_df = df
+
+                # Drop rows where all OHLCV values are NaN.
+                ticker_df = ticker_df.dropna(how="all")
+
+                if ticker_df.empty:
+                    result[ticker] = []
+                    continue
+
+                bars: list[OHLCV] = []
+                for date_idx, row in ticker_df.iterrows():
+                    # Skip rows where close is NaN (partial NaN row).
+                    if pd.isna(row["Close"]):
+                        continue
+                    bars.append(
+                        OHLCV(
+                            date=date_idx.strftime("%Y-%m-%d"),
+                            open=float(row["Open"]),
+                            high=float(row["High"]),
+                            low=float(row["Low"]),
+                            close=float(row["Close"]),
+                            volume=int(row["Volume"]) if not pd.isna(row["Volume"]) else 0,
+                        )
+                    )
+
+                result[ticker] = bars[-days:] if len(bars) > days else bars
+
+            except Exception as e:
+                logger.warning("Failed to parse batch data for %s: %s", ticker, e)
+                result[ticker] = []
+
+        return result
+
+    def get_fundamentals_batch(
+        self, tickers: list[str]
+    ) -> dict[str, Optional[StockFundamentals]]:
+        """Fetch fundamentals for multiple tickers in parallel.
+
+        Uses a ThreadPoolExecutor to issue concurrent individual
+        ``get_fundamentals`` calls. Workers are capped at 8 to avoid
+        triggering rate limits on either FMP or yfinance.
+
+        Individual failures are logged as warnings and do not abort the
+        entire batch.
+
+        Args:
+            tickers: List of US ticker symbols.
+
+        Returns:
+            Dict mapping each ticker to its StockFundamentals, or None if
+            the lookup failed or returned no data.
+        """
+        if not tickers:
+            return {}
+
+        result: dict[str, Optional[StockFundamentals]] = {}
+        max_workers = min(len(tickers), 8)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self.get_fundamentals, t): t for t in tickers
+            }
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    result[ticker] = future.result()
+                except Exception as e:
+                    logger.warning(
+                        "Fundamentals batch failed for %s: %s", ticker, e
+                    )
+                    result[ticker] = None
+
+        return result
 
     def search_stocks(self, query: str, limit: int = 10) -> list[dict]:
         """Search US stocks via FMP or basic yfinance lookup.

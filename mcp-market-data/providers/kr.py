@@ -4,6 +4,7 @@ Fallback hierarchy: PyKRX → FinanceDataReader → cached data.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -74,6 +75,121 @@ class KoreanMarketProvider(MarketDataProvider):
         except Exception as e:
             logger.error("All fundamentals providers failed for %s: %s", ticker, e)
             return None
+
+    def get_price_history_batch(
+        self, tickers: list[str], days: int = 30
+    ) -> dict[str, list[OHLCV]]:
+        """Fetch OHLCV history for multiple tickers in parallel.
+
+        PyKRX has no native batch endpoint, so individual ``get_price_history``
+        calls are parallelised with a ThreadPoolExecutor.  Workers are capped at
+        5 to avoid overwhelming KRX's web interface.
+
+        Args:
+            tickers: List of KRX ticker codes (zero-padded to 6 digits if needed).
+            days: Number of calendar days to look back for each ticker.
+
+        Returns:
+            Dict mapping each (normalised) ticker to its list of OHLCV bars.
+            Tickers that fail return an empty list.
+        """
+        normalised = [self._normalize_ticker(t) for t in tickers]
+        results: dict[str, list[OHLCV]] = {}
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {
+                executor.submit(self.get_price_history, ticker, days): ticker
+                for ticker in normalised
+            }
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    results[ticker] = future.result()
+                except Exception as exc:
+                    logger.warning("Batch price fetch failed for %s: %s", ticker, exc)
+                    results[ticker] = []
+
+        return results
+
+    def get_fundamentals_batch(
+        self, tickers: list[str]
+    ) -> dict[str, Optional[StockFundamentals]]:
+        """Fetch fundamentals for multiple tickers efficiently.
+
+        Calls ``get_market_fundamental_by_ticker`` once for the entire market,
+        then extracts each requested ticker's row — far faster than N individual
+        calls.  If the bulk call fails, falls back to per-ticker
+        ``get_fundamentals`` via a ThreadPoolExecutor (max 5 workers).
+
+        Args:
+            tickers: List of KRX ticker codes (zero-padded to 6 digits if needed).
+
+        Returns:
+            Dict mapping each (normalised) ticker to its StockFundamentals, or
+            None when data is unavailable.
+        """
+        from pykrx import stock as krx_stock
+
+        normalised = [self._normalize_ticker(t) for t in tickers]
+        results: dict[str, Optional[StockFundamentals]] = {}
+
+        # --- Fast path: one bulk call for all tickers ---
+        try:
+            today = datetime.now().strftime("%Y%m%d")
+            df = krx_stock.get_market_fundamental_by_ticker(today, market="ALL")
+
+            for ticker in normalised:
+                name = ""
+                try:
+                    name = krx_stock.get_market_ticker_name(ticker)
+                except Exception:
+                    pass
+
+                if ticker not in df.index:
+                    results[ticker] = StockFundamentals(ticker=ticker, name=name)
+                    continue
+
+                row = df.loc[ticker]
+                extracted = self._extract_fundamentals_from_row(row, ticker, name)
+                # extracted is None only when columns are unrecognised — in
+                # that case mark the ticker for the per-ticker fallback below.
+                results[ticker] = extracted
+
+            # If every result was populated (no None from unknown columns) return now.
+            if all(v is not None for v in results.values()):
+                return results
+
+            logger.debug(
+                "Bulk fundamental call returned unrecognised columns; "
+                "falling back to per-ticker calls for affected tickers."
+            )
+        except Exception as exc:
+            logger.warning(
+                "Bulk fundamental call failed (%s); falling back to per-ticker calls.",
+                exc,
+            )
+
+        # --- Slow path: per-ticker fallback for any ticker not yet resolved ---
+        missing = [t for t in normalised if results.get(t) is None]
+        if not missing:
+            return results
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_ticker = {
+                executor.submit(self.get_fundamentals, ticker): ticker
+                for ticker in missing
+            }
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    results[ticker] = future.result()
+                except Exception as exc:
+                    logger.warning(
+                        "Per-ticker fundamental fallback failed for %s: %s", ticker, exc
+                    )
+                    results[ticker] = None
+
+        return results
 
     def search_stocks(self, query: str, limit: int = 10) -> list[dict]:
         """Search Korean stocks by name or ticker.
@@ -214,31 +330,106 @@ class KoreanMarketProvider(MarketDataProvider):
             )
         return bars[-days:] if len(bars) > days else bars
 
+    # Column name variants across PyKRX versions, in preference order.
+    # Each tuple is (per_col, pbr_col, div_col).
+    _FUNDAMENTAL_COLUMN_CANDIDATES: list[tuple[str, str, str]] = [
+        ("PER", "PBR", "DIV"),
+        ("PER", "PBR", "배당수익률"),
+        ("per", "pbr", "div"),
+    ]
+
+    @staticmethod
+    def _extract_fundamentals_from_row(
+        row, ticker: str, name: str
+    ) -> Optional[StockFundamentals]:
+        """Try known column-name variants and return StockFundamentals, or None.
+
+        Args:
+            row: A pandas Series representing one ticker row from the bulk
+                 fundamentals DataFrame.
+            ticker: 6-digit KRX ticker code (used for the result object).
+            name: Human-readable company name.
+
+        Returns:
+            StockFundamentals populated from the first matching column set,
+            or None if no known variant matches.
+        """
+        for per_col, pbr_col, div_col in KoreanMarketProvider._FUNDAMENTAL_COLUMN_CANDIDATES:
+            if per_col in row.index and pbr_col in row.index and div_col in row.index:
+                return StockFundamentals(
+                    ticker=ticker,
+                    name=name,
+                    pe_ratio=float(row[per_col]) if row[per_col] != 0 else None,
+                    pb_ratio=float(row[pbr_col]) if row[pbr_col] != 0 else None,
+                    dividend_yield=float(row[div_col]) if row[div_col] != 0 else None,
+                )
+        return None
+
     def _pykrx_fundamentals(self, ticker: str) -> Optional[StockFundamentals]:
-        """Fetch fundamentals from PyKRX."""
+        """Fetch fundamentals from PyKRX.
+
+        Tries the bulk market-wide call first and extracts the row for
+        *ticker*.  If the columns don't match any known variant, falls back to
+        the per-ticker ``get_market_fundamental`` date-range call.
+
+        Args:
+            ticker: 6-digit KRX ticker code.
+
+        Returns:
+            StockFundamentals with available data, or None.
+
+        Raises:
+            ValueError: When both the bulk call and the per-ticker fallback
+                produce incompatible column names.
+        """
         from pykrx import stock as krx_stock
 
         today = datetime.now().strftime("%Y%m%d")
         name = krx_stock.get_market_ticker_name(ticker)
 
-        # get_market_fundamental_by_ticker has compatibility issues with
-        # newer pandas versions. Try it, but fallback gracefully.
+        # --- Attempt 1: bulk market-wide snapshot ---
         try:
             df = krx_stock.get_market_fundamental_by_ticker(today, market="ALL")
             if ticker not in df.index:
                 return StockFundamentals(ticker=ticker, name=name)
 
             row = df.loc[ticker]
-            return StockFundamentals(
-                ticker=ticker,
-                name=name,
-                pe_ratio=float(row["PER"]) if row["PER"] != 0 else None,
-                pb_ratio=float(row["PBR"]) if row["PBR"] != 0 else None,
-                dividend_yield=float(row["DIV"]) if row["DIV"] != 0 else None,
+            result = self._extract_fundamentals_from_row(row, ticker, name)
+            if result is not None:
+                return result
+            # Column set not recognised — log and try the per-ticker fallback.
+            logger.debug(
+                "Unknown fundamental columns for %s in bulk call: %s",
+                ticker,
+                list(df.columns),
             )
-        except (KeyError, Exception):
-            # Column name mismatch with current pandas — fallback
-            raise ValueError("PyKRX fundamental columns incompatible")
+        except KeyError as exc:
+            logger.debug("KeyError in bulk fundamental call for %s: %s", ticker, exc)
+
+        # --- Attempt 2: per-ticker date-range call ---
+        try:
+            end = datetime.now()
+            start = end - timedelta(days=5)
+            df2 = krx_stock.get_market_fundamental(
+                start.strftime("%Y%m%d"),
+                end.strftime("%Y%m%d"),
+                ticker,
+            )
+            if df2.empty:
+                return StockFundamentals(ticker=ticker, name=name)
+
+            row2 = df2.iloc[-1]
+            result = self._extract_fundamentals_from_row(row2, ticker, name)
+            if result is not None:
+                return result
+            raise ValueError(
+                f"PyKRX fundamental columns incompatible for {ticker}; "
+                f"got columns: {list(df2.columns)}"
+            )
+        except KeyError as exc:
+            raise ValueError(
+                f"PyKRX fundamental columns incompatible for {ticker}: {exc}"
+            ) from exc
 
     def _yfinance_fundamentals(self, ticker: str) -> Optional[StockFundamentals]:
         """Fallback: fetch Korean stock fundamentals via yfinance.

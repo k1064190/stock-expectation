@@ -19,6 +19,12 @@ api = [
     # Only needed for scheduler's --mode api (Anthropic API direct calls)
     "anthropic>=0.80",
 ]
+skills = [
+    # Only needed for running imported skill scripts directly
+    "jsonschema",
+    "pyyaml",
+    "scipy>=1.11,<2",
+]
 
 [project.scripts]
 stock-cli = "stock_cli:main"

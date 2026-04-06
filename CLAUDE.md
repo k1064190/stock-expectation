@@ -26,6 +26,9 @@ uv sync --extra dev
 # Include Anthropic API deps (only for --mode api)
 uv sync --extra api
 
+# Include skill script dependencies (jsonschema, pyyaml, scipy)
+uv sync --extra skills
+
 # Run any command in the project venv
 uv run <command>
 ```
@@ -39,11 +42,24 @@ uv run <command>
 ./bin/stock-cli price 005930 --market KR --days 10
 ./bin/stock-cli track-record --days 30
 
+# Batch commands (multiple tickers at once)
+./bin/stock-cli price-batch AAPL,MSFT,NVDA --market US --days 30
+./bin/stock-cli price-batch 005930,000660,035420 --market KR --days 30
+./bin/stock-cli fundamentals-batch AAPL,MSFT,NVDA --market US
+./bin/stock-cli fundamentals-batch 005930,000660 --market KR
+
 # Directly via uv
 uv run stock-cli --help
 ```
 
 All commands output JSON for easy parsing.
+
+### Batch commands
+
+`price-batch` and `fundamentals-batch` accept comma-separated ticker lists.
+Designed for skills that need data for multiple stocks (screeners, breadth
+analysis, sector rotation). Uses yfinance `download()` for efficient bulk
+fetching instead of sequential per-ticker calls.
 
 ## Running Tests
 

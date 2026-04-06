@@ -7,7 +7,10 @@ parsing by Claude Code (or jq, or direct shell use).
 Examples:
     stock-cli price NVDA --market US --days 30
     stock-cli price 005930 --market KR --days 10
+    stock-cli price-batch AAPL,MSFT,NVDA --market US --days 30
+    stock-cli price-batch 005930,000660,035420 --market KR --days 10
     stock-cli fundamentals AAPL --market US
+    stock-cli fundamentals-batch AAPL,MSFT,NVDA --market US
     stock-cli search "삼성" --market KR
     stock-cli health
 
@@ -152,6 +155,84 @@ def cmd_search(args) -> int:
         provider = _get_provider(args.market)
         results = provider.search_stocks(args.query, limit=args.limit)
         _print_json(results)
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_price_batch(args) -> int:
+    """Fetch OHLCV price history for multiple tickers at once.
+
+    Accepts comma-separated ticker list. Uses yfinance download() for
+    efficient bulk fetching (US) or threaded PyKRX calls (KR).
+
+    Args:
+        args: Parsed CLI arguments with tickers, market, days.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    try:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if not tickers:
+            _print_json({"error": "No tickers provided"})
+            return 1
+
+        provider = _get_provider(args.market)
+        results = provider.get_price_history_batch(tickers, days=args.days)
+
+        output = {}
+        for ticker, bars in results.items():
+            output[ticker] = {
+                "bars_count": len(bars),
+                "current_price": bars[-1].close if bars else None,
+                "bars": [asdict(b) for b in bars],
+            }
+
+        _print_json({
+            "market": args.market.upper(),
+            "tickers_requested": len(tickers),
+            "tickers_with_data": sum(1 for v in output.values() if v["bars_count"] > 0),
+            "results": output,
+        })
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_fundamentals_batch(args) -> int:
+    """Fetch fundamental data for multiple tickers at once.
+
+    Accepts comma-separated ticker list. Uses ThreadPoolExecutor for
+    parallel fetching.
+
+    Args:
+        args: Parsed CLI arguments with tickers, market.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    try:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if not tickers:
+            _print_json({"error": "No tickers provided"})
+            return 1
+
+        provider = _get_provider(args.market)
+        results = provider.get_fundamentals_batch(tickers)
+
+        output = {}
+        for ticker, fund in results.items():
+            output[ticker] = asdict(fund) if fund else None
+
+        _print_json({
+            "market": args.market.upper(),
+            "tickers_requested": len(tickers),
+            "tickers_with_data": sum(1 for v in output.values() if v is not None),
+            "results": output,
+        })
         return 0
     except Exception as e:
         _print_json({"error": str(e)})
@@ -356,11 +437,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--days", type=int, default=30)
     p.set_defaults(func=cmd_price)
 
+    # --- price-batch ---
+    p = sub.add_parser("price-batch", help="Fetch OHLCV for multiple tickers")
+    p.add_argument("tickers", help="Comma-separated tickers (e.g. AAPL,MSFT,NVDA)")
+    p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    p.add_argument("--days", type=int, default=30)
+    p.set_defaults(func=cmd_price_batch)
+
     # --- fundamentals ---
     p = sub.add_parser("fundamentals", help="Fetch fundamental data")
     p.add_argument("ticker")
     p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
     p.set_defaults(func=cmd_fundamentals)
+
+    # --- fundamentals-batch ---
+    p = sub.add_parser("fundamentals-batch", help="Fetch fundamentals for multiple tickers")
+    p.add_argument("tickers", help="Comma-separated tickers (e.g. AAPL,MSFT,NVDA)")
+    p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    p.set_defaults(func=cmd_fundamentals_batch)
 
     # --- search ---
     p = sub.add_parser("search", help="Search stocks by name/ticker")
