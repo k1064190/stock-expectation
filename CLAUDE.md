@@ -114,3 +114,33 @@ SQLite at `data/predictions.db` (auto-created on first run). WAL mode enabled.
 - `FMP_API_KEY` — Financial Modeling Prep (optional, free tier 250 calls/day)
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — for Telegram delivery
 - `ANTHROPIC_API_KEY` — only needed with `--mode api`
+
+## Imported Trading Skills
+
+51 trading skills imported from claude-trading-skills, organized into three tiers:
+
+- **Pure logic skills** (29): Analysis frameworks, methodology guides, risk management
+  tools. Work for any market without data API calls. Includes edge-* pipeline (6 skills),
+  position-sizer, technical-analyst, backtest-expert, scenario-analyzer, etc.
+- **Adapted skills** (13): Originally US-only, adapted to use `bin/stock-cli` (price-batch,
+  fundamentals-batch) for dual US/KR support. Original FMP scripts preserved in scripts/
+  for reference. Includes vcp-screener, sector-analyst, macro-regime-detector, etc.
+- **US-only skills** (9): Depend on US-specific data sources (SEC 13F, FMP earnings,
+  Alpaca, FINVIZ, IRS). Marked with "US only" banner. No KR equivalent.
+
+### Key multi-skill workflows
+
+- **Edge Research Pipeline**: edge-candidate-agent → edge-hint-extractor →
+  edge-concept-synthesizer → edge-strategy-designer → edge-strategy-reviewer →
+  edge-pipeline-orchestrator
+- **Earnings Momentum**: earnings-trade-analyzer → pead-screener → technical-analyst
+- **Dividend Portfolio**: value-dividend-screener → dividend-growth-pullback-screener →
+  kanchi-dividend-sop
+- **Thesis-Driven Trading**: screener → trader-memory-core → position-sizer
+
+### Running imported skill scripts directly
+
+Scripts that call FMP/FINVIZ APIs can still be run standalone (US only):
+```bash
+uv run python .claude/skills/{skill}/scripts/{script}.py --api-key $FMP_API_KEY
+```
