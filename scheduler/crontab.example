@@ -1,0 +1,42 @@
+# Stock Expectation — Scheduled Tasks
+# All times in KST (Asia/Seoul, UTC+9)
+#
+# Install:
+#   crontab scheduler/crontab.example
+#
+# Two modes available:
+#   --mode claude-code (default): Uses `claude -p` CLI. No API key needed.
+#       Claude Code uses `bin/stock-cli` via Bash to fetch data and log predictions.
+#   --mode api: Uses Anthropic API directly. Requires ANTHROPIC_API_KEY
+#       and `uv sync --extra api` beforehand.
+#
+# Environment variables:
+#   TELEGRAM_BOT_TOKEN — for Telegram delivery
+#   TELEGRAM_CHAT_ID — target Telegram chat
+#   FMP_API_KEY — (optional) for enhanced US data
+#   ANTHROPIC_API_KEY — only needed with --mode api
+#
+# Logs written to ~/logs/stock-expectation/
+
+SHELL=/bin/bash
+PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+PROJECT=/home/cwh/projects/stock-expectation
+LOG_DIR=/home/cwh/logs/stock-expectation
+
+# === Claude Code mode (default, recommended) ===
+# Uses claude CLI with bin/stock-cli. No Anthropic API cost.
+
+# Korean market briefing — 07:00 KST (22:00 UTC previous day)
+0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+
+# US market briefing — 21:00 KST (12:00 UTC)
+0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+
+# Outcome tracker — 00:00 KST (15:00 UTC)
+# No LLM needed, pure Python price check + DB update
+0 15 * * 1-5 cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
+
+# === Anthropic API mode (alternative) ===
+# Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
+# 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
+# 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1

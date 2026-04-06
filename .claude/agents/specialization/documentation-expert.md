@@ -1,0 +1,1 @@
+/home/cwh/projects/claude-agent-skill-sync-tool/claude/agents/specialization/documentation-expert.md

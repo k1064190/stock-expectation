@@ -1,0 +1,1 @@
+/home/cwh/projects/claude-agent-skill-sync-tool/claude/agents/development/typescript-pro.md

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# stock-cli — wrapper that invokes stock_cli.py via `uv run`.
+#
+# Usage:
+#   stock-cli <subcommand> [args...]
+#
+# Subcommands: price, fundamentals, search, health, predict, track-record, calibration
+# Run `stock-cli --help` for details.
+
+set -euo pipefail
+
+# Resolve the project root (parent of this script's directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Use uv to run the installed stock-cli entry point with the project's venv.
+# This automatically syncs the venv if needed and bypasses activation.
+exec uv run --project "$PROJECT_ROOT" stock-cli "$@"
