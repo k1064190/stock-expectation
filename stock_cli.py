@@ -80,6 +80,7 @@ from portfolio.evaluator import (
     compute_vs_predictions,
     compute_advice,
 )
+from portfolio.toss_sync import fetch_toss_positions, reconcile, tossctl_available
 
 
 def _print_json(data) -> None:
@@ -858,6 +859,80 @@ def cmd_portfolio_advice(args) -> int:
         return 1
 
 
+def cmd_portfolio_sync(args) -> int:
+    """Sync portfolio from Toss Securities via tossctl.
+
+    Fetches current positions from Toss, compares with local DB,
+    and records synthetic transactions to reconcile differences.
+    """
+    try:
+        if not tossctl_available():
+            _print_json({"error": "tossctl is not installed. See README for setup."})
+            return 1
+
+        toss_positions = fetch_toss_positions()
+
+        markets = [args.market.upper()] if args.market else ["KR", "US"]
+        total_actions = []
+
+        conn = pf_get_connection()
+        try:
+            for market in markets:
+                pf = get_portfolio_for_market(conn, market)
+                if pf is None:
+                    # Auto-create portfolio
+                    name = f"Toss {market}"
+                    pf = create_portfolio(conn, market=market, name=name)
+
+                local_positions = compute_positions(conn, pf.id)
+                actions = reconcile(toss_positions, local_positions, market)
+
+                if args.dry_run:
+                    for a in actions:
+                        a["market"] = market
+                    total_actions.extend(actions)
+                    continue
+
+                today = datetime.now().strftime("%Y-%m-%d")
+                for a in actions:
+                    add_transaction(
+                        conn,
+                        portfolio_id=pf.id,
+                        ticker=a["ticker"],
+                        side=a["side"],
+                        quantity=a["quantity"],
+                        price=a["price"],
+                        currency=a["currency"],
+                        transacted_at=today,
+                        note=a["note"],
+                    )
+                    a["market"] = market
+                total_actions.extend(actions)
+
+            if args.dry_run:
+                _print_json(
+                    {
+                        "dry_run": True,
+                        "actions": total_actions,
+                        "action_count": len(total_actions),
+                    }
+                )
+            else:
+                _print_json(
+                    {
+                        "synced": True,
+                        "actions": total_actions,
+                        "action_count": len(total_actions),
+                    }
+                )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 # ---------------------------------------------------------------------------
 # Argparse setup
 # ---------------------------------------------------------------------------
@@ -1085,6 +1160,17 @@ def build_parser() -> argparse.ArgumentParser:
     pa = pf_sub.add_parser("advice", help="Trading advice signals")
     pa.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     pa.set_defaults(func=cmd_portfolio_advice)
+
+    # portfolio sync
+    psync = pf_sub.add_parser("sync", help="Sync from Toss Securities via tossctl")
+    psync.add_argument(
+        "--market",
+        default=None,
+        choices=["US", "KR", "us", "kr"],
+        help="Sync one market only (default: both)",
+    )
+    psync.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    psync.set_defaults(func=cmd_portfolio_sync)
 
     return parser
 
