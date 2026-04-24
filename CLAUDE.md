@@ -9,6 +9,7 @@ CLI-first with `bin/stock-cli` + Claude Code skills + lightweight Python schedul
 - `bin/stock-cli` — bash wrapper that runs stock-cli via `uv run`
 - `mcp-market-data/providers/` — US and KR market data providers (name kept for legacy reasons)
 - `mcp-prediction-store/` — Prediction schema, DB CRUD, metrics computation
+- `portfolio/` — Manual portfolio tracking, trade recording, evaluation
 - `.claude/skills/` — Claude Code skills that invoke `bin/stock-cli` via Bash
 - `scheduler/` — Automated daily briefings and outcome tracking
 
@@ -61,6 +62,30 @@ Designed for skills that need data for multiple stocks (screeners, breadth
 analysis, sector rotation). Uses yfinance `download()` for efficient bulk
 fetching instead of sequential per-ticker calls.
 
+### Portfolio tracking
+
+```bash
+# Create portfolios (one-time setup)
+./bin/stock-cli portfolio create --market KR --name "Toss KR"
+./bin/stock-cli portfolio create --market US --name "Toss US"
+
+# Record trades
+./bin/stock-cli portfolio buy 005930 --qty 10 --price 55000 --market KR
+./bin/stock-cli portfolio sell 005930 --qty 5 --price 60000 --market KR --date 2026-04-01
+
+# Import from CSV
+./bin/stock-cli portfolio import trades.csv --market KR --dry-run
+
+# View positions and evaluate
+./bin/stock-cli portfolio positions --market KR
+./bin/stock-cli portfolio report --market KR
+./bin/stock-cli portfolio risk --market KR
+./bin/stock-cli portfolio vs-predictions --market KR
+./bin/stock-cli portfolio advice --market KR
+```
+
+Portfolio data stored in `data/portfolio.db` (SQLite, WAL mode). Separate from predictions.db.
+
 ## Running Tests
 
 ```bash
@@ -107,7 +132,8 @@ crontab scheduler/crontab.example
 
 ## Database
 
-SQLite at `data/predictions.db` (auto-created on first run). WAL mode enabled.
+- `data/predictions.db` — Predictions (auto-created on first run). WAL mode.
+- `data/portfolio.db` — Portfolio trades (auto-created on first use). WAL mode.
 
 ## API Keys
 
