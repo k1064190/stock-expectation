@@ -2,6 +2,12 @@
 
 Stock prediction system with track record for US and Korean markets.
 
+> **Active feature branch:** `feature/expect-redesign` (PR #2). For a full
+> orientation including stage outcomes, test inventory, code-review history,
+> known issues, the operator runbook, and pending decision points, read
+> [`docs/HANDOFF.md`](docs/HANDOFF.md) **first**. It is the single
+> source-of-truth for picking up the work in a fresh session.
+
 ## Architecture
 
 CLI-first with `bin/stock-cli` + Claude Code skills + lightweight Python scheduler:
