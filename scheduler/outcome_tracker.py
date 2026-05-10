@@ -20,6 +20,14 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 
+# Auto-load .env for API keys (FMP, Telegram, etc.).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 from models import (
     Prediction,
     Timeframe,
@@ -120,12 +128,16 @@ def evaluate_prediction(
 
     # --- Check HIT ---
     if pred.direction == "BULL":
-        target = pred.target_price if pred.target_price else entry * (1 + DEFAULT_HIT_PCT)
+        target = (
+            pred.target_price if pred.target_price else entry * (1 + DEFAULT_HIT_PCT)
+        )
         if current_price >= target:
             return "HIT", outcome_return
 
     elif pred.direction == "BEAR":
-        target = pred.target_price if pred.target_price else entry * (1 - DEFAULT_HIT_PCT)
+        target = (
+            pred.target_price if pred.target_price else entry * (1 - DEFAULT_HIT_PCT)
+        )
         if current_price <= target:
             return "HIT", outcome_return
 
@@ -170,7 +182,14 @@ def run_outcome_tracking() -> dict:
     open_preds = list_predictions(conn, status="OPEN", limit=200)
     logger.info("Found %d open predictions to evaluate", len(open_preds))
 
-    summary = {"evaluated": 0, "HIT": 0, "MISS": 0, "EXPIRED": 0, "still_open": 0, "errors": 0}
+    summary = {
+        "evaluated": 0,
+        "HIT": 0,
+        "MISS": 0,
+        "EXPIRED": 0,
+        "still_open": 0,
+        "errors": 0,
+    }
 
     for pred in open_preds:
         try:

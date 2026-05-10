@@ -44,6 +44,18 @@ sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-memory-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-graph-store"))
 
+# Auto-load API keys from .env at the project root. The file is gitignored,
+# so committing this call is safe — it just reads whatever the user has
+# placed there. Existing env vars take precedence over .env values.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    # python-dotenv is a base dependency, but tolerate its absence so
+    # downstream callers can still import this module in stripped envs.
+    pass
+
 from models import (
     Prediction,
     Direction,

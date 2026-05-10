@@ -9,6 +9,7 @@ dependencies = [
     "yfinance>=1.2",
     "httpx>=0.28",
     "beautifulsoup4>=4.12",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]

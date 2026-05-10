@@ -31,6 +31,14 @@ from zoneinfo import ZoneInfo
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 
+# Auto-load .env for any API keys / config.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 from metrics import (
     get_track_record,
     get_calibration_report,
