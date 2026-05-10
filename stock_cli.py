@@ -598,7 +598,7 @@ def _graph_driver():
 def cmd_graph_init(args) -> int:
     """Create constraints + indexes. Idempotent."""
     try:
-        from schemas import INIT_STATEMENTS  # type: ignore[import-not-found]
+        from cypher import INIT_STATEMENTS  # type: ignore[import-not-found]
     except ImportError:
         _print_json({"error": "mcp-graph-store unavailable"})
         return 1
@@ -644,7 +644,7 @@ def cmd_graph_query(args) -> int:
 def cmd_graph_similar_stocks(args) -> int:
     """Find stocks sharing themes with the given ticker."""
     try:
-        from schemas import CANNED_QUERIES  # type: ignore[import-not-found]
+        from cypher import CANNED_QUERIES  # type: ignore[import-not-found]
     except ImportError:
         _print_json({"error": "mcp-graph-store unavailable"})
         return 1
@@ -668,7 +668,7 @@ def cmd_graph_similar_stocks(args) -> int:
 def cmd_graph_theme_winners(args) -> int:
     """Win rate per theme over the last N weeks."""
     try:
-        from schemas import CANNED_QUERIES  # type: ignore[import-not-found]
+        from cypher import CANNED_QUERIES  # type: ignore[import-not-found]
     except ImportError:
         _print_json({"error": "mcp-graph-store unavailable"})
         return 1

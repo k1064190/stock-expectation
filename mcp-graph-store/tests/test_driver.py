@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 driver_module = import_module("mcp-graph-store.driver")
-schemas_module = import_module("mcp-graph-store.schemas")
+schemas_module = import_module("mcp-graph-store.cypher")
 
 GraphDriver = driver_module.GraphDriver
 GraphUnavailable = driver_module.GraphUnavailable
