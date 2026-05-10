@@ -56,6 +56,25 @@ def run_cli(
 # ---------------------------------------------------------------------------
 
 
+def test_bin_wrapper_help_succeeds():
+    """The shipped bash wrapper at ``bin/stock-cli`` must forward to the
+    Python CLI — exercising the wrapper path, executable bit, and
+    ``--project`` resolution that ``uv run stock-cli`` would skip.
+    """
+    wrapper = PROJECT_ROOT / "bin" / "stock-cli"
+    assert wrapper.exists(), "bin/stock-cli wrapper missing"
+    assert os.access(wrapper, os.X_OK), "bin/stock-cli is not executable"
+    proc = subprocess.run(
+        [str(wrapper), "--help"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, f"bin/stock-cli --help failed: {proc.stderr}"
+    assert "stock-cli" in proc.stdout.lower() or "subcommand" in proc.stdout.lower()
+
+
 def test_top_level_help_lists_all_subcommands():
     """Every redesign subcommand must be discoverable via --help."""
     proc = subprocess.run(
@@ -185,9 +204,18 @@ def test_memory_purge_requires_yes_flag():
     ).lower() or "purge is destructive" in str(payload.get("error", ""))
 
 
-def test_memory_add_rejects_malformed_metadata_json():
-    """`--metadata-json` is a documented JSON contract — bad input must
-    fail fast with a clear error, not propagate to the store layer.
+@pytest.mark.parametrize(
+    "bad_json",
+    [
+        "{not: valid json}",  # malformed
+        "[]",  # well-formed but wrong shape (array)
+        "null",  # well-formed but not an object
+    ],
+)
+def test_memory_add_rejects_invalid_metadata_json(bad_json):
+    """`--metadata-json` must be a JSON object. Malformed text and
+    well-formed-but-wrong-shape inputs both fail — feeding non-dict to
+    the store would surface as a confusing downstream TypeError.
     """
     rc, payload = run_cli(
         "memory",
@@ -197,33 +225,35 @@ def test_memory_add_rejects_malformed_metadata_json():
         "--content",
         "irrelevant",
         "--metadata-json",
-        "{not: valid json}",
+        bad_json,
     )
-    assert rc == 1
+    assert rc == 1, f"expected non-zero exit for {bad_json!r}"
     assert isinstance(payload, dict)
-    err = payload.get("error", "")
-    assert (
-        "metadata-json invalid" in err or "metadata-json" in err.lower()
-    ), f"expected metadata-json validation error, got: {err!r}"
+    assert payload.get("error"), f"expected an error message, got: {payload!r}"
 
 
-def test_graph_query_rejects_malformed_params_json():
-    """Same JSON contract for graph query — bad --params-json must fail
-    before any Cypher attempt or driver init.
+@pytest.mark.parametrize(
+    "bad_json",
+    ["{not: valid json}", "[]", "null"],
+)
+def test_graph_query_rejects_invalid_params_json(bad_json):
+    """Same JSON-object contract for graph query."""
+    rc, payload = run_cli("graph", "query", "RETURN 1 AS x", "--params-json", bad_json)
+    assert rc == 1, f"expected non-zero exit for {bad_json!r}"
+    assert isinstance(payload, dict)
+    assert payload.get("error"), f"expected an error message, got: {payload!r}"
+
+
+@pytest.mark.parametrize("limit", ["-1", "0"])
+def test_news_rejects_non_positive_limit(limit):
+    """``--limit`` must reject zero/negative values. Without this gate the
+    provider's ``items[:limit]`` slice silently returns wrong results
+    (Python's negative slicing yields counter-intuitive output).
     """
-    rc, payload = run_cli(
-        "graph",
-        "query",
-        "RETURN 1 AS x",
-        "--params-json",
-        "{not: valid json}",
-    )
-    assert rc == 1
-    assert isinstance(payload, dict)
-    err = payload.get("error", "")
-    assert (
-        "params-json invalid" in err or "params-json" in err.lower()
-    ), f"expected params-json validation error, got: {err!r}"
+    rc, payload = run_cli("news", "AAPL", "--market", "US", "--limit", limit)
+    assert rc != 0, f"--limit {limit} should be rejected"
+    if isinstance(payload, dict):
+        assert payload.get("error")
 
 
 def test_graph_init_returns_install_hint_when_extra_missing():
@@ -379,10 +409,17 @@ def test_horizon_metrics_batch_returns_expected_fields():
         "max_drawdown_1y",
         "cycle_risk_flag",
     }
+    # If any of the pinned tickers errored, the contract is not actually
+    # exercised — fail the test rather than silently pass.
+    errored = [
+        t for t in ("AAPL", "MSFT") if "error" in (payload["results"].get(t) or {})
+    ]
+    assert not errored, (
+        f"horizon-metrics-batch failed for {errored} — contract not verified. "
+        f"Payload: {payload['results']}"
+    )
     for ticker in ("AAPL", "MSFT"):
-        result = payload["results"].get(ticker)
-        assert result is not None, f"missing result for {ticker}"
-        if "error" not in result:
-            present = set(result.keys())
-            missing = expected_fields - present
-            assert not missing, f"{ticker} missing fields: {missing}"
+        result = payload["results"][ticker]
+        present = set(result.keys())
+        missing = expected_fields - present
+        assert not missing, f"{ticker} missing fields: {missing}"

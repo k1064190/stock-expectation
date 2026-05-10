@@ -175,26 +175,47 @@ def test_load_dotenv_targets_project_root_not_cwd(tmp_path):
     )
 
 
-def test_dotenv_import_failure_does_not_crash_module():
-    """If python-dotenv is somehow not installable, the entry point must
-    still import. We simulate this by re-implementing the guard pattern
-    and confirming the ImportError path is silent.
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "stock_cli",
+        "scheduler.daily_briefing",
+        "scheduler.outcome_tracker",
+        "scheduler.weekly_calibration",
+    ],
+)
+def test_entry_point_imports_when_dotenv_missing(module_name):
+    """Real test of the production guard pattern: each entry point must
+    still import cleanly when ``dotenv`` cannot be imported.
+
+    The previous version of this test re-implemented the guard in a
+    string and asserted on it — that gave a false sense of safety because
+    a refactor that *removed* the production try/except would still pass.
+    Here we monkeypatch ``sys.modules['dotenv'] = None`` *before*
+    importing the real entry point, so the production code path is what
+    actually runs.
     """
     code = textwrap.dedent(
-        """
+        f"""
         import sys
-        sys.modules['dotenv'] = None  # simulate broken / missing dep
+        sys.path.insert(0, '.')
+        sys.path.insert(0, './scheduler')
+        # Block the real dotenv module so the entry point's guard fires.
+        sys.modules['dotenv'] = None
         try:
-            from dotenv import load_dotenv  # noqa: F401
-            print('UNEXPECTED: import succeeded')
-        except ImportError:
-            print('GRACEFUL_IMPORT_ERROR')
-        except TypeError:
-            # `import` from a None module raises TypeError under Python 3.x;
-            # treat that as the same graceful path.
-            print('GRACEFUL_IMPORT_ERROR')
+            import {module_name}
+        except SystemExit:
+            pass  # argparse-driven entry points may sys.exit on import
+        except (ImportError, TypeError) as exc:
+            print('FAIL: entry point did not handle dotenv ImportError:', exc)
+            sys.exit(2)
+        print('IMPORTED:', '{module_name}')
         """
     )
     proc = _run_python(code, env={})
-    assert proc.returncode == 0, proc.stderr
-    assert "GRACEFUL_IMPORT_ERROR" in proc.stdout
+    assert (
+        proc.returncode == 0
+    ), f"{module_name} crashed when dotenv was missing: {proc.stderr}"
+    assert f"IMPORTED: {module_name}" in proc.stdout, (
+        f"{module_name} did not import cleanly with dotenv blocked: " f"{proc.stdout!r}"
+    )

@@ -214,13 +214,21 @@ def test_yfinance_fallback_works_without_any_keys():
 def test_naver_scrape_returns_real_kr_news_for_samsung():
     """Naver Finance must return news for 005930 (Samsung Electronics)
     with limit and since-days filters honoured.
+
+    Samsung is the most liquid KR ticker — there is *always* news for it
+    in any 7-day window. A zero-item return here means Naver's layout
+    actually changed (the fragile selector regression we explicitly want
+    this test to catch), not a quiet day. **Failing**, not skipping.
     """
     from datetime import datetime, timedelta
 
     provider = KoreanMarketProvider()
     items = provider.get_news("005930", limit=5, since_days=7)
-    if not items:
-        pytest.skip("Naver layout may have changed; manual inspection needed")
+    assert items, (
+        "Naver returned 0 items for 005930 over 7 days — selector or "
+        "Referer/clusterId workaround likely regressed. "
+        "Inspect _scrape_naver_news in providers/kr.py."
+    )
     assert len(items) <= 5, f"limit=5 not honoured: got {len(items)} items"
     cutoff = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
     for item in items:
@@ -244,36 +252,87 @@ def test_naver_scrape_returns_real_kr_news_for_samsung():
 @pytest.mark.network
 @pytest.mark.skipif(not _have("OPEN_DART_API_KEY"), reason="OPEN_DART_API_KEY not set")
 def test_dart_disclosures_for_samsung_recent():
-    """Live DART call for 005930 (Samsung) over a 90-day window — large
-    issuers always have at least one filing in any given quarter.
+    """Live DART call for 005930 (Samsung) over a 90-day window.
+
+    Pins the full per-item contract — every receipt is a 14-digit string,
+    every URL points at dart.fss.or.kr and embeds the rcept_no, every
+    date is YYYYMMDD inside the window, and rcept_no values are unique.
+    A regression that returns one good item plus junk would have slipped
+    past the previous "first only" check.
     """
+    from datetime import datetime, timedelta
+
     provider = KoreanMarketProvider()
     items = provider.get_disclosures("005930", since_days=90, limit=5)
     assert items, "DART returned no disclosures for Samsung in 90 days"
-    first = items[0]
-    assert first.rcept_no  # 14-digit receipt number
-    assert first.report_nm
-    assert first.url.startswith("https://dart.fss.or.kr")
-    # rcept_dt is YYYYMMDD.
-    assert len(first.rcept_dt) == 8 and first.rcept_dt.isdigit()
+    assert len(items) <= 5, f"limit=5 not honoured: got {len(items)} items"
+
+    cutoff_dt = (datetime.now() - timedelta(days=91)).strftime("%Y%m%d")
+    seen: set[str] = set()
+    for item in items:
+        assert (
+            item.rcept_no.isdigit() and len(item.rcept_no) == 14
+        ), f"bad rcept_no shape: {item.rcept_no!r}"
+        assert (
+            item.rcept_no not in seen
+        ), f"DART returned duplicate receipts: {item.rcept_no}"
+        seen.add(item.rcept_no)
+        assert item.report_nm.strip(), "empty report_nm"
+        assert item.url.startswith(
+            "https://dart.fss.or.kr"
+        ), f"non-DART URL leaked through: {item.url!r}"
+        assert item.rcept_no in item.url, f"URL does not embed rcept_no: {item.url!r}"
+        assert (
+            len(item.rcept_dt) == 8 and item.rcept_dt.isdigit()
+        ), f"bad rcept_dt: {item.rcept_dt!r}"
+        assert (
+            item.rcept_dt >= cutoff_dt
+        ), f"rcept_dt {item.rcept_dt} predates since_days=90 cutoff {cutoff_dt}"
 
 
 @pytest.mark.network
 @pytest.mark.skipif(not _have("OPEN_DART_API_KEY"), reason="OPEN_DART_API_KEY not set")
 def test_dart_corp_code_cache_persists_across_calls(tmp_path, monkeypatch):
-    """First call downloads the corp_code map; second call reuses the cache."""
+    """First call downloads the corp_code map; second call must NOT re-fetch.
+
+    The previous version only checked file size, which would silently
+    pass on a re-download that produces identical bytes. Here we spy on
+    ``_download_dart_corp_codes`` and assert it is called exactly once
+    across two ``get_disclosures()`` calls for different tickers.
+    """
     from providers import kr as kr_module
 
     cache_path = tmp_path / "dart_corp_codes.csv"
     monkeypatch.setattr(kr_module, "DART_CORP_CODE_CSV", cache_path)
 
+    download_calls = {"count": 0}
+    real_download = kr_module.KoreanMarketProvider._download_dart_corp_codes
+
+    def counting_download(api_key, dest):
+        download_calls["count"] += 1
+        return real_download(api_key, dest)
+
+    monkeypatch.setattr(
+        kr_module.KoreanMarketProvider,
+        "_download_dart_corp_codes",
+        staticmethod(counting_download),
+    )
+
     provider = KoreanMarketProvider()
-    # First call should populate the CSV.
+
+    # First call: cold cache — exactly one download must happen.
     provider.get_disclosures("005930", since_days=30, limit=1)
     assert cache_path.exists(), "First call must populate the corp_code cache"
     first_size = cache_path.stat().st_size
     assert first_size > 1000, "Cache CSV is suspiciously small"
+    assert (
+        download_calls["count"] == 1
+    ), f"First call should trigger exactly one download; saw {download_calls['count']}"
 
-    # Second call: cache is hot, file size shouldn't change.
+    # Second call (different ticker): hot cache — no further download.
     provider.get_disclosures("000660", since_days=30, limit=1)
     assert cache_path.stat().st_size == first_size
+    assert download_calls["count"] == 1, (
+        "Second call re-downloaded the corp_code map — cache lookup "
+        f"regressed. Saw {download_calls['count']} total downloads."
+    )

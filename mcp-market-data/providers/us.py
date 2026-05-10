@@ -273,7 +273,7 @@ class USMarketProvider(MarketDataProvider):
 
         if not items and self._fmp_key:
             try:
-                items = self._fmp_news(ticker, limit)
+                items = self._fmp_news(ticker, limit, since_days=since_days)
             except Exception as e:
                 logger.warning("FMP news failed for %s: %s", ticker, e)
 
@@ -590,13 +590,24 @@ class USMarketProvider(MarketDataProvider):
                 annotated += 1
         return annotated
 
-    def _fmp_news(self, ticker: str, limit: int) -> list[NewsItem]:
-        """Fetch headlines via FMP /stock_news. Backup when no Finnhub key."""
+    def _fmp_news(self, ticker: str, limit: int, since_days: int = 7) -> list[NewsItem]:
+        """Fetch headlines via FMP /stock_news. Backup when no Finnhub key.
+
+        FMP's /stock_news endpoint accepts only ``tickers`` and ``limit`` —
+        it does not expose date-range filtering. To keep the contract
+        consistent with Finnhub and yfinance (every provider honours
+        ``since_days``), we over-fetch and filter in memory.
+        """
+        cutoff = (datetime.now() - timedelta(days=since_days)).strftime("%Y-%m-%d")
         resp = httpx.get(
             f"{FMP_BASE_URL}/stock_news",
             params={
                 "tickers": ticker,
-                "limit": limit,
+                # Over-fetch so the post-filter still has enough items to
+                # honour the caller's ``limit`` after dropping out-of-window
+                # entries. 4× is generous; FMP's free tier caps at 250 items
+                # per call anyway.
+                "limit": min(limit * 4, 100),
                 "apikey": self._fmp_key,
             },
             timeout=15,
@@ -610,6 +621,8 @@ class USMarketProvider(MarketDataProvider):
         for entry in data:
             published = entry.get("publishedDate", "")
             date_str = published.split(" ")[0] if published else ""
+            if date_str and date_str < cutoff:
+                continue
             items.append(
                 NewsItem(
                     headline=entry.get("title", "").strip(),

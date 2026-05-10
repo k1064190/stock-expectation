@@ -97,6 +97,22 @@ from portfolio.evaluator import (
 from portfolio.toss_sync import fetch_toss_positions, reconcile, tossctl_available
 
 
+def _positive_int(value: str) -> int:
+    """argparse type for arguments that must be a positive integer.
+
+    Catches `--limit 0`, `--limit -1`, `--since-days 0` etc. before they
+    reach the provider, where negative slicing or zero-window queries
+    would silently return wrong results.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {value!r}")
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {parsed}")
+    return parsed
+
+
 def _print_json(data) -> None:
     """Print data as indented JSON to stdout.
 
@@ -1394,10 +1410,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")
     p.add_argument("ticker", help="Stock ticker (US: NVDA, KR: 005930)")
     p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
-    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--limit", type=_positive_int, default=10)
     p.add_argument(
         "--since-days",
-        type=int,
+        type=_positive_int,
         default=7,
         help="Only items within last N days (default 7)",
     )
@@ -1411,11 +1427,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("ticker", help="6-digit KRX ticker code (e.g. 005930)")
     p.add_argument(
         "--since-days",
-        type=int,
+        type=_positive_int,
         default=7,
         help="Look-back window in days (default 7)",
     )
-    p.add_argument("--limit", type=int, default=30)
+    p.add_argument("--limit", type=_positive_int, default=30)
     p.set_defaults(func=cmd_disclosure)
 
     # --- memory (Stage 7-A: mem0 semantic memory) ---
