@@ -42,6 +42,7 @@ PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-memory-store"))
+sys.path.insert(0, str(PROJECT_ROOT / "mcp-graph-store"))
 
 from models import (
     Prediction,
@@ -564,6 +565,114 @@ def cmd_memory_purge(args) -> int:
         _print_json({"error": str(exc)})
         return 1
     _print_json({"category": args.category, "deleted": deleted})
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Graph commands (Stage 7-B: Neo4j Community)
+# ---------------------------------------------------------------------------
+
+
+def _graph_driver():
+    """Lazy-load the GraphDriver. Errors print as JSON and exit non-zero."""
+    try:
+        from driver import GraphDriver  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        raise SystemExit(1)
+    return GraphDriver()
+
+
+def cmd_graph_init(args) -> int:
+    """Create constraints + indexes. Idempotent."""
+    try:
+        from schemas import INIT_STATEMENTS  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        applied = driver.run_many(list(INIT_STATEMENTS))
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"statements_total": len(INIT_STATEMENTS), "applied": applied})
+    return 0
+
+
+def cmd_graph_query(args) -> int:
+    """Run a raw Cypher statement. Use sparingly; prefer canned shortcuts."""
+    driver = _graph_driver()
+    params = {}
+    if args.params_json:
+        try:
+            params = json.loads(args.params_json)
+        except json.JSONDecodeError as exc:
+            _print_json({"error": f"--params-json invalid: {exc}"})
+            return 1
+    try:
+        rows = driver.run(args.cypher, **params)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json(
+        {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "count": len(rows),
+            "rows": rows,
+        }
+    )
+    return 0
+
+
+def cmd_graph_similar_stocks(args) -> int:
+    """Find stocks sharing themes with the given ticker."""
+    try:
+        from schemas import CANNED_QUERIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        rows = driver.run(
+            CANNED_QUERIES["similar_stocks_by_theme"],
+            ticker=args.ticker,
+            market=args.market.upper(),
+            limit=args.limit,
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"ticker": args.ticker, "market": args.market.upper(), "results": rows})
+    return 0
+
+
+def cmd_graph_theme_winners(args) -> int:
+    """Win rate per theme over the last N weeks."""
+    try:
+        from schemas import CANNED_QUERIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        rows = driver.run(
+            CANNED_QUERIES["theme_winners_recent"],
+            weeks=args.weeks,
+            limit=args.limit,
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"weeks": args.weeks, "results": rows})
     return 0
 
 
@@ -1333,6 +1442,43 @@ def build_parser() -> argparse.ArgumentParser:
     mp.add_argument("--category", required=True)
     mp.add_argument("--yes", action="store_true", help="Confirm destructive operation")
     mp.set_defaults(func=cmd_memory_purge)
+
+    # --- graph (Stage 7-B: Neo4j) ---
+    graph = sub.add_parser(
+        "graph",
+        help=(
+            "Graph layer (Neo4j Community). Requires `uv sync --extra graph` "
+            "and `docker compose up -d neo4j`."
+        ),
+    )
+    graph_sub = graph.add_subparsers(dest="graph_command", required=True)
+
+    gi = graph_sub.add_parser("init", help="Create constraints + indexes (idempotent)")
+    gi.set_defaults(func=cmd_graph_init)
+
+    gq = graph_sub.add_parser("query", help="Run a raw Cypher statement")
+    gq.add_argument("cypher", help="Cypher statement (use $param placeholders)")
+    gq.add_argument(
+        "--params-json",
+        default="",
+        help='JSON dict of parameters, e.g. {"ticker": "NVDA"}',
+    )
+    gq.set_defaults(func=cmd_graph_query)
+
+    gs = graph_sub.add_parser(
+        "similar-stocks", help="Find stocks sharing themes with the given ticker"
+    )
+    gs.add_argument("ticker")
+    gs.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    gs.add_argument("--limit", type=int, default=10)
+    gs.set_defaults(func=cmd_graph_similar_stocks)
+
+    gw = graph_sub.add_parser(
+        "theme-winners", help="Win rate per theme over the last N weeks"
+    )
+    gw.add_argument("--weeks", type=int, default=12)
+    gw.add_argument("--limit", type=int, default=20)
+    gw.set_defaults(func=cmd_graph_theme_winners)
 
     # --- predict ---
     predict = sub.add_parser("predict", help="Prediction CRUD")

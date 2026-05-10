@@ -1,0 +1,40 @@
+# Neo4j Community Edition for Stage 7-B graph store.
+#
+# Start:  docker compose up -d neo4j
+# Stop:   docker compose down
+# Logs:   docker compose logs -f neo4j
+#
+# First-time setup:
+#   1. Set NEO4J_PASSWORD in .env (matched by stock-cli graph-* commands).
+#   2. Run `docker compose up -d neo4j`.
+#   3. Browse http://localhost:7474 to verify; default user is `neo4j`.
+#   4. `bin/stock-cli graph init` creates indexes + constraints.
+
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: stock-expectation-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"  # HTTP / browser UI
+      - "7687:7687"  # Bolt protocol
+    environment:
+      # Username is fixed at "neo4j" for community edition.
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env or shell}"
+      # Memory tuning suitable for a single-node dev workload.
+      NEO4J_server_memory_heap_initial__size: "512m"
+      NEO4J_server_memory_heap_max__size: "1G"
+      NEO4J_server_memory_pagecache_size: "512m"
+      # Allow APOC procedures (helpful for batch ingest).
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+      - ./data/neo4j/import:/var/lib/neo4j/import
+      - ./data/neo4j/plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
