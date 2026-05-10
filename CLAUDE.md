@@ -138,6 +138,9 @@ crontab scheduler/crontab.example
 ## API Keys
 
 - `FMP_API_KEY` — Financial Modeling Prep (optional, free tier 250 calls/day)
+- `FINNHUB_API_KEY` — US news headlines (optional, free 60 req/min) — used by `stock-cli news --market US`
+- `ALPHA_VANTAGE_API_KEY` — US news sentiment scores (optional, free 25/day) — merged into Finnhub items by URL match
+- `OPEN_DART_API_KEY` — KR regulatory disclosures (optional, free) — used by `stock-cli disclosure`. First call downloads the corp_code mapping to `data/dart_corp_codes.csv`.
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — for Telegram delivery
 - `ANTHROPIC_API_KEY` — only needed with `--mode api`
 
