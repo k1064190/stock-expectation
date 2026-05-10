@@ -41,6 +41,7 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
+sys.path.insert(0, str(PROJECT_ROOT / "mcp-memory-store"))
 
 from models import (
     Prediction,
@@ -435,6 +436,134 @@ def cmd_health(args) -> int:
             "kr": kr.is_healthy(),
         }
     )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Memory commands (Stage 7-A: mem0 layer)
+# ---------------------------------------------------------------------------
+
+
+def _memory_store():
+    """Lazy-import the MemoryStore. Returns the instance or prints a hint and
+    raises ``SystemExit`` if the ``memory`` extra is not installed.
+    """
+    try:
+        from client import MemoryStore  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json(
+            {
+                "error": "mcp-memory-store module unreadable",
+                "hint": "ensure mcp-memory-store/ is on sys.path (it is by default)",
+            }
+        )
+        raise SystemExit(1)
+    return MemoryStore()
+
+
+def cmd_memory_search(args) -> int:
+    """Semantic search within a memory category."""
+    try:
+        from schemas import CATEGORIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-memory-store unavailable"})
+        return 1
+    if args.category not in CATEGORIES:
+        _print_json(
+            {"error": f"unknown category {args.category!r}", "valid": list(CATEGORIES)}
+        )
+        return 1
+    store = _memory_store()
+    try:
+        hits = store.search(args.query, category=args.category, limit=args.limit)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json(
+        {
+            "query": args.query,
+            "category": args.category,
+            "count": len(hits),
+            "hits": [
+                {
+                    "memory": h.memory,
+                    "score": h.score,
+                    "metadata": h.metadata,
+                    "memory_id": h.memory_id,
+                }
+                for h in hits
+            ],
+        }
+    )
+    return 0
+
+
+def cmd_memory_add(args) -> int:
+    """Add a memory record. ``--content`` is the embedded text;
+    ``--metadata-json`` is a JSON string for filterable metadata.
+    """
+    try:
+        from schemas import MemoryRecord  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-memory-store unavailable"})
+        return 1
+
+    metadata: dict = {}
+    if args.metadata_json:
+        try:
+            metadata = json.loads(args.metadata_json)
+        except json.JSONDecodeError as exc:
+            _print_json({"error": f"--metadata-json invalid: {exc}"})
+            return 1
+
+    store = _memory_store()
+    try:
+        memory_id = store.add(
+            MemoryRecord(
+                category=args.category, content=args.content, metadata=metadata
+            )
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json({"memory_id": memory_id, "category": args.category})
+    return 0
+
+
+def cmd_memory_stats(args) -> int:
+    """Return per-category memory counts."""
+    store = _memory_store()
+    try:
+        counts = store.stats()
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json(
+        {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "counts": counts,
+        }
+    )
+    return 0
+
+
+def cmd_memory_purge(args) -> int:
+    """Drop all memories in a category. Requires ``--yes`` to actually run."""
+    if not args.yes:
+        _print_json(
+            {
+                "error": "purge is destructive",
+                "hint": f"re-run with --yes to drop all memories in {args.category!r}",
+            }
+        )
+        return 1
+    store = _memory_store()
+    try:
+        deleted = store.purge(args.category)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json({"category": args.category, "deleted": deleted})
     return 0
 
 
@@ -1167,6 +1296,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--limit", type=int, default=30)
     p.set_defaults(func=cmd_disclosure)
+
+    # --- memory (Stage 7-A: mem0 semantic memory) ---
+    memory = sub.add_parser(
+        "memory",
+        help="Semantic memory layer (mem0 + Qdrant). Requires `uv sync --extra memory`.",
+    )
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+
+    ms = memory_sub.add_parser("search", help="Semantic search within a category")
+    ms.add_argument("query", help="Free-text query (will be embedded)")
+    ms.add_argument(
+        "--category",
+        required=True,
+        help="One of: predictions, news_events, themes, outcomes, transmission_chains",
+    )
+    ms.add_argument("--limit", type=int, default=5)
+    ms.set_defaults(func=cmd_memory_search)
+
+    ma = memory_sub.add_parser("add", help="Add a memory record")
+    ma.add_argument("--category", required=True)
+    ma.add_argument("--content", required=True, help="Text/JSON to embed")
+    ma.add_argument(
+        "--metadata-json",
+        default="",
+        help='JSON string of filterable metadata (e.g. {"ticker": "NVDA"})',
+    )
+    ma.set_defaults(func=cmd_memory_add)
+
+    mt = memory_sub.add_parser("stats", help="Per-category memory counts")
+    mt.set_defaults(func=cmd_memory_stats)
+
+    mp = memory_sub.add_parser(
+        "purge", help="Drop all memories in a category (destructive)"
+    )
+    mp.add_argument("--category", required=True)
+    mp.add_argument("--yes", action="store_true", help="Confirm destructive operation")
+    mp.set_defaults(func=cmd_memory_purge)
 
     # --- predict ---
     predict = sub.add_parser("predict", help="Prediction CRUD")
