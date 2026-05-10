@@ -19,12 +19,18 @@ api = [
     # Only needed for scheduler's --mode api (Anthropic API direct calls)
     "anthropic>=0.80",
 ]
+skills = [
+    # Only needed for running imported skill scripts directly
+    "jsonschema",
+    "pyyaml",
+    "scipy>=1.11,<2",
+]
 
 [project.scripts]
 stock-cli = "stock_cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "mcp-market-data/tests", "mcp-prediction-store/tests", "scheduler/tests"]
+testpaths = ["tests", "mcp-market-data/tests", "mcp-prediction-store/tests", "scheduler/tests", "portfolio/tests"]
 asyncio_mode = "auto"
 markers = [
     "network: tests that require network access (deselect with '-m not network')",
@@ -32,6 +38,7 @@ markers = [
 
 [tool.setuptools]
 py-modules = ["stock_cli"]
+packages = ["portfolio"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

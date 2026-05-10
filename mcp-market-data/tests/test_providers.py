@@ -80,6 +80,165 @@ def test_kr_normalize_ticker():
     assert kr._normalize_ticker("005930") == "005930"
 
 
+# --- Unit tests for KR fundamentals column resolution ---
+
+import pandas as pd
+
+
+def _make_fundamental_row(columns: list[str], values: list) -> pd.Series:
+    """Build a minimal pandas Series mimicking one row of a fundamentals DataFrame."""
+    return pd.Series(dict(zip(columns, values)))
+
+
+def test_extract_fundamentals_primary_columns():
+    """Primary column set PER/PBR/DIV is recognised."""
+    row = _make_fundamental_row(["PER", "PBR", "DIV", "EPS"], [15.2, 1.8, 2.5, 1000])
+    result = KoreanMarketProvider._extract_fundamentals_from_row(row, "005930", "Samsung")
+    assert result is not None
+    assert result.pe_ratio == pytest.approx(15.2)
+    assert result.pb_ratio == pytest.approx(1.8)
+    assert result.dividend_yield == pytest.approx(2.5)
+
+
+def test_extract_fundamentals_korean_div_column():
+    """Alternative column set PER/PBR/배당수익률 is recognised."""
+    row = _make_fundamental_row(["PER", "PBR", "배당수익률"], [10.0, 1.1, 3.0])
+    result = KoreanMarketProvider._extract_fundamentals_from_row(row, "000660", "SK Hynix")
+    assert result is not None
+    assert result.dividend_yield == pytest.approx(3.0)
+
+
+def test_extract_fundamentals_lowercase_columns():
+    """Lowercase column set per/pbr/div is recognised."""
+    row = _make_fundamental_row(["per", "pbr", "div"], [8.5, 0.9, 1.2])
+    result = KoreanMarketProvider._extract_fundamentals_from_row(row, "035420", "Naver")
+    assert result is not None
+    assert result.pe_ratio == pytest.approx(8.5)
+
+
+def test_extract_fundamentals_zero_values_become_none():
+    """Zero values for PER/PBR/DIV are mapped to None (zero is not meaningful)."""
+    row = _make_fundamental_row(["PER", "PBR", "DIV"], [0, 0, 0])
+    result = KoreanMarketProvider._extract_fundamentals_from_row(row, "005930", "Samsung")
+    assert result is not None
+    assert result.pe_ratio is None
+    assert result.pb_ratio is None
+    assert result.dividend_yield is None
+
+
+def test_extract_fundamentals_unknown_columns_returns_none():
+    """Unrecognised column set returns None so callers can fall back."""
+    row = _make_fundamental_row(["A", "B", "C"], [1, 2, 3])
+    result = KoreanMarketProvider._extract_fundamentals_from_row(row, "005930", "Samsung")
+    assert result is None
+
+
+# --- Unit tests for KR batch methods ---
+
+
+def test_get_price_history_batch_normalises_tickers(monkeypatch):
+    """Batch method normalises short ticker codes before fetching."""
+    kr = KoreanMarketProvider()
+    calls = []
+
+    def mock_get_price_history(ticker: str, days: int = 30):
+        calls.append(ticker)
+        return [OHLCV(date="2026-04-01", open=60000, high=61000, low=59000, close=60500, volume=10000)]
+
+    monkeypatch.setattr(kr, "get_price_history", mock_get_price_history)
+    results = kr.get_price_history_batch(["5930", "660"], days=5)
+
+    assert "005930" in results
+    assert "000660" in results
+    assert set(calls) == {"005930", "000660"}
+
+
+def test_get_price_history_batch_failed_ticker_returns_empty_list(monkeypatch):
+    """Batch returns empty list for a ticker whose fetch raises."""
+    kr = KoreanMarketProvider()
+
+    def mock_get_price_history(ticker: str, days: int = 30):
+        if ticker == "000001":
+            raise ValueError("no data")
+        return [OHLCV(date="2026-04-01", open=100, high=105, low=99, close=103, volume=500)]
+
+    monkeypatch.setattr(kr, "get_price_history", mock_get_price_history)
+    results = kr.get_price_history_batch(["005930", "000001"], days=5)
+
+    assert len(results["005930"]) == 1
+    assert results["000001"] == []
+
+
+def test_get_fundamentals_batch_uses_bulk_call(monkeypatch):
+    """Batch fundamentals extracts rows from a single bulk DataFrame."""
+    kr = KoreanMarketProvider()
+
+    bulk_df = pd.DataFrame(
+        {"PER": [15.0, 10.0], "PBR": [1.5, 0.8], "DIV": [2.0, 3.5]},
+        index=["005930", "000660"],
+    )
+
+    import providers.kr as kr_module
+
+    monkeypatch.setattr(
+        "providers.kr.KoreanMarketProvider.get_fundamentals_batch.__code__",
+        kr.get_fundamentals_batch.__code__,
+    )
+
+    # Patch pykrx inside the module's namespace via a fake module
+    class FakeKrxStock:
+        @staticmethod
+        def get_market_fundamental_by_ticker(date, market="ALL"):
+            return bulk_df
+
+        @staticmethod
+        def get_market_ticker_name(ticker):
+            return {"005930": "Samsung", "000660": "SK Hynix"}.get(ticker, "")
+
+    import sys
+    fake_pykrx = type(sys)("pykrx")
+    fake_pykrx.stock = FakeKrxStock
+    monkeypatch.setitem(sys.modules, "pykrx", fake_pykrx)
+    monkeypatch.setitem(sys.modules, "pykrx.stock", FakeKrxStock)
+
+    results = kr.get_fundamentals_batch(["005930", "000660"])
+
+    assert "005930" in results
+    assert "000660" in results
+    assert results["005930"].pe_ratio == pytest.approx(15.0)
+    assert results["000660"].dividend_yield == pytest.approx(3.5)
+
+
+def test_get_fundamentals_batch_falls_back_on_bulk_failure(monkeypatch):
+    """When bulk call raises, batch falls back to per-ticker get_fundamentals."""
+    kr = KoreanMarketProvider()
+
+    import sys
+    fake_pykrx = type(sys)("pykrx")
+
+    class FakeKrxStockFail:
+        @staticmethod
+        def get_market_fundamental_by_ticker(date, market="ALL"):
+            raise RuntimeError("KRX down")
+
+    fake_pykrx.stock = FakeKrxStockFail
+    monkeypatch.setitem(sys.modules, "pykrx", fake_pykrx)
+    monkeypatch.setitem(sys.modules, "pykrx.stock", FakeKrxStockFail)
+
+    per_ticker_calls = []
+
+    def mock_get_fundamentals(ticker: str):
+        per_ticker_calls.append(ticker)
+        return StockFundamentals(ticker=ticker, name="Test", pe_ratio=9.9)
+
+    monkeypatch.setattr(kr, "get_fundamentals", mock_get_fundamentals)
+
+    results = kr.get_fundamentals_batch(["005930", "000660"])
+
+    assert set(per_ticker_calls) == {"005930", "000660"}
+    assert results["005930"].pe_ratio == pytest.approx(9.9)
+
+
 # --- Network tests (hit real APIs) ---
 
 
