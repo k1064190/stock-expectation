@@ -8,6 +8,7 @@ dependencies = [
     "finance-datareader>=0.9",
     "yfinance>=1.2",
     "httpx>=0.28",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]

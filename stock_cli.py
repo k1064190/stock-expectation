@@ -300,6 +300,131 @@ def cmd_horizon_metrics(args) -> int:
         return 1
 
 
+def cmd_horizon_metrics_batch(args) -> int:
+    """Compute horizon-metrics for multiple tickers in one call.
+
+    Mirrors ``price-batch`` — accepts comma-separated tickers, calls the
+    provider's bulk price-history fetch, then runs ``compute_horizon_metrics``
+    per ticker. Failures for individual tickers are reported in the result
+    object; the call itself succeeds as long as at least one ticker resolved.
+
+    Args:
+        args: Parsed CLI arguments with tickers, market, days.
+
+    Returns:
+        0 on success (≥1 ticker resolved), 1 on total failure.
+    """
+    try:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if not tickers:
+            _print_json({"error": "No tickers provided"})
+            return 1
+
+        provider = _get_provider(args.market)
+        bars_by_ticker = provider.get_price_history_batch(tickers, days=args.days)
+
+        market = args.market.upper()
+        results: dict[str, dict] = {}
+        for ticker, bars in bars_by_ticker.items():
+            display = ticker.upper() if market == "US" else ticker.zfill(6)
+            if not bars:
+                results[display] = {"error": "No price data"}
+                continue
+            try:
+                metrics = compute_horizon_metrics(
+                    bars=[asdict(b) for b in bars],
+                    ticker=display,
+                    market=market,
+                )
+                results[display] = asdict(metrics)
+            except Exception as exc:
+                results[display] = {"error": str(exc)}
+
+        any_ok = any("error" not in r for r in results.values())
+        _print_json(
+            {
+                "market": market,
+                "tickers_requested": len(tickers),
+                "tickers_with_data": sum(
+                    1 for r in results.values() if "error" not in r
+                ),
+                "results": results,
+            }
+        )
+        return 0 if any_ok else 1
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_news(args) -> int:
+    """Fetch recent news headlines for a ticker.
+
+    US: Finnhub primary + Alpha Vantage sentiment merge + FMP/yfinance
+    fallbacks. KR: Naver Finance scrape (no sentiment).
+
+    Args:
+        args: Parsed CLI arguments with ticker, market, limit, since_days.
+
+    Returns:
+        0 on success (even if 0 items returned), 1 on provider error.
+    """
+    try:
+        provider = _get_provider(args.market)
+        items = provider.get_news(
+            args.ticker, limit=args.limit, since_days=args.since_days
+        )
+        market = args.market.upper()
+        ticker_display = args.ticker.upper() if market == "US" else args.ticker.zfill(6)
+        _print_json(
+            {
+                "ticker": ticker_display,
+                "market": market,
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "since_days": args.since_days,
+                "count": len(items),
+                "items": [asdict(n) for n in items],
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_disclosure(args) -> int:
+    """Fetch recent KR regulatory disclosures from Open DART.
+
+    Requires ``OPEN_DART_API_KEY`` env var. On first call, downloads and
+    caches the corp_code mapping CSV at ``data/dart_corp_codes.csv``.
+
+    Args:
+        args: Parsed CLI arguments with ticker, since_days, limit.
+
+    Returns:
+        0 on success (even if 0 items), 1 on provider error.
+    """
+    try:
+        provider = KoreanMarketProvider()
+        items = provider.get_disclosures(
+            args.ticker, since_days=args.since_days, limit=args.limit
+        )
+        _print_json(
+            {
+                "ticker": args.ticker.zfill(6),
+                "market": "KR",
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "since_days": args.since_days,
+                "count": len(items),
+                "items": [asdict(d) for d in items],
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 def cmd_health(args) -> int:
     """Check if market data providers are responsive."""
     us = USMarketProvider()
@@ -999,6 +1124,49 @@ def build_parser() -> argparse.ArgumentParser:
         help="Calendar days of history to fetch (default 400 ~ 280 trading days)",
     )
     p.set_defaults(func=cmd_horizon_metrics)
+
+    # --- horizon-metrics-batch ---
+    p = sub.add_parser(
+        "horizon-metrics-batch",
+        help="Compute horizon-metrics for multiple tickers in one call",
+    )
+    p.add_argument("tickers", help="Comma-separated tickers (e.g. NVDA,AMD,AVGO)")
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of history per ticker (default 400)",
+    )
+    p.set_defaults(func=cmd_horizon_metrics_batch)
+
+    # --- news ---
+    p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")
+    p.add_argument("ticker", help="Stock ticker (US: NVDA, KR: 005930)")
+    p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    p.add_argument("--limit", type=int, default=10)
+    p.add_argument(
+        "--since-days",
+        type=int,
+        default=7,
+        help="Only items within last N days (default 7)",
+    )
+    p.set_defaults(func=cmd_news)
+
+    # --- disclosure (KR only) ---
+    p = sub.add_parser(
+        "disclosure",
+        help="Fetch recent regulatory disclosures from Open DART (KR only)",
+    )
+    p.add_argument("ticker", help="6-digit KRX ticker code (e.g. 005930)")
+    p.add_argument(
+        "--since-days",
+        type=int,
+        default=7,
+        help="Look-back window in days (default 7)",
+    )
+    p.add_argument("--limit", type=int, default=30)
+    p.set_defaults(func=cmd_disclosure)
 
     # --- predict ---
     predict = sub.add_parser("predict", help="Prediction CRUD")
