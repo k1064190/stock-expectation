@@ -28,3 +28,6 @@ Thumbs.db
 
 # Reference repo (large, clone separately)
 claude-trading-skills/
+
+# Cloned external skill repos (analyzed in docs/external-skills-analysis.md, not tracked)
+references/repos/
