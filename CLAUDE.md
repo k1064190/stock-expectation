@@ -144,28 +144,26 @@ crontab scheduler/crontab.example
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — for Telegram delivery
 - `ANTHROPIC_API_KEY` — only needed with `--mode api`
 
-## Imported Trading Skills
+## Skills
 
-51 trading skills imported from claude-trading-skills, organized into three tiers:
+After the Stage 3 cleanup, the active set is **31 skills** under `.claude/skills/`. Specialized or rarely-used skills (edge-pipeline, kanchi-dividend, US 13F, etc.) live under `.claude/skills/_archived/` and are not loaded by Claude Code — see `.claude/skills/_archived/README.md` to revive one. Eleven skills (downtrend-duration, strategy-pivot-designer, scenario-analyzer, dual-axis-skill-reviewer, etc.) were deleted outright.
 
-- **Pure logic skills** (29): Analysis frameworks, methodology guides, risk management
-  tools. Work for any market without data API calls. Includes edge-* pipeline (6 skills),
-  position-sizer, technical-analyst, backtest-expert, scenario-analyzer, etc.
-- **Adapted skills** (13): Originally US-only, adapted to use `bin/stock-cli` (price-batch,
-  fundamentals-batch) for dual US/KR support. Original FMP scripts preserved in scripts/
-  for reference. Includes vcp-screener, sector-analyst, macro-regime-detector, etc.
-- **US-only skills** (9): Depend on US-specific data sources (SEC 13F, FMP earnings,
-  Alpaca, FINVIZ, IRS). Marked with "US only" banner. No KR equivalent.
+### Active groups
 
-### Key multi-skill workflows
+- **Core flow** (4): `expect` (multi-horizon BUY/SELL recommender — see Stage 4 redesign), `daily-briefing`, `prediction-review`, `stock-research`
+- **Portfolio** (5): `portfolio-eval`, `portfolio-manager`, `position-sizer`, `toss-sync`, `trader-memory-core`
+- **Regime + breadth** (6): `macro-regime-detector`, `market-breadth-analyzer`, `uptrend-analyzer`, `market-top-detector`, `ftd-detector`, `sector-analyst`
+- **Screeners** (5): `vcp-screener`, `canslim-screener`, `finviz-screener`, `base-breakout-screener`, `earnings-trade-analyzer`
+- **Calendars + analysis** (5): `earnings-calendar`, `economic-calendar-fetcher`, `theme-detector`, `technical-analyst`, `stock-analysis`
+- **Korea-specific** (1): `korean-market-analysis`
+- **Meta + ops** (5): `backtest-expert`, `data-quality-checker`, `signal-postmortem` (revived for Stage 6), `retrospect`, `init`
 
-- **Edge Research Pipeline**: edge-candidate-agent → edge-hint-extractor →
-  edge-concept-synthesizer → edge-strategy-designer → edge-strategy-reviewer →
-  edge-pipeline-orchestrator
-- **Earnings Momentum**: earnings-trade-analyzer → pead-screener → technical-analyst
-- **Dividend Portfolio**: value-dividend-screener → dividend-growth-pullback-screener →
-  kanchi-dividend-sop
-- **Thesis-Driven Trading**: screener → trader-memory-core → position-sizer
+### Key multi-skill workflows (post-cleanup)
+
+- **Stock-by-stock prediction** (most common): `/expect` orchestrates `bin/stock-cli` (price/news/disclosure) + scoring + prediction logging, calling regime/breadth skills only as gates.
+- **Daily macro snapshot**: `daily-briefing` → `market-top-detector` + `ftd-detector` + `theme-detector` → predictions logged.
+- **Thesis-driven trading**: screener → `trader-memory-core` (lifecycle) → `position-sizer`.
+- **Weekly calibration loop** (Stage 6): `signal-postmortem` + `prediction-review` → weekly calibration report.
 
 ### Running imported skill scripts directly
 
