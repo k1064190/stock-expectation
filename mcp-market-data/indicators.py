@@ -52,6 +52,11 @@ class HorizonMetrics:
         cycle_risk_flag: True when return_1y > CYCLE_RISK_RETURN_1Y_THRESHOLD
             AND pct_from_52w_high > CYCLE_RISK_PCT_FROM_ATH_THRESHOLD. Both
             components must be non-None for the flag to be True.
+        vol_5d_avg: Mean trading volume over the last 5 bars. None if < 5 bars.
+        vol_50d_avg: Mean trading volume over the last 50 bars. None if < 50 bars.
+        vol_ratio: ``vol_5d_avg / vol_50d_avg``. None when either input is None
+            or when ``vol_50d_avg`` is zero (avoid division-by-zero). The
+            ``/expect`` Volume bucket awards +1.0 when this ratio > 1.3.
     """
 
     ticker: str
@@ -69,6 +74,9 @@ class HorizonMetrics:
     pct_from_52w_low: Optional[float]
     max_drawdown_1y: Optional[float]
     cycle_risk_flag: bool
+    vol_5d_avg: Optional[float]
+    vol_50d_avg: Optional[float]
+    vol_ratio: Optional[float]
 
 
 def compute_sma(closes: list[float], period: int) -> Optional[float]:
@@ -163,6 +171,32 @@ def _close(bar) -> float:
     return float(bar.close)
 
 
+def _volume(bar) -> float:
+    """Extract volume from a dict or OHLCV-like object."""
+    if isinstance(bar, dict):
+        return float(bar["volume"])
+    return float(bar.volume)
+
+
+def compute_avg_volume(volumes: list[float], period: int) -> Optional[float]:
+    """Arithmetic mean of the trailing ``period`` volume values.
+
+    Mirrors :func:`compute_sma` but for volume. Returns ``None`` when there
+    aren't enough bars so callers can distinguish "no data" from a real zero.
+
+    Args:
+        volumes: Trading volumes, oldest-first.
+        period: Window length (must be > 0).
+
+    Returns:
+        Trailing mean, or None if fewer than ``period`` bars.
+    """
+    if period <= 0 or len(volumes) < period:
+        return None
+    window = volumes[-period:]
+    return sum(window) / period
+
+
 def compute_horizon_metrics(
     bars: list,
     ticker: str,
@@ -221,6 +255,14 @@ def compute_horizon_metrics(
         and pct_from_52w_high > CYCLE_RISK_PCT_FROM_ATH_THRESHOLD
     )
 
+    volumes = [_volume(b) for b in bars]
+    vol_5d_avg = compute_avg_volume(volumes, 5)
+    vol_50d_avg = compute_avg_volume(volumes, 50)
+    if vol_5d_avg is None or vol_50d_avg is None or vol_50d_avg == 0:
+        vol_ratio: Optional[float] = None
+    else:
+        vol_ratio = vol_5d_avg / vol_50d_avg
+
     return HorizonMetrics(
         ticker=ticker,
         market=market,
@@ -237,4 +279,7 @@ def compute_horizon_metrics(
         pct_from_52w_low=pct_from_52w_low,
         max_drawdown_1y=max_dd_1y,
         cycle_risk_flag=cycle_risk_flag,
+        vol_5d_avg=vol_5d_avg,
+        vol_50d_avg=vol_50d_avg,
+        vol_ratio=vol_ratio,
     )

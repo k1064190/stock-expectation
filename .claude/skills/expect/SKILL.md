@@ -117,8 +117,8 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | | 0 < `return_1m` < +0.05 | +0.5 | |
 | | -0.10 < `return_1m` ≤ 0 | 0 | |
 | | `return_1m` ≤ -0.10 | -0.5 | |
-| **Volume** | last 5d avg volume > 50d avg × 1.3 | +1.0 | |
-| | else | 0 | |
+| **Volume** | `vol_ratio` > 1.3 (from horizon-metrics-batch; 5d avg / 50d avg) | +1.0 | |
+| | `vol_ratio` is None or ≤ 1.3 | 0 | None happens on listings with < 50 bars or all-zero windows |
 | **Cycle** | `pct_from_52w_high` ≥ -0.10 | +1.0 | within 10% of 52-week high |
 | | `max_drawdown_1y` ≤ -0.25 | -1.0 | |
 | | else | 0 | |

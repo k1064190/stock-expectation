@@ -16,8 +16,16 @@ from indicators import (
 )
 
 
-def _bars(closes: list[float]) -> list[dict]:
-    """Wrap a list of closes in minimal OHLCV dicts (oldest-first)."""
+def _bars(closes: list[float], volumes: list[int] | None = None) -> list[dict]:
+    """Wrap a list of closes (and optional volumes) in OHLCV dicts.
+
+    Bars are emitted oldest-first to match the contract of
+    ``compute_horizon_metrics``. ``volumes`` must be the same length as
+    ``closes`` when supplied; otherwise every bar gets a constant 1M volume.
+    """
+    if volumes is None:
+        volumes = [1_000_000] * len(closes)
+    assert len(volumes) == len(closes), "volumes length must match closes"
     return [
         {
             "date": f"2025-{(i % 12) + 1:02d}-01",
@@ -25,9 +33,9 @@ def _bars(closes: list[float]) -> list[dict]:
             "high": c,
             "low": c,
             "close": c,
-            "volume": 1_000_000,
+            "volume": v,
         }
-        for i, c in enumerate(closes)
+        for i, (c, v) in enumerate(zip(closes, volumes))
     ]
 
 
@@ -127,3 +135,60 @@ def test_return_1w_computed_when_enough_bars():
     closes = [100.0] * 6 + [110.0]  # 7 bars total, last is 110, [-6] is 100
     metrics = compute_horizon_metrics(_bars(closes), ticker="X", market="US")
     assert metrics.return_1w == pytest.approx(0.10)
+
+
+# ---------------------------------------------------------------------------
+# Volume metrics — added so the /expect Volume point-table bucket has data
+# (previously the field was missing from horizon-metrics-batch output, so the
+# Volume component was silently 0 for every ticker — see E2E 2026-05-11).
+# ---------------------------------------------------------------------------
+
+
+def test_volume_metrics_present_when_enough_bars():
+    """50+ bars → vol_5d_avg, vol_50d_avg, vol_ratio all populated."""
+    closes = [100.0 + i for i in range(60)]
+    volumes = [1_000_000] * 55 + [2_000_000] * 5  # surge at the tail
+    metrics = compute_horizon_metrics(_bars(closes, volumes), ticker="X", market="US")
+    assert metrics.vol_5d_avg == pytest.approx(2_000_000.0)
+    # Last 50 bars: 45 × 1M + 5 × 2M  →  mean = (45 + 10) / 50 = 1.1M
+    assert metrics.vol_50d_avg == pytest.approx(1_100_000.0)
+    assert metrics.vol_ratio == pytest.approx(2_000_000.0 / 1_100_000.0)
+
+
+def test_volume_ratio_surge_above_threshold():
+    """A 2× surge in the last 5 days produces vol_ratio > 1.3 (the SKILL gate)."""
+    closes = [100.0] * 60
+    volumes = [1_000_000] * 55 + [3_000_000] * 5  # 3× surge
+    metrics = compute_horizon_metrics(_bars(closes, volumes), ticker="X", market="US")
+    assert metrics.vol_ratio is not None
+    assert metrics.vol_ratio > 1.3  # would award +1.0 in the expect point table
+
+
+def test_volume_metrics_none_when_under_50_bars():
+    """Fewer than 50 bars → vol_50d_avg and vol_ratio None (vol_5d still OK)."""
+    closes = [100.0 + i for i in range(30)]
+    metrics = compute_horizon_metrics(_bars(closes), ticker="X", market="US")
+    assert metrics.vol_5d_avg == pytest.approx(1_000_000.0)
+    assert metrics.vol_50d_avg is None
+    assert metrics.vol_ratio is None
+
+
+def test_volume_metrics_none_when_under_5_bars():
+    """Fewer than 5 bars → all three volume fields None."""
+    closes = [100.0, 101.0, 102.0]
+    metrics = compute_horizon_metrics(_bars(closes), ticker="X", market="US")
+    assert metrics.vol_5d_avg is None
+    assert metrics.vol_50d_avg is None
+    assert metrics.vol_ratio is None
+
+
+def test_volume_zero_avg_returns_none_ratio():
+    """If 50-day average is 0, ratio must be None (not ZeroDivisionError)."""
+    closes = [100.0 + i for i in range(60)]
+    # Last 50 bars all zero volume; last 5 nonzero — the 50d average covers
+    # the *last* 50 bars (which includes the tail-5), so we use a layout
+    # where bars[-50:-5] are zero and the tail is nonzero.
+    volumes = [0] * 55 + [0] * 5  # all zero in the last-50 window
+    metrics = compute_horizon_metrics(_bars(closes, volumes), ticker="X", market="US")
+    assert metrics.vol_50d_avg == 0.0
+    assert metrics.vol_ratio is None  # would have been ZeroDivisionError otherwise
