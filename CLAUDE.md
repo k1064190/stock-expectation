@@ -2,11 +2,12 @@
 
 Stock prediction system with track record for US and Korean markets.
 
-> **Active feature branch:** `feature/expect-redesign` (PR #2). For a full
-> orientation including stage outcomes, test inventory, code-review history,
-> known issues, the operator runbook, and pending decision points, read
-> [`docs/HANDOFF.md`](docs/HANDOFF.md) **first**. It is the single
-> source-of-truth for picking up the work in a fresh session.
+> **Status:** The `/expect` redesign was merged into `master` via [PR #2](https://github.com/k1064190/stock-expectation/pull/2)
+> on 2026-05-11 (squash commit `d2ef519`). For full background on the staged work — stage outcomes, test inventory,
+> code-review history, known issues, operator runbook, and pending decision points — read
+> [`docs/HANDOFF.md`](docs/HANDOFF.md). The live-E2E follow-up patches are documented in
+> [`docs/stage-4.1/e2e-followups.md`](docs/stage-4.1/e2e-followups.md). Remaining decision points
+> (Stage 7-A/7-B live verification, PyKRX xfail, skill catalog second pass) are in HANDOFF.md §11.
 
 ## Architecture
 

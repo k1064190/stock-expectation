@@ -1,9 +1,15 @@
 # Handoff — `/expect` redesign branch
 
-**Branch:** `feature/expect-redesign`
-**PR:** [#2](https://github.com/k1064190/stock-expectation/pull/2)
-**HEAD commit:** `6d6d56c` (round-2 codex review fixes)
-**Status:** Implementation complete. Live verification done for Stages 1–6 + 7-A/7-B (mocked); 7-A/7-B end-to-end with the heavy deps deferred until Doctor Cho runs `uv sync --extra memory` / `docker compose up -d neo4j`.
+> **🟢 MERGED 2026-05-11.** PR [#2](https://github.com/k1064190/stock-expectation/pull/2) was squash-merged into `master`
+> as commit `d2ef519`. Stage 4.1 follow-up patches (live-E2E findings) are documented separately in
+> [`docs/stage-4.1/e2e-followups.md`](stage-4.1/e2e-followups.md). This document remains as the historical record
+> of the redesign work and as the orientation pointer for §11's remaining decision points (Stage 7-A/7-B live
+> verification, PyKRX xfail, skill catalog second pass).
+
+**Branch:** `feature/expect-redesign` (merged; local copy may still exist as a safety net)
+**PR:** [#2](https://github.com/k1064190/stock-expectation/pull/2) — squashed into master as `d2ef519`
+**Pre-squash HEAD:** `93fa077` (Stage 4.1 review-loop response — contract pin + stage doc)
+**Status:** Implementation complete and merged. Live `/expect` E2E run on 2026-05-11 validated the pipeline (10/10 §11.D checklist) and surfaced 4 defects that were patched in Stage 4.1. Stage 7-A/7-B end-to-end with the heavy deps still deferred until Doctor Cho runs `uv sync --extra memory` / `docker compose up -d neo4j`.
 
 This is the single document a future session should read first. Every other doc in `docs/` is referenced from here.
 
@@ -22,11 +28,13 @@ The `/expect` skill went from "qualitative LLM-driven multi-horizon forecaster" 
 
 Around it: the skill catalog was pruned (59 → 31 active + 19 archived + 11 deleted), a weekly calibration aggregator was added, a mem0-backed memory layer and a Neo4j-backed graph layer were scaffolded behind `--extra` flags, and `.env` is now auto-loaded at every entry point.
 
-**Test counts:** 200 unit + 22 network passing (1 pre-existing PyKRX failure unrelated to this branch).
+**Test counts (post Stage 4.1):** 207 unit + 23 network passing (1 pre-existing PyKRX failure unrelated to this branch; was 200/22 pre-Stage-4.1).
 
 ---
 
 ## 2. Branch + PR
+
+> **Post-merge note:** All 27 branch commits — the 22 listed below plus this HANDOFF commit (`bf27583`) plus 5 Stage 4.1 follow-ups (`0a9696a` chore: track indicators.py, `0e5507e` feat: volume metric (A1), `85518c0` feat: AV diagnostic (B4), `7266e4a` docs: schema discipline (A3), `93fa077` docs+test: review-loop response) — were squashed into master as `d2ef519` on 2026-05-11 03:45 UTC. The list below is the original pre-Stage-4.1 snapshot kept for historical reference.
 
 ### Commits ahead of master (22 total)
 
@@ -80,6 +88,7 @@ PR #2 has the pre-PR reviewer hook approved. The hook is configured to run on ev
 | 6 | ✅ | [stage-6/weekly-calibration.md](stage-6/weekly-calibration.md) | `scheduler/weekly_calibration.py` + cron entry; 9 unit tests |
 | 7-A | ✅ (mocked) | [stage-7/a-memory-layer.md](stage-7/a-memory-layer.md) | mem0 + Qdrant + sentence-transformers behind `--extra memory`; 11 mocked tests |
 | 7-B | ✅ (mocked) | [stage-7/b-graph-layer.md](stage-7/b-graph-layer.md) | Neo4j Community via `compose.yml` + `mcp-graph-store/` behind `--extra graph`; 8 mocked tests |
+| 4.1 | ✅ | [stage-4.1/e2e-followups.md](stage-4.1/e2e-followups.md) | Live-E2E follow-ups (post-PR): volume metric (A1), AV sentiment URL-match diagnostic (B4), SKILL.md sidecar schema discipline (A3), untracked `indicators.py` chore; 7 new tests + 1 contract pin expansion |
 
 **Borrowed external patterns** (full analysis in [external-skills-analysis.md](external-skills-analysis.md)):
 - Explicit point-table scoring → staskh `scanner-bullish`
