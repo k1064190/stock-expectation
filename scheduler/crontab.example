@@ -36,6 +36,11 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # No LLM needed, pure Python price check + DB update
 0 15 * * 1-5 cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
 
+# Weekly calibration aggregator — Sunday 22:00 KST (13:00 UTC)
+# Pure Python; reads predictions.db, writes reports/weekly-calibration-YYYY-MM-DD.md
+# and rolls state/calibration-trend.json (last 12 weeks).
+0 13 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
+
 # === Anthropic API mode (alternative) ===
 # Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
 # 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1

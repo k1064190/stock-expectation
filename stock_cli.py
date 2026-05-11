@@ -41,6 +41,20 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
+sys.path.insert(0, str(PROJECT_ROOT / "mcp-memory-store"))
+sys.path.insert(0, str(PROJECT_ROOT / "mcp-graph-store"))
+
+# Auto-load API keys from .env at the project root. The file is gitignored,
+# so committing this call is safe — it just reads whatever the user has
+# placed there. Existing env vars take precedence over .env values.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    # python-dotenv is a base dependency, but tolerate its absence so
+    # downstream callers can still import this module in stripped envs.
+    pass
 
 from models import (
     Prediction,
@@ -81,6 +95,22 @@ from portfolio.evaluator import (
     compute_advice,
 )
 from portfolio.toss_sync import fetch_toss_positions, reconcile, tossctl_available
+
+
+def _positive_int(value: str) -> int:
+    """argparse type for arguments that must be a positive integer.
+
+    Catches `--limit 0`, `--limit -1`, `--since-days 0` etc. before they
+    reach the provider, where negative slicing or zero-window queries
+    would silently return wrong results.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {value!r}")
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {parsed}")
+    return parsed
 
 
 def _print_json(data) -> None:
@@ -300,6 +330,131 @@ def cmd_horizon_metrics(args) -> int:
         return 1
 
 
+def cmd_horizon_metrics_batch(args) -> int:
+    """Compute horizon-metrics for multiple tickers in one call.
+
+    Mirrors ``price-batch`` — accepts comma-separated tickers, calls the
+    provider's bulk price-history fetch, then runs ``compute_horizon_metrics``
+    per ticker. Failures for individual tickers are reported in the result
+    object; the call itself succeeds as long as at least one ticker resolved.
+
+    Args:
+        args: Parsed CLI arguments with tickers, market, days.
+
+    Returns:
+        0 on success (≥1 ticker resolved), 1 on total failure.
+    """
+    try:
+        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+        if not tickers:
+            _print_json({"error": "No tickers provided"})
+            return 1
+
+        provider = _get_provider(args.market)
+        bars_by_ticker = provider.get_price_history_batch(tickers, days=args.days)
+
+        market = args.market.upper()
+        results: dict[str, dict] = {}
+        for ticker, bars in bars_by_ticker.items():
+            display = ticker.upper() if market == "US" else ticker.zfill(6)
+            if not bars:
+                results[display] = {"error": "No price data"}
+                continue
+            try:
+                metrics = compute_horizon_metrics(
+                    bars=[asdict(b) for b in bars],
+                    ticker=display,
+                    market=market,
+                )
+                results[display] = asdict(metrics)
+            except Exception as exc:
+                results[display] = {"error": str(exc)}
+
+        any_ok = any("error" not in r for r in results.values())
+        _print_json(
+            {
+                "market": market,
+                "tickers_requested": len(tickers),
+                "tickers_with_data": sum(
+                    1 for r in results.values() if "error" not in r
+                ),
+                "results": results,
+            }
+        )
+        return 0 if any_ok else 1
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_news(args) -> int:
+    """Fetch recent news headlines for a ticker.
+
+    US: Finnhub primary + Alpha Vantage sentiment merge + FMP/yfinance
+    fallbacks. KR: Naver Finance scrape (no sentiment).
+
+    Args:
+        args: Parsed CLI arguments with ticker, market, limit, since_days.
+
+    Returns:
+        0 on success (even if 0 items returned), 1 on provider error.
+    """
+    try:
+        provider = _get_provider(args.market)
+        items = provider.get_news(
+            args.ticker, limit=args.limit, since_days=args.since_days
+        )
+        market = args.market.upper()
+        ticker_display = args.ticker.upper() if market == "US" else args.ticker.zfill(6)
+        _print_json(
+            {
+                "ticker": ticker_display,
+                "market": market,
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "since_days": args.since_days,
+                "count": len(items),
+                "items": [asdict(n) for n in items],
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_disclosure(args) -> int:
+    """Fetch recent KR regulatory disclosures from Open DART.
+
+    Requires ``OPEN_DART_API_KEY`` env var. On first call, downloads and
+    caches the corp_code mapping CSV at ``data/dart_corp_codes.csv``.
+
+    Args:
+        args: Parsed CLI arguments with ticker, since_days, limit.
+
+    Returns:
+        0 on success (even if 0 items), 1 on provider error.
+    """
+    try:
+        provider = KoreanMarketProvider()
+        items = provider.get_disclosures(
+            args.ticker, since_days=args.since_days, limit=args.limit
+        )
+        _print_json(
+            {
+                "ticker": args.ticker.zfill(6),
+                "market": "KR",
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "since_days": args.since_days,
+                "count": len(items),
+                "items": [asdict(d) for d in items],
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 def cmd_health(args) -> int:
     """Check if market data providers are responsive."""
     us = USMarketProvider()
@@ -310,6 +465,242 @@ def cmd_health(args) -> int:
             "kr": kr.is_healthy(),
         }
     )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Memory commands (Stage 7-A: mem0 layer)
+# ---------------------------------------------------------------------------
+
+
+def _memory_store():
+    """Lazy-import the MemoryStore. Returns the instance or prints a hint and
+    raises ``SystemExit`` if the ``memory`` extra is not installed.
+    """
+    try:
+        from client import MemoryStore  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json(
+            {
+                "error": "mcp-memory-store module unreadable",
+                "hint": "ensure mcp-memory-store/ is on sys.path (it is by default)",
+            }
+        )
+        raise SystemExit(1)
+    return MemoryStore()
+
+
+def cmd_memory_search(args) -> int:
+    """Semantic search within a memory category."""
+    try:
+        from schemas import CATEGORIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-memory-store unavailable"})
+        return 1
+    if args.category not in CATEGORIES:
+        _print_json(
+            {"error": f"unknown category {args.category!r}", "valid": list(CATEGORIES)}
+        )
+        return 1
+    store = _memory_store()
+    try:
+        hits = store.search(args.query, category=args.category, limit=args.limit)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json(
+        {
+            "query": args.query,
+            "category": args.category,
+            "count": len(hits),
+            "hits": [
+                {
+                    "memory": h.memory,
+                    "score": h.score,
+                    "metadata": h.metadata,
+                    "memory_id": h.memory_id,
+                }
+                for h in hits
+            ],
+        }
+    )
+    return 0
+
+
+def cmd_memory_add(args) -> int:
+    """Add a memory record. ``--content`` is the embedded text;
+    ``--metadata-json`` is a JSON string for filterable metadata.
+    """
+    try:
+        from schemas import MemoryRecord  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-memory-store unavailable"})
+        return 1
+
+    metadata: dict = {}
+    if args.metadata_json:
+        try:
+            metadata = json.loads(args.metadata_json)
+        except json.JSONDecodeError as exc:
+            _print_json({"error": f"--metadata-json invalid: {exc}"})
+            return 1
+
+    store = _memory_store()
+    try:
+        memory_id = store.add(
+            MemoryRecord(
+                category=args.category, content=args.content, metadata=metadata
+            )
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json({"memory_id": memory_id, "category": args.category})
+    return 0
+
+
+def cmd_memory_stats(args) -> int:
+    """Return per-category memory counts."""
+    store = _memory_store()
+    try:
+        counts = store.stats()
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json(
+        {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "counts": counts,
+        }
+    )
+    return 0
+
+
+def cmd_memory_purge(args) -> int:
+    """Drop all memories in a category. Requires ``--yes`` to actually run."""
+    if not args.yes:
+        _print_json(
+            {
+                "error": "purge is destructive",
+                "hint": f"re-run with --yes to drop all memories in {args.category!r}",
+            }
+        )
+        return 1
+    store = _memory_store()
+    try:
+        deleted = store.purge(args.category)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    _print_json({"category": args.category, "deleted": deleted})
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Graph commands (Stage 7-B: Neo4j Community)
+# ---------------------------------------------------------------------------
+
+
+def _graph_driver():
+    """Lazy-load the GraphDriver. Errors print as JSON and exit non-zero."""
+    try:
+        from driver import GraphDriver  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        raise SystemExit(1)
+    return GraphDriver()
+
+
+def cmd_graph_init(args) -> int:
+    """Create constraints + indexes. Idempotent."""
+    try:
+        from cypher import INIT_STATEMENTS  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        applied = driver.run_many(list(INIT_STATEMENTS))
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"statements_total": len(INIT_STATEMENTS), "applied": applied})
+    return 0
+
+
+def cmd_graph_query(args) -> int:
+    """Run a raw Cypher statement. Use sparingly; prefer canned shortcuts."""
+    driver = _graph_driver()
+    params = {}
+    if args.params_json:
+        try:
+            params = json.loads(args.params_json)
+        except json.JSONDecodeError as exc:
+            _print_json({"error": f"--params-json invalid: {exc}"})
+            return 1
+    try:
+        rows = driver.run(args.cypher, **params)
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json(
+        {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "count": len(rows),
+            "rows": rows,
+        }
+    )
+    return 0
+
+
+def cmd_graph_similar_stocks(args) -> int:
+    """Find stocks sharing themes with the given ticker."""
+    try:
+        from cypher import CANNED_QUERIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        rows = driver.run(
+            CANNED_QUERIES["similar_stocks_by_theme"],
+            ticker=args.ticker,
+            market=args.market.upper(),
+            limit=args.limit,
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"ticker": args.ticker, "market": args.market.upper(), "results": rows})
+    return 0
+
+
+def cmd_graph_theme_winners(args) -> int:
+    """Win rate per theme over the last N weeks."""
+    try:
+        from cypher import CANNED_QUERIES  # type: ignore[import-not-found]
+    except ImportError:
+        _print_json({"error": "mcp-graph-store unavailable"})
+        return 1
+    driver = _graph_driver()
+    try:
+        rows = driver.run(
+            CANNED_QUERIES["theme_winners_recent"],
+            weeks=args.weeks,
+            limit=args.limit,
+        )
+    except Exception as exc:
+        _print_json({"error": str(exc)})
+        return 1
+    finally:
+        driver.close()
+    _print_json({"weeks": args.weeks, "results": rows})
     return 0
 
 
@@ -999,6 +1390,123 @@ def build_parser() -> argparse.ArgumentParser:
         help="Calendar days of history to fetch (default 400 ~ 280 trading days)",
     )
     p.set_defaults(func=cmd_horizon_metrics)
+
+    # --- horizon-metrics-batch ---
+    p = sub.add_parser(
+        "horizon-metrics-batch",
+        help="Compute horizon-metrics for multiple tickers in one call",
+    )
+    p.add_argument("tickers", help="Comma-separated tickers (e.g. NVDA,AMD,AVGO)")
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of history per ticker (default 400)",
+    )
+    p.set_defaults(func=cmd_horizon_metrics_batch)
+
+    # --- news ---
+    p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")
+    p.add_argument("ticker", help="Stock ticker (US: NVDA, KR: 005930)")
+    p.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    p.add_argument("--limit", type=_positive_int, default=10)
+    p.add_argument(
+        "--since-days",
+        type=_positive_int,
+        default=7,
+        help="Only items within last N days (default 7)",
+    )
+    p.set_defaults(func=cmd_news)
+
+    # --- disclosure (KR only) ---
+    p = sub.add_parser(
+        "disclosure",
+        help="Fetch recent regulatory disclosures from Open DART (KR only)",
+    )
+    p.add_argument("ticker", help="6-digit KRX ticker code (e.g. 005930)")
+    p.add_argument(
+        "--since-days",
+        type=_positive_int,
+        default=7,
+        help="Look-back window in days (default 7)",
+    )
+    p.add_argument("--limit", type=_positive_int, default=30)
+    p.set_defaults(func=cmd_disclosure)
+
+    # --- memory (Stage 7-A: mem0 semantic memory) ---
+    memory = sub.add_parser(
+        "memory",
+        help="Semantic memory layer (mem0 + Qdrant). Requires `uv sync --extra memory`.",
+    )
+    memory_sub = memory.add_subparsers(dest="memory_command", required=True)
+
+    ms = memory_sub.add_parser("search", help="Semantic search within a category")
+    ms.add_argument("query", help="Free-text query (will be embedded)")
+    ms.add_argument(
+        "--category",
+        required=True,
+        help="One of: predictions, news_events, themes, outcomes, transmission_chains",
+    )
+    ms.add_argument("--limit", type=int, default=5)
+    ms.set_defaults(func=cmd_memory_search)
+
+    ma = memory_sub.add_parser("add", help="Add a memory record")
+    ma.add_argument("--category", required=True)
+    ma.add_argument("--content", required=True, help="Text/JSON to embed")
+    ma.add_argument(
+        "--metadata-json",
+        default="",
+        help='JSON string of filterable metadata (e.g. {"ticker": "NVDA"})',
+    )
+    ma.set_defaults(func=cmd_memory_add)
+
+    mt = memory_sub.add_parser("stats", help="Per-category memory counts")
+    mt.set_defaults(func=cmd_memory_stats)
+
+    mp = memory_sub.add_parser(
+        "purge", help="Drop all memories in a category (destructive)"
+    )
+    mp.add_argument("--category", required=True)
+    mp.add_argument("--yes", action="store_true", help="Confirm destructive operation")
+    mp.set_defaults(func=cmd_memory_purge)
+
+    # --- graph (Stage 7-B: Neo4j) ---
+    graph = sub.add_parser(
+        "graph",
+        help=(
+            "Graph layer (Neo4j Community). Requires `uv sync --extra graph` "
+            "and `docker compose up -d neo4j`."
+        ),
+    )
+    graph_sub = graph.add_subparsers(dest="graph_command", required=True)
+
+    gi = graph_sub.add_parser("init", help="Create constraints + indexes (idempotent)")
+    gi.set_defaults(func=cmd_graph_init)
+
+    gq = graph_sub.add_parser("query", help="Run a raw Cypher statement")
+    gq.add_argument("cypher", help="Cypher statement (use $param placeholders)")
+    gq.add_argument(
+        "--params-json",
+        default="",
+        help='JSON dict of parameters, e.g. {"ticker": "NVDA"}',
+    )
+    gq.set_defaults(func=cmd_graph_query)
+
+    gs = graph_sub.add_parser(
+        "similar-stocks", help="Find stocks sharing themes with the given ticker"
+    )
+    gs.add_argument("ticker")
+    gs.add_argument("--market", default="US", choices=["US", "KR", "us", "kr"])
+    gs.add_argument("--limit", type=int, default=10)
+    gs.set_defaults(func=cmd_graph_similar_stocks)
+
+    gw = graph_sub.add_parser(
+        "theme-winners", help="Win rate per theme over the last N weeks"
+    )
+    gw.add_argument("--weeks", type=int, default=12)
+    gw.add_argument("--limit", type=int, default=20)
+    gw.set_defaults(func=cmd_graph_theme_winners)
 
     # --- predict ---
     predict = sub.add_parser("predict", help="Prediction CRUD")

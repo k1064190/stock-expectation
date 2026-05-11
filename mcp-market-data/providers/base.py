@@ -76,13 +76,54 @@ class SectorData:
     change_1m: Optional[float] = None
 
 
+@dataclass
+class NewsItem:
+    """Single news headline for a ticker.
+
+    Args:
+        headline: Article title.
+        source: Publisher name (e.g. "Reuters", "MarketWatch", "한국경제").
+        date: ISO 8601 date of publication (YYYY-MM-DD or full timestamp).
+        url: Link to the original article.
+        sentiment_score: Sentiment in [-1.0, +1.0] when available
+            (Alpha Vantage is the only provider that supplies this in our stack).
+            None means the provider didn't return a score.
+        sentiment_label: Optional human label such as "Bullish", "Neutral",
+            "Bearish" when the provider attaches one.
+    """
+
+    headline: str
+    source: str
+    date: str
+    url: str
+    sentiment_score: Optional[float] = None
+    sentiment_label: Optional[str] = None
+
+
+@dataclass
+class Disclosure:
+    """Single Korean regulatory disclosure (Open DART).
+
+    Args:
+        rcept_no: DART receipt number (14-digit string).
+        report_nm: Report name (e.g. "분기보고서", "주요사항보고서(유상증자결정)").
+        flr_nm: Filer name (the company filing the report).
+        rcept_dt: Receipt date (YYYYMMDD).
+        url: Direct link to the report on dart.fss.or.kr.
+    """
+
+    rcept_no: str
+    report_nm: str
+    flr_nm: str
+    rcept_dt: str
+    url: str
+
+
 class MarketDataProvider(ABC):
     """Abstract base class for market data providers."""
 
     @abstractmethod
-    def get_price_history(
-        self, ticker: str, days: int = 30
-    ) -> list[OHLCV]:
+    def get_price_history(self, ticker: str, days: int = 30) -> list[OHLCV]:
         """Fetch OHLCV price history.
 
         Args:
@@ -115,6 +156,22 @@ class MarketDataProvider(ABC):
 
         Returns:
             StockFundamentals or None if unavailable.
+        """
+        ...
+
+    @abstractmethod
+    def get_news(
+        self, ticker: str, limit: int = 10, since_days: int = 7
+    ) -> list["NewsItem"]:
+        """Fetch recent news headlines for a ticker.
+
+        Args:
+            ticker: Stock ticker symbol (US: "NVDA", KR: 6-digit code).
+            limit: Maximum items to return.
+            since_days: Only return items published within the last N days.
+
+        Returns:
+            List of NewsItem, newest first. Empty list on failure or no news.
         """
         ...
 
@@ -162,7 +219,7 @@ def with_retry(func, max_attempts: int = 3, backoff_base: float = 1.0):
         except Exception as e:
             last_error = e
             if attempt < max_attempts - 1:
-                delay = backoff_base * (4 ** attempt)
+                delay = backoff_base * (4**attempt)
                 logger.warning(
                     "Attempt %d/%d failed: %s. Retrying in %.1fs",
                     attempt + 1,

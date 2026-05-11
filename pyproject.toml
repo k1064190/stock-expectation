@@ -8,6 +8,8 @@ dependencies = [
     "finance-datareader>=0.9",
     "yfinance>=1.2",
     "httpx>=0.28",
+    "beautifulsoup4>=4.12",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +26,16 @@ skills = [
     "jsonschema",
     "pyyaml",
     "scipy>=1.11,<2",
+]
+memory = [
+    # Stage 7-A: mem0 + Qdrant + sentence-transformers for the memory layer
+    "mem0ai>=0.1",
+    "qdrant-client>=1.9",
+    "sentence-transformers>=2.5",
+]
+graph = [
+    # Stage 7-B: Neo4j Community Edition driver
+    "neo4j>=5.20",
 ]
 
 [project.scripts]

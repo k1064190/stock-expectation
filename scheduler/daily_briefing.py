@@ -33,6 +33,14 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 
+# Auto-load .env for ANTHROPIC_API_KEY / FMP_API_KEY / Telegram credentials.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 from models import (
     Prediction,
     get_connection,
@@ -147,16 +155,22 @@ def get_track_record_context() -> str:
             return "No predictions closed yet. This is the first run."
 
         lines = [
-            f"Win rate: {record.win_rate:.0%} ({record.wins}W/{record.losses}L)"
-            if record.win_rate is not None
-            else "Win rate: N/A",
-            f"Avg return: {record.avg_return:+.1f}%"
-            if record.avg_return is not None
-            else "",
+            (
+                f"Win rate: {record.win_rate:.0%} ({record.wins}W/{record.losses}L)"
+                if record.win_rate is not None
+                else "Win rate: N/A"
+            ),
+            (
+                f"Avg return: {record.avg_return:+.1f}%"
+                if record.avg_return is not None
+                else ""
+            ),
             f"Current streak: {record.current_streak:+d}",
-            f"Brier score: {record.brier_score:.3f}"
-            if record.brier_score is not None
-            else "",
+            (
+                f"Brier score: {record.brier_score:.3f}"
+                if record.brier_score is not None
+                else ""
+            ),
         ]
 
         if calibration:
@@ -227,8 +241,8 @@ Rules:
 - Minimum confidence 0.55, maximum 0.85
 - Every prediction needs at least 2 signals
 - Target must be at least 2x stop distance
-- Timeframe: 1W for US stocks
-- Must actually call `bin/stock-cli predict create` for each pick
+- Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
+- Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick
 - Use --source LIVE (this is the automated scheduler, not interactive)
 
 After creating predictions, output the full briefing as markdown. Include a
@@ -259,7 +273,7 @@ Your recent track record (for calibration):
 {track_record}
 
 Rules:
-- Korean stocks default to 2W timeframe (lower liquidity)
+- Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y).
 - Minimum confidence 0.55, maximum 0.85
 - Stop-loss wider than US by ~20%
 - Target at least 2x stop distance
@@ -298,8 +312,10 @@ def call_claude_code(prompt: str) -> str:
     result = subprocess.run(
         [
             claude_path,
-            "-p", prompt,
-            "--output-format", "text",
+            "-p",
+            prompt,
+            "--output-format",
+            "text",
         ],
         capture_output=True,
         text=True,
@@ -494,7 +510,9 @@ def run_briefing(market: str, mode: str = "claude-code") -> None:
                 # No need to parse and log separately.
             else:
                 prompt = build_api_prompt(mkt)
-                logger.info("Calling Anthropic API for %s briefing (%d chars)", mkt, len(prompt))
+                logger.info(
+                    "Calling Anthropic API for %s briefing (%d chars)", mkt, len(prompt)
+                )
                 response = call_claude_api(prompt)
                 # In API mode, parse predictions from response and log manually
                 predictions = parse_predictions(response)

@@ -14,51 +14,58 @@ US 주식과 한국 주식의 방향(상승/하락/횡보)을 예측하고, 그 
 ## 시스템 구조
 
 ```
-┌─────────────────────────────────────────────────┐
-│              Claude Code (대화형)                  │
-│  "NVDA 분석해줘" / "오늘 브리핑" / "적중률 보여줘"     │
-│                                                   │
-│  .claude/skills/daily-briefing     → 일일 브리핑    │
-│  .claude/skills/stock-research     → 종목 심층 분석 │
-│  .claude/skills/korean-market-analysis → 한국 전문 │
-│  .claude/skills/prediction-review  → 트랙 레코드    │
-└──────────────────────┬──────────────────────────┘
-                       │ Bash 호출
-                       ▼
-┌─────────────────────────────────────────────────┐
-│             bin/stock-cli (uv run)                │
-│                                                   │
-│  price, fundamentals, search, health              │
-│  predict create / list / detail / cancel          │
-│  track-record, calibration                        │
-│                                                   │
-│  → JSON 출력                                       │
-└──────────┬──────────────────────┬────────────────┘
-           │                      │
-           ▼                      ▼
-┌──────────────────┐  ┌──────────────────────┐
-│ providers (py)   │  │ prediction store (py)│
-│                  │  │                      │
-│ US: yfinance/FMP │  │ Prediction schema    │
-│ KR: PyKRX/FDR    │  │ Metrics computation  │
-└────────┬─────────┘  └──────────┬───────────┘
-         │                       │
-         ▼                       ▼
-┌─────────────────────────────────────────────────┐
-│           SQLite (data/predictions.db)            │
-│  predictions 테이블 — 모든 예측과 결과 저장          │
-│  WAL 모드 — 동시 읽기/쓰기 지원                     │
-└──────────┬──────────────────────┬────────────────┘
-           ▲                      ▲
-           │                      │
-┌──────────┴─────────┐  ┌────────┴──────────┐
-│ daily_briefing.py  │  │ outcome_tracker.py│
-│ (cron, 07:00/21:00)│  │ (cron, 00:00)     │
-│                    │  │                   │
-│ claude -p 호출     │  │ 가격 조회          │
-│ → bin/stock-cli    │  │ → HIT/MISS 판정   │
-│ → Telegram 전송    │  │ → DB 업데이트      │
-└────────────────────┘  └───────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                   Claude Code (대화형)                      │
+│  "NVDA 분석해줘" / "오늘 브리핑" / "적중률 보여줘"             │
+│                                                            │
+│  .claude/skills/ (31개 활성 + _archived/19)                  │
+│  ├── 핵심 4개: expect, daily-briefing, stock-research,       │
+│  │            prediction-review                              │
+│  ├── 포트폴리오 5개: portfolio-eval, portfolio-manager,       │
+│  │                   position-sizer, toss-sync, ...          │
+│  ├── 레짐+브레드스 6개: macro-regime-detector,                │
+│  │                      market-breadth-analyzer, FTD, ...    │
+│  ├── 스크리너 5개: vcp, canslim, finviz, base-breakout, ...  │
+│  ├── 캘린더+분석 5개: earnings-calendar, theme-detector,      │
+│  │                    technical-analyst, stock-analysis, ...  │
+│  └── 메타+ops 6개: backtest-expert, signal-postmortem, ...   │
+└───────────────────────┬──────────────────────────────────┘
+                        │ Bash 호출
+                        ▼
+┌──────────────────────────────────────────────────────────┐
+│              bin/stock-cli (uv run)                        │
+│                                                            │
+│  price[-batch], fundamentals[-batch], search, health       │
+│  predict create / list / detail / cancel                   │
+│  track-record, calibration                                 │
+│                                                            │
+│  → JSON 출력                                                │
+└───────────┬──────────────────────┬───────────────────────┘
+            │                      │
+            ▼                      ▼
+┌───────────────────┐  ┌───────────────────────┐
+│  providers (py)   │  │  prediction store (py) │
+│                   │  │                        │
+│  US: yfinance/FMP │  │  Prediction schema     │
+│  KR: PyKRX/FDR    │  │  Metrics computation   │
+└─────────┬─────────┘  └───────────┬────────────┘
+          │                        │
+          ▼                        ▼
+┌──────────────────────────────────────────────────────────┐
+│            SQLite (data/predictions.db)                    │
+│  predictions 테이블 — 모든 예측과 결과 저장                   │
+│  WAL 모드 — 동시 읽기/쓰기 지원                              │
+└───────────┬──────────────────────┬───────────────────────┘
+            ▲                      ▲
+            │                      │
+┌───────────┴──────────┐  ┌────────┴───────────┐
+│  daily_briefing.py   │  │  outcome_tracker.py │
+│  (cron, 07:00/21:00) │  │  (cron, 00:00)      │
+│                      │  │                     │
+│  claude -p 호출      │  │  가격 조회           │
+│  → bin/stock-cli     │  │  → HIT/MISS 판정    │
+│  → Telegram 전송     │  │  → DB 업데이트       │
+└──────────────────────┘  └─────────────────────┘
 ```
 
 ## 작동 원리
@@ -170,19 +177,21 @@ uv run pytest -m "not network"
 uv run pytest
 ```
 
-### 4. 환경 변수 (선택)
+### 4. 환경 변수
+
+프로젝트 루트의 `.env` 파일에 설정:
 
 ```bash
-# Telegram 알림 (선택)
-export TELEGRAM_BOT_TOKEN="your_bot_token"
-export TELEGRAM_CHAT_ID="your_chat_id"
-
-# FMP API (선택, 없으면 yfinance fallback)
-export FMP_API_KEY="your_key"
-
-# Anthropic API (--mode api 사용 시에만)
-export ANTHROPIC_API_KEY="your_key"
+# .env (git에 커밋하지 않음)
+TELEGRAM_BOT_TOKEN="your_bot_token"    # Telegram 알림 (선택)
+TELEGRAM_CHAT_ID="your_chat_id"        # Telegram 채팅 ID
+FMP_API_KEY="your_key"                 # FMP API (선택, 없으면 yfinance fallback)
+APCA_API_KEY_ID="your_key"             # Alpaca 브로커리지 (선택, portfolio-manager용)
+APCA_API_SECRET_KEY="your_secret"      # Alpaca secret
+ANTHROPIC_API_KEY="your_key"           # --mode api 사용 시에만
 ```
+
+FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인트(`/v3/earning_calendar`, `/v3/economic_calendar`)에 접근 불가. 해당 스킬은 web search로 자동 fallback.
 
 ## 사용법
 
@@ -295,11 +304,17 @@ stock-expectation/
 ├── bin/
 │   └── stock-cli                      # uv run 래퍼 (실행 가능)
 │
-├── .claude/skills/                    # Claude Code 자동 발견 경로
-│   ├── daily-briefing/SKILL.md        #   일일 브리핑 + 종목 추천
-│   ├── stock-research/SKILL.md        #   개별 종목 5-signal 분석
-│   ├── korean-market-analysis/SKILL.md#   한국 시장 전문 분석
-│   └── prediction-review/SKILL.md     #   트랙 레코드 대시보드
+├── .claude/skills/                    # Claude Code 자동 발견 경로 (55개)
+│   ├── daily-briefing/                #   일일 브리핑 + 종목 추천
+│   ├── stock-research/                #   개별 종목 5-signal 분석
+│   ├── korean-market-analysis/        #   한국 시장 전문 분석
+│   ├── prediction-review/             #   트랙 레코드 대시보드
+│   ├── vcp-screener/                  #   Minervini VCP 스크리닝
+│   ├── canslim-screener/              #   O'Neil CANSLIM 스크리닝
+│   ├── macro-regime-detector/         #   매크로 레짐 분류
+│   ├── edge-*/                        #   Edge 연구 파이프라인 (6개)
+│   ├── trader-memory-core/            #   투자 논문 생애주기 추적
+│   └── ... (55개 전체 목록: CLAUDE.md 참조)
 │
 ├── mcp-market-data/                   # 시장 데이터 providers
 │   ├── providers/
@@ -375,7 +390,81 @@ prediction:
 | Calibration | 70% confidence 예측이 실제 70% 맞는지 검증 |
 | Signal Attribution | 시그널별 적중률. 최소 10건 이상일 때만 표시 |
 
+## Telegram 연동
+
+Telegram 연동은 **두 가지 모드**로 작동한다.
+
+### 1. Push 모드 (cron → Telegram)
+
+`scheduler/daily_briefing.py`가 cron에 의해 실행되면, 결과를 `scheduler/telegram_sender.py`를 통해 Telegram 채팅방으로 자동 전송한다.
+
+```
+cron (07:00 KST) → daily_briefing.py → claude -p → 분석 생성
+                                                    → telegram_sender.py → Telegram 채팅방
+```
+
+**설정:**
+```bash
+# .env에 추가
+TELEGRAM_BOT_TOKEN="your_bot_token"
+TELEGRAM_CHAT_ID="your_chat_id"
+```
+
+**전송되는 내용:**
+- 매일 아침 한국 시장 브리핑 (07:00 KST)
+- 매일 저녁 US 시장 브리핑 (21:00 KST)
+- 예측 HIT/MISS 알림 (outcome_tracker 결과)
+- 긴 메시지는 4096자 단위로 자동 분할
+
+**한계:** 단방향. 알림만 받을 수 있고, Telegram에서 질문하거나 스킬을 실행할 수는 없다.
+
+### 2. Interactive 모드 (Telegram ↔ Claude Code)
+
+Claude Code의 Telegram MCP 플러그인을 사용하면 **양방향 대화**가 가능하다.
+
+```
+사용자 (Telegram) → "NVDA 분석해줘"
+                       ↓
+              Claude Code (실행 중)
+              → stock-research 스킬 트리거
+              → bin/stock-cli price NVDA
+              → bin/stock-cli fundamentals NVDA
+              → 5-signal 분석 생성
+                       ↓
+사용자 (Telegram) ← 분석 결과 수신
+```
+
+**사용 가능한 예시:**
+- `"오늘 일일 브리핑"` → daily-briefing 스킬
+- `"NVDA 분석해줘"` → stock-research 스킬
+- `"VCP 스크리닝 해줘"` → vcp-screener 스킬
+- `"market breadth 분석"` → market-breadth-analyzer 스킬
+- `"포지션 사이즈 계산: 10만불 계좌, NVDA 130불 진입, 124불 손절"` → position-sizer 스킬
+- 31개 활성 스킬 전부 Telegram에서 호출 가능
+
+**한계:**
+- Claude Code 세션이 실행 중이어야 함 (백그라운드 `claude` 프로세스 필요)
+- 응답 시간은 스킬에 따라 10초~5분
+
+## 포팅된 트레이딩 스킬
+
+[claude-trading-skills](https://github.com/tradermonty/claude-trading-skills) 등 외부 컬렉션에서 가져온 스킬을
+`bin/stock-cli`를 통해 US/KR 듀얼 마켓으로 적응시켰다. **Stage 3 정리** 후 31개 활성, 19개 archived,
+11개 삭제 (자세한 내용은 `.claude/skills/_archived/README.md` 참조).
+
+### 카테고리별 분류 (31개 활성)
+
+| 카테고리 | 스킬 수 | 예시 |
+|---------|--------|------|
+| 핵심 흐름 | 4 | expect, daily-briefing, stock-research, prediction-review |
+| 포트폴리오 | 5 | portfolio-eval, portfolio-manager, position-sizer, toss-sync, trader-memory-core |
+| 레짐 + 브레드스 | 6 | macro-regime-detector, market-breadth-analyzer, FTD, market-top-detector, sector-analyst, uptrend-analyzer |
+| 스크리너 | 5 | vcp-screener, canslim-screener, finviz-screener, base-breakout-screener, earnings-trade-analyzer |
+| 캘린더 + 분석 | 5 | earnings-calendar, economic-calendar-fetcher, theme-detector, technical-analyst, stock-analysis |
+| 한국 전용 | 1 | korean-market-analysis |
+| 메타 + ops | 5 | backtest-expert, data-quality-checker, signal-postmortem, retrospect, init |
+
 ## 참고
 
-이 시스템은 [claude-trading-skills](https://github.com/tradermonty/claude-trading-skills)의 스킬 패턴과 분석 프레임워크를 참고해 설계되었다.
-claude-trading-skills는 US 시장 전용 50+ 스킬 모음이며, 이 프로젝트는 거기에 한국 시장 지원, 예측 트랙 레코드, 자기 개선 루프를 추가한 별도 시스템이다.
+이 시스템은 [claude-trading-skills](https://github.com/tradermonty/claude-trading-skills)의 스킬 패턴과 분석 프레임워크를 기반으로 한다.
+원본 레포의 51개 스킬을 포팅하고, 한국 시장 지원(`bin/stock-cli` 듀얼 마켓), 예측 트랙 레코드(SQLite + 자기 개선 루프), Telegram 연동을 추가했다.

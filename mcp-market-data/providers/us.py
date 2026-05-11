@@ -12,11 +12,13 @@ from typing import Optional
 
 import httpx
 
-from .base import MarketDataProvider, OHLCV, StockFundamentals, with_retry
+from .base import MarketDataProvider, NewsItem, OHLCV, StockFundamentals, with_retry
 
 logger = logging.getLogger(__name__)
 
 FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
+ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
 
 
 class USMarketProvider(MarketDataProvider):
@@ -28,6 +30,8 @@ class USMarketProvider(MarketDataProvider):
 
     def __init__(self):
         self._fmp_key = os.environ.get("FMP_API_KEY", "")
+        self._finnhub_key = os.environ.get("FINNHUB_API_KEY", "")
+        self._av_key = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 
     def get_price_history(self, ticker: str, days: int = 30) -> list[OHLCV]:
         """Fetch OHLCV from FMP, falling back to yfinance.
@@ -116,8 +120,16 @@ class USMarketProvider(MarketDataProvider):
             period = "1mo"
         elif days <= 90:
             period = "3mo"
-        else:
+        elif days <= 180:
             period = "6mo"
+        elif days <= 365:
+            period = "1y"
+        elif days <= 730:
+            period = "2y"
+        elif days <= 1825:
+            period = "5y"
+        else:
+            period = "max"
 
         upper_tickers = [t.upper() for t in tickers]
         df = yf.download(
@@ -167,7 +179,9 @@ class USMarketProvider(MarketDataProvider):
                             high=float(row["High"]),
                             low=float(row["Low"]),
                             close=float(row["Close"]),
-                            volume=int(row["Volume"]) if not pd.isna(row["Volume"]) else 0,
+                            volume=(
+                                int(row["Volume"]) if not pd.isna(row["Volume"]) else 0
+                            ),
                         )
                     )
 
@@ -205,20 +219,67 @@ class USMarketProvider(MarketDataProvider):
         max_workers = min(len(tickers), 8)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self.get_fundamentals, t): t for t in tickers
-            }
+            futures = {executor.submit(self.get_fundamentals, t): t for t in tickers}
             for future in as_completed(futures):
                 ticker = futures[future]
                 try:
                     result[ticker] = future.result()
                 except Exception as e:
-                    logger.warning(
-                        "Fundamentals batch failed for %s: %s", ticker, e
-                    )
+                    logger.warning("Fundamentals batch failed for %s: %s", ticker, e)
                     result[ticker] = None
 
         return result
+
+    def get_news(
+        self, ticker: str, limit: int = 10, since_days: int = 7
+    ) -> list[NewsItem]:
+        """Fetch recent US stock news.
+
+        Provider chain:
+          1. Finnhub /company-news (if FINNHUB_API_KEY set) — primary
+          2. Alpha Vantage NEWS_SENTIMENT merge (if ALPHA_VANTAGE_API_KEY set)
+             — adds sentiment_score by URL match
+          3. FMP /stock_news (if FMP_API_KEY set) — backup
+          4. yfinance.Ticker(t).get_news() — last-resort fallback, no sentiment
+
+        Args:
+            ticker: US ticker (case-insensitive).
+            limit: Max items to return.
+            since_days: Only items within last N days.
+
+        Returns:
+            List of NewsItem, newest first. Empty on failure.
+        """
+        ticker = ticker.upper()
+        items: list[NewsItem] = []
+
+        if self._finnhub_key:
+            try:
+                items = self._finnhub_news(ticker, limit, since_days)
+            except Exception as e:
+                logger.warning("Finnhub news failed for %s: %s", ticker, e)
+
+        if items and self._av_key:
+            try:
+                self._merge_alpha_vantage_sentiment(ticker, items)
+                # Detailed breakdown (URL-matched vs ticker-avg fallback) is
+                # logged inside _merge_alpha_vantage_sentiment at DEBUG.
+            except Exception as e:
+                logger.warning("Alpha Vantage sentiment failed for %s: %s", ticker, e)
+
+        if not items and self._fmp_key:
+            try:
+                items = self._fmp_news(ticker, limit, since_days=since_days)
+            except Exception as e:
+                logger.warning("FMP news failed for %s: %s", ticker, e)
+
+        if not items:
+            try:
+                items = self._yfinance_news(ticker, limit)
+            except Exception as e:
+                logger.warning("yfinance news failed for %s: %s", ticker, e)
+
+        return items[:limit]
 
     def search_stocks(self, query: str, limit: int = 10) -> list[dict]:
         """Search US stocks via FMP or basic yfinance lookup.
@@ -321,8 +382,16 @@ class USMarketProvider(MarketDataProvider):
             period = "1mo"
         elif days <= 90:
             period = "3mo"
-        else:
+        elif days <= 180:
             period = "6mo"
+        elif days <= 365:
+            period = "1y"
+        elif days <= 730:
+            period = "2y"
+        elif days <= 1825:
+            period = "5y"
+        else:
+            period = "max"
 
         df = t.history(period=period)
         if df.empty:
@@ -407,3 +476,223 @@ class USMarketProvider(MarketDataProvider):
             }
             for item in data
         ]
+
+    def _finnhub_news(self, ticker: str, limit: int, since_days: int) -> list[NewsItem]:
+        """Fetch headlines via Finnhub /company-news.
+
+        Free-tier rate limit: 60 calls/min. Each call returns up to a few
+        hundred items, so we slice to ``limit`` after sort.
+        """
+        end = datetime.now()
+        start = end - timedelta(days=since_days)
+        resp = httpx.get(
+            f"{FINNHUB_BASE_URL}/company-news",
+            params={
+                "symbol": ticker,
+                "from": start.strftime("%Y-%m-%d"),
+                "to": end.strftime("%Y-%m-%d"),
+                "token": self._finnhub_key,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, list):
+            return []
+
+        items: list[NewsItem] = []
+        for entry in data:
+            ts = entry.get("datetime")
+            date_str = (
+                datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+                if isinstance(ts, (int, float))
+                else end.strftime("%Y-%m-%d")
+            )
+            items.append(
+                NewsItem(
+                    headline=entry.get("headline", "").strip(),
+                    source=entry.get("source", "Finnhub"),
+                    date=date_str,
+                    url=entry.get("url", ""),
+                )
+            )
+        items.sort(key=lambda n: n.date, reverse=True)
+        return items[:limit]
+
+    def _merge_alpha_vantage_sentiment(self, ticker: str, items: list[NewsItem]) -> int:
+        """Annotate items with Alpha Vantage sentiment scores in place.
+
+        Alpha Vantage NEWS_SENTIMENT returns ``ticker_sentiment`` per
+        article (with overall score and label). We match by URL when
+        possible; if no URL matches, we apply the ticker-level average to
+        any item missing a score so downstream code at least gets a
+        directional signal.
+
+        Reality check (2026-05-11 E2E observation): Finnhub returns its
+        own redirect URLs (``https://finnhub.io/api/news?id=...``) rather
+        than publisher URLs. AV stores publisher URLs. As a result the
+        per-item URL match path effectively never fires for Finnhub items,
+        and every item receives the ticker-level average. The breakdown
+        is logged at DEBUG so operators can see when this happens; future
+        work could follow Finnhub's redirect to recover publisher URLs.
+
+        Free-tier limit is 25 calls/day, so callers should reserve this
+        for finalist tickers, not the discovery set.
+
+        Returns:
+            Number of items annotated with a sentiment_score (URL-matched
+            or fallback-averaged). 0 means AV returned data but nothing
+            could be applied — useful for spotting stale URL matching.
+        """
+        resp = httpx.get(
+            ALPHA_VANTAGE_BASE_URL,
+            params={
+                "function": "NEWS_SENTIMENT",
+                "tickers": ticker,
+                "apikey": self._av_key,
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        # AV signals rate limits and bad inputs by returning HTTP 200 with
+        # an "Information"/"Note"/"Error Message" key and no feed array.
+        # Return 0 (not bare return) so the caller's count-formatted log
+        # doesn't TypeError on None.
+        feed = data.get("feed", [])
+        if not feed:
+            return 0
+
+        url_to_av: dict[str, dict] = {}
+        scores: list[float] = []
+        for art in feed:
+            url = art.get("url", "")
+            for ts in art.get("ticker_sentiment", []):
+                if ts.get("ticker") != ticker:
+                    continue
+                try:
+                    score = float(ts.get("ticker_sentiment_score"))
+                except (TypeError, ValueError):
+                    continue
+                label = ts.get("ticker_sentiment_label")
+                if url:
+                    url_to_av[url] = {"score": score, "label": label}
+                scores.append(score)
+
+        avg_score = sum(scores) / len(scores) if scores else None
+
+        url_matched = 0
+        fallback_applied = 0
+        for item in items:
+            match = url_to_av.get(item.url)
+            if match:
+                item.sentiment_score = match["score"]
+                item.sentiment_label = match["label"]
+                url_matched += 1
+            elif item.sentiment_score is None and avg_score is not None:
+                item.sentiment_score = avg_score
+                item.sentiment_label = None
+                fallback_applied += 1
+
+        logger.debug(
+            "AV sentiment merge for %s: %d URL-matched, %d ticker-avg fallback "
+            "(AV feed: %d articles, %d ticker_sentiment entries)",
+            ticker,
+            url_matched,
+            fallback_applied,
+            len(feed),
+            len(scores),
+        )
+        return url_matched + fallback_applied
+
+    def _fmp_news(self, ticker: str, limit: int, since_days: int = 7) -> list[NewsItem]:
+        """Fetch headlines via FMP /stock_news. Backup when no Finnhub key.
+
+        FMP's /stock_news endpoint accepts only ``tickers`` and ``limit`` —
+        it does not expose date-range filtering. To keep the contract
+        consistent with Finnhub and yfinance (every provider honours
+        ``since_days``), we over-fetch and filter in memory.
+        """
+        cutoff = (datetime.now() - timedelta(days=since_days)).strftime("%Y-%m-%d")
+        resp = httpx.get(
+            f"{FMP_BASE_URL}/stock_news",
+            params={
+                "tickers": ticker,
+                # Over-fetch so the post-filter still has enough items to
+                # honour the caller's ``limit`` after dropping out-of-window
+                # entries. 4× is generous; FMP's free tier caps at 250 items
+                # per call anyway.
+                "limit": min(limit * 4, 100),
+                "apikey": self._fmp_key,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, list):
+            return []
+
+        items: list[NewsItem] = []
+        for entry in data:
+            published = entry.get("publishedDate", "")
+            date_str = published.split(" ")[0] if published else ""
+            if date_str and date_str < cutoff:
+                continue
+            items.append(
+                NewsItem(
+                    headline=entry.get("title", "").strip(),
+                    source=entry.get("site", "FMP"),
+                    date=date_str,
+                    url=entry.get("url", ""),
+                )
+            )
+        return items[:limit]
+
+    def _yfinance_news(self, ticker: str, limit: int) -> list[NewsItem]:
+        """Fallback: yfinance.Ticker(t).get_news(). Free, no key, no sentiment."""
+        import yfinance as yf
+
+        t = yf.Ticker(ticker)
+        try:
+            raw = t.get_news() or []
+        except Exception:
+            raw = []
+
+        items: list[NewsItem] = []
+        for entry in raw:
+            content = entry.get("content", entry)
+            ts = (
+                entry.get("providerPublishTime")
+                or content.get("pubDate")
+                or content.get("displayTime")
+            )
+            if isinstance(ts, (int, float)):
+                date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            elif isinstance(ts, str):
+                date_str = ts.split("T")[0]
+            else:
+                date_str = datetime.now().strftime("%Y-%m-%d")
+
+            headline = content.get("title") or entry.get("title", "")
+            url = (
+                content.get("canonicalUrl", {}).get("url")
+                if isinstance(content.get("canonicalUrl"), dict)
+                else (entry.get("link") or content.get("link", ""))
+            )
+            source = (
+                content.get("provider", {}).get("displayName")
+                if isinstance(content.get("provider"), dict)
+                else entry.get("publisher", "Yahoo Finance")
+            )
+
+            if not headline:
+                continue
+            items.append(
+                NewsItem(
+                    headline=headline.strip(),
+                    source=source or "Yahoo Finance",
+                    date=date_str,
+                    url=url or "",
+                )
+            )
+        return items[:limit]

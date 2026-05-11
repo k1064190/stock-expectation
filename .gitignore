@@ -28,3 +28,15 @@ Thumbs.db
 
 # Reference repo (large, clone separately)
 claude-trading-skills/
+
+# Cloned external skill repos (analyzed in docs/external-skills-analysis.md, not tracked)
+references/repos/
+
+# Stage 7-A mem0/Qdrant data
+data/memory/
+
+# Stage 7-B Neo4j data + plugins
+data/neo4j/
+
+# Local env (NEO4J_PASSWORD etc.)
+.env
