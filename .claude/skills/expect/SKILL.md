@@ -258,6 +258,35 @@ After the run completes (all stocks scored, all predictions saved), write `state
 
 Use Bash + `jq` (or a small Python heredoc) to construct it. The sidecar is the input to Stage 6's weekly calibration — every component score is captured so we can attribute drift later.
 
+**Field names are part of the contract — use them exactly.** Stage 6 (and any future aggregator) parses these JSON keys by name, so the freeform tendency to shorten `algo_score`/`news_score` to `algo`/`news`, or `horizons_logged` to `horizons`, will silently break the downstream consumer. The schema is:
+
+| Top-level | Type | Notes |
+|---|---|---|
+| `run_id` | str (UUID) | one per `/expect` invocation |
+| `generated_at` | ISO-8601 with offset | e.g. `"2026-05-11T10:42:11+09:00"` |
+| `mode` | `"US"` / `"KR"` / `"ALL"` / `"single"` / `"batch"` | matches invocation form |
+| `markets` | list of `"US"` / `"KR"` | which markets were scanned |
+| `track_record_snapshot` | object | see example above |
+| `picks` | list of pick objects | one per ticker (BUY/WATCH/HOLD/AVOID/SELL all included) |
+
+Each pick object:
+
+| Field | Type | Required? |
+|---|---|---|
+| `ticker` | str | yes |
+| `market` | `"US"` / `"KR"` | yes |
+| `label` | `"BUY"` / `"WATCH"` / `"HOLD"` / `"AVOID"` / `"SELL"` | yes |
+| `composite` | float, 1 decimal | yes |
+| `algo_score` | float | yes — NOT `algo` |
+| `news_score` | float | yes — NOT `news` |
+| `algo_components` | object with `trend`, `momentum`, `return_1m`, `volume`, `cycle`, `earnings` | yes |
+| `news_components` | object with `sentiment`, `headline_volume`, `neg_keyword_cap`, `disclosure_cap` | yes |
+| `transmission_chain` | object with `tech`, `news`, `risk` | yes for BUY/WATCH/SELL; optional for HOLD/AVOID |
+| `horizons_logged` | list of `"1W"`/`"1M"`/`"6M"`/`"1Y"` | yes (empty list if none ≥ 0.60 conf) |
+| `analysis_group_id` | UUID str or null | yes — null when no horizons were logged |
+
+Before writing the file, mental-check the keys against this table. If you used `algo` instead of `algo_score`, fix it before serialising — downstream parsers don't gracefully degrade.
+
 ### Step 11 — Quality gate (run before output)
 
 Before printing the final markdown, sanity-check each pick. If any check fails, fix the inconsistency and re-derive — do not paper over:
