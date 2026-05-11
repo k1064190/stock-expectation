@@ -77,9 +77,7 @@ def send_message(
                 timeout=30,
             )
             if resp.status_code != 200:
-                logger.error(
-                    "Telegram send failed: %d %s", resp.status_code, resp.text
-                )
+                logger.error("Telegram send failed: %d %s", resp.status_code, resp.text)
                 # If Markdown fails, retry without parse_mode
                 if parse_mode == "Markdown":
                     resp = httpx.post(
@@ -122,6 +120,7 @@ def send_alert(
     market: str,
     alert_type: str,
     message: str,
+    name: str = "",
 ) -> bool:
     """Send a prediction alert (approaching target/stop, expired, etc.).
 
@@ -130,6 +129,9 @@ def send_alert(
         market: "US" or "KR".
         alert_type: "TARGET", "STOP", "EXPIRED", "HIT", "MISS".
         message: Alert details.
+        name: Optional company name to display alongside the ticker.
+            When provided, the header line becomes ``{ticker} {name} ({market})``
+            so KR tickers like ``005380`` are recognisable at a glance.
 
     Returns:
         True if sent successfully.
@@ -142,7 +144,8 @@ def send_alert(
         "MISS": "❌",
     }.get(alert_type, "📊")
 
-    text = f"{emoji} *{alert_type}* | {ticker} ({market})\n{message}"
+    name_suffix = f" {name}" if name else ""
+    text = f"{emoji} *{alert_type}* | {ticker}{name_suffix} ({market})\n{message}"
     return send_message(text)
 
 

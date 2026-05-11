@@ -12,6 +12,7 @@ import json
 import logging
 import sys
 from datetime import datetime, timedelta, timezone, time
+from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -55,6 +56,34 @@ KR_MARKET_CLOSE = time(15, 30)
 DEFAULT_HIT_PCT = 0.03
 # Default MISS threshold when no stop_price is set (5%)
 DEFAULT_MISS_PCT = 0.05
+
+
+@lru_cache(maxsize=1024)
+def _resolve_name(ticker: str, market: str) -> str:
+    """Look up the human-readable company name for a ticker.
+
+    Cached per process so a single outcome-tracker run never re-fetches.
+    Returns "" on any failure so callers can fall back to ticker-only display.
+
+    KR uses PyKRX's in-memory ticker→name map (no network after first import).
+    US uses yfinance's ``Ticker.info`` which does hit the network — cheap
+    relative to the price fetch we already did, and capped at ~20 names per
+    nightly run.
+    """
+    try:
+        if market == "KR":
+            from pykrx import stock as krx_stock
+
+            name = krx_stock.get_market_ticker_name(ticker)
+            return name or ""
+        if market == "US":
+            import yfinance as yf
+
+            info = yf.Ticker(ticker).info or {}
+            return info.get("shortName") or info.get("longName") or ""
+    except Exception as e:  # name lookup is best-effort
+        logger.debug("Name lookup failed for %s (%s): %s", ticker, market, e)
+    return ""
 
 
 def count_trading_days(start_date: str, market: str) -> int:
@@ -253,6 +282,7 @@ def run_outcome_tracking() -> dict:
                             f"Confidence: {pred.confidence:.0%}\n"
                             f"Thesis: {pred.reasoning[:100]}"
                         ),
+                        name=_resolve_name(pred.ticker, pred.market),
                     )
                 except Exception as e:
                     logger.warning("Telegram alert failed: %s", e)
