@@ -408,6 +408,11 @@ def test_horizon_metrics_batch_returns_expected_fields():
         "pct_from_52w_low",
         "max_drawdown_1y",
         "cycle_risk_flag",
+        # Volume metric (added Stage 4.1, A1) — /expect Volume bucket reads vol_ratio.
+        # Pinned here so a future refactor that drops vol_* fails this test.
+        "vol_5d_avg",
+        "vol_50d_avg",
+        "vol_ratio",
     }
     # If any of the pinned tickers errored, the contract is not actually
     # exercised — fail the test rather than silently pass.
