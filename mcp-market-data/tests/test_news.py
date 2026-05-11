@@ -185,6 +185,135 @@ def test_us_av_unmatched_urls_apply_average(monkeypatch):
         assert item.sentiment_score == pytest.approx(0.20)
 
 
+def test_us_av_merge_logs_url_match_vs_fallback_breakdown(monkeypatch, caplog):
+    """DEBUG log captures (url_matched, fallback_applied) so operators can
+    spot stale URL matching — when matched=0 every item is on the ticker
+    average, which is exactly what happens with Finnhub redirect URLs in
+    production (see E2E run 2026-05-11).
+    """
+    import logging
+
+    monkeypatch.setenv("FINNHUB_API_KEY", "fake-finnhub")
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "fake-av")
+    monkeypatch.delenv("FMP_API_KEY", raising=False)
+    provider = USMarketProvider()
+
+    finnhub_payload = [
+        {
+            "headline": "h1",
+            "source": "s",
+            "datetime": 1746878400,
+            "url": "https://finnhub.io/api/news?id=AAA",
+        },
+        {
+            "headline": "h2",
+            "source": "s",
+            "datetime": 1746792000,
+            "url": "https://finnhub.io/api/news?id=BBB",
+        },
+    ]
+    av_payload = {
+        "feed": [
+            {
+                "url": "https://reuters.com/real-url-1",
+                "ticker_sentiment": [
+                    {
+                        "ticker": "NVDA",
+                        "ticker_sentiment_score": "0.10",
+                        "ticker_sentiment_label": "Neutral",
+                    }
+                ],
+            },
+            {
+                "url": "https://reuters.com/real-url-2",
+                "ticker_sentiment": [
+                    {
+                        "ticker": "NVDA",
+                        "ticker_sentiment_score": "0.30",
+                        "ticker_sentiment_label": "Bullish",
+                    }
+                ],
+            },
+        ]
+    }
+
+    def fake_get(url, **kwargs):
+        if "finnhub" in url:
+            return _mock_response(finnhub_payload)
+        return _mock_response(av_payload)
+
+    with caplog.at_level(logging.DEBUG, logger="providers.us"):
+        with patch("providers.us.httpx.get", side_effect=fake_get):
+            items = provider.get_news("NVDA", limit=5, since_days=7)
+
+    assert len(items) == 2
+    # Reality: Finnhub redirect URLs don't match AV publisher URLs, so all
+    # items get the ticker average (0.10 + 0.30) / 2 = 0.20.
+    for item in items:
+        assert item.sentiment_score == pytest.approx(0.20)
+
+    merge_logs = [r for r in caplog.records if "AV sentiment merge" in r.message]
+    assert len(merge_logs) == 1, "merge breakdown should be logged exactly once"
+    msg = merge_logs[0].getMessage()
+    assert "0 URL-matched" in msg
+    assert "2 ticker-avg fallback" in msg
+    assert "NVDA" in msg
+
+
+def test_us_av_merge_logs_url_match_when_urls_align(monkeypatch, caplog):
+    """When publisher URLs do match (hypothetical, e.g. via a future
+    Finnhub-redirect-follow), the log records URL-matched > 0 and
+    fallback == 0.
+    """
+    import logging
+
+    monkeypatch.setenv("FINNHUB_API_KEY", "fake-finnhub")
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "fake-av")
+    monkeypatch.delenv("FMP_API_KEY", raising=False)
+    provider = USMarketProvider()
+
+    finnhub_payload = [
+        {
+            "headline": "h1",
+            "source": "s",
+            "datetime": 1746878400,
+            "url": "https://reuters.com/aligned-1",
+        },
+    ]
+    av_payload = {
+        "feed": [
+            {
+                "url": "https://reuters.com/aligned-1",
+                "ticker_sentiment": [
+                    {
+                        "ticker": "NVDA",
+                        "ticker_sentiment_score": "0.55",
+                        "ticker_sentiment_label": "Bullish",
+                    }
+                ],
+            },
+        ]
+    }
+
+    def fake_get(url, **kwargs):
+        if "finnhub" in url:
+            return _mock_response(finnhub_payload)
+        return _mock_response(av_payload)
+
+    with caplog.at_level(logging.DEBUG, logger="providers.us"):
+        with patch("providers.us.httpx.get", side_effect=fake_get):
+            items = provider.get_news("NVDA", limit=5, since_days=7)
+
+    assert len(items) == 1
+    assert items[0].sentiment_score == pytest.approx(0.55)
+
+    merge_logs = [r for r in caplog.records if "AV sentiment merge" in r.message]
+    assert len(merge_logs) == 1
+    msg = merge_logs[0].getMessage()
+    assert "1 URL-matched" in msg
+    assert "0 ticker-avg fallback" in msg
+
+
 def test_us_falls_back_to_yfinance_when_no_keys(monkeypatch):
     monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
     monkeypatch.delenv("ALPHA_VANTAGE_API_KEY", raising=False)

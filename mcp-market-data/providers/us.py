@@ -261,13 +261,9 @@ class USMarketProvider(MarketDataProvider):
 
         if items and self._av_key:
             try:
-                merged = self._merge_alpha_vantage_sentiment(ticker, items)
-                logger.debug(
-                    "AV sentiment merged %d/%d items for %s",
-                    merged,
-                    len(items),
-                    ticker,
-                )
+                self._merge_alpha_vantage_sentiment(ticker, items)
+                # Detailed breakdown (URL-matched vs ticker-avg fallback) is
+                # logged inside _merge_alpha_vantage_sentiment at DEBUG.
             except Exception as e:
                 logger.warning("Alpha Vantage sentiment failed for %s: %s", ticker, e)
 
@@ -532,6 +528,14 @@ class USMarketProvider(MarketDataProvider):
         any item missing a score so downstream code at least gets a
         directional signal.
 
+        Reality check (2026-05-11 E2E observation): Finnhub returns its
+        own redirect URLs (``https://finnhub.io/api/news?id=...``) rather
+        than publisher URLs. AV stores publisher URLs. As a result the
+        per-item URL match path effectively never fires for Finnhub items,
+        and every item receives the ticker-level average. The breakdown
+        is logged at DEBUG so operators can see when this happens; future
+        work could follow Finnhub's redirect to recover publisher URLs.
+
         Free-tier limit is 25 calls/day, so callers should reserve this
         for finalist tickers, not the discovery set.
 
@@ -577,18 +581,29 @@ class USMarketProvider(MarketDataProvider):
 
         avg_score = sum(scores) / len(scores) if scores else None
 
-        annotated = 0
+        url_matched = 0
+        fallback_applied = 0
         for item in items:
             match = url_to_av.get(item.url)
             if match:
                 item.sentiment_score = match["score"]
                 item.sentiment_label = match["label"]
-                annotated += 1
+                url_matched += 1
             elif item.sentiment_score is None and avg_score is not None:
                 item.sentiment_score = avg_score
                 item.sentiment_label = None
-                annotated += 1
-        return annotated
+                fallback_applied += 1
+
+        logger.debug(
+            "AV sentiment merge for %s: %d URL-matched, %d ticker-avg fallback "
+            "(AV feed: %d articles, %d ticker_sentiment entries)",
+            ticker,
+            url_matched,
+            fallback_applied,
+            len(feed),
+            len(scores),
+        )
+        return url_matched + fallback_applied
 
     def _fmp_news(self, ticker: str, limit: int, since_days: int = 7) -> list[NewsItem]:
         """Fetch headlines via FMP /stock_news. Backup when no Finnhub key.
