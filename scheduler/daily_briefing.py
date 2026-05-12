@@ -356,7 +356,21 @@ Rules:
 
 After creating predictions, output the full briefing as markdown. Include a
 "## Predictions Logged" section listing each prediction ID returned by
-the predict create commands."""
+the predict create commands.
+
+CRITICAL OUTPUT REQUIREMENT:
+Your final assistant message MUST BE THE FULL BRIEFING MARKDOWN ITSELF —
+every section (요약, 매크로 환경, 종목 추천, 내 포트폴리오 점검, 트랙
+레코드, 주요 이벤트, Predictions Logged) inline as your final response.
+
+DO NOT end with a meta-summary like "Briefing complete", "8 predictions
+logged across 3 picks", "Done", or any one-line wrapup. The summary
+sentence is NOT the deliverable; the briefing itself is. The CLI captures
+ONLY your final message via --output-format text, so anything you put in
+intermediate tool-call narrations will not reach the user. Make sure the
+last thing you emit is the full markdown briefing, beginning with
+"# 📊 Daily Market Briefing — [YYYY-MM-DD]" and continuing through
+every section to the Predictions Logged table."""
 
     else:  # KR
         return f"""Generate a Korean market daily briefing for {today}.
@@ -397,7 +411,21 @@ Rules:
 
 After creating predictions, output the full briefing as markdown. Include a
 "## Predictions Logged" section listing each prediction ID returned by
-the predict create commands."""
+the predict create commands.
+
+CRITICAL OUTPUT REQUIREMENT:
+Your final assistant message MUST BE THE FULL BRIEFING MARKDOWN ITSELF —
+every section (요약, 매크로 환경, 종목 추천, 내 포트폴리오 점검, 트랙
+레코드, 주요 이벤트, Predictions Logged) inline as your final response.
+
+DO NOT end with a meta-summary like "Briefing complete", "8 predictions
+logged across 3 picks", "Done", or any one-line wrapup. The summary
+sentence is NOT the deliverable; the briefing itself is. The CLI captures
+ONLY your final message via --output-format text, so anything you put in
+intermediate tool-call narrations will not reach the user. Make sure the
+last thing you emit is the full markdown briefing, beginning with
+"# 📊 Daily Market Briefing — [YYYY-MM-DD]" and continuing through
+every section to the Predictions Logged table."""
 
 
 def call_claude_code(prompt: str) -> str:
