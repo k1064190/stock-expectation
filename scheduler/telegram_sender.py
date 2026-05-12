@@ -42,7 +42,7 @@ def _get_config() -> tuple[str, str]:
 
 def send_message(
     text: str,
-    parse_mode: str = "Markdown",
+    parse_mode: str = "",
     token: Optional[str] = None,
     chat_id: Optional[str] = None,
 ) -> bool:
@@ -50,9 +50,23 @@ def send_message(
 
     Long messages are automatically split at newline boundaries.
 
+    Plain-text mode (default): every smoke test of the daily briefing on
+    2026-05-12 produced at least one ``400 Bad Request: Can't find end of
+    the entity`` from a different markdown edge case (``**bold**``, then
+    ``[text]`` without URL, then likely ``_`` in snake_case identifiers
+    like ``vol_ratio``). The asynchronous, generated-by-LLM nature of the
+    briefing text makes any Markdown parser unreliable. We default to
+    plain text — markdown markers are stripped from the message body and
+    no ``parse_mode`` is sent to Telegram, so the 400 entity errors
+    cannot happen. Emojis (📊 🇺🇸 🇰🇷 ✅) carry the visual structure.
+
     Args:
-        text: Message text to send.
-        parse_mode: "Markdown" or "HTML". Defaults to "Markdown".
+        text: Message text to send. Markdown markers (``**``, ``*``,
+            ``## headers``, orphan ``[brackets]``) are stripped in
+            plain-text mode for cleanliness.
+        parse_mode: Empty string (default, plain text), ``"Markdown"``,
+            or ``"HTML"``. Only set when the caller specifically needs
+            formatted output and is prepared for occasional failures.
         token: Bot token override. Defaults to TELEGRAM_BOT_TOKEN env var.
         chat_id: Chat ID override. Defaults to TELEGRAM_CHAT_ID env var.
 
@@ -62,36 +76,45 @@ def send_message(
     if not token or not chat_id:
         token, chat_id = _get_config()
 
+    # Strip markdown markers in plain-text mode so the message looks clean
+    # rather than displaying literal ``*BUY*`` asterisks. Keep markdown
+    # intact when the caller explicitly opted into a parse_mode.
+    if not parse_mode:
+        text = _to_plaintext(text)
+
     chunks = _split_message(text)
     success = True
 
     for chunk in chunks:
         try:
+            payload: dict = {
+                "chat_id": chat_id,
+                "text": chunk,
+                "disable_web_page_preview": True,
+            }
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
+
             resp = httpx.post(
                 f"{TELEGRAM_API.format(token=token)}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": chunk,
-                    "parse_mode": parse_mode,
-                    "disable_web_page_preview": True,
-                },
+                json=payload,
                 timeout=30,
             )
             if resp.status_code != 200:
                 logger.error("Telegram send failed: %d %s", resp.status_code, resp.text)
-                # If Markdown fails, retry without parse_mode
-                if parse_mode == "Markdown":
+                # Last-ditch retry without parse_mode + stripped text.
+                if parse_mode:
+                    payload.pop("parse_mode", None)
+                    payload["text"] = _to_plaintext(chunk)
                     resp = httpx.post(
                         f"{TELEGRAM_API.format(token=token)}/sendMessage",
-                        json={
-                            "chat_id": chat_id,
-                            "text": chunk,
-                            "disable_web_page_preview": True,
-                        },
+                        json=payload,
                         timeout=30,
                     )
                     if resp.status_code != 200:
                         success = False
+                else:
+                    success = False
         except Exception as e:
             logger.error("Telegram send error: %s", e)
             success = False
@@ -178,6 +201,40 @@ def _split_message(text: str) -> list[str]:
         chunks.append(current)
 
     return chunks
+
+
+def _to_plaintext(md: str) -> str:
+    """Strip markdown formatting markers for plain-text Telegram delivery.
+
+    Removes the visual noise of ``**bold**`` / ``*bold*`` / ``# Header`` /
+    ``[orphan brackets]`` so the message reads cleanly without any
+    parse_mode. Preserves intentional content — ``snake_case``
+    identifiers, real ``[label](url)`` markdown links (kept as
+    ``label (url)``), and inline code-style backticks.
+
+    Args:
+        md: Markdown-flavoured text.
+
+    Returns:
+        Plain text with markup characters removed.
+    """
+    # ``# Header`` / ``## Header`` / ``### Header`` → ``Header``
+    md = re.sub(r"(?m)^\s*#{1,6}\s+", "", md)
+
+    # ``**bold**`` → ``bold`` (non-greedy, must wrap non-whitespace)
+    md = re.sub(r"\*\*(\S(?:.*?\S)?)\*\*", r"\1", md, flags=re.DOTALL)
+
+    # ``*bold*`` → ``bold`` (single asterisk; same boundary rule)
+    md = re.sub(r"(?<!\*)\*(\S(?:.*?\S)?)\*(?!\*)", r"\1", md, flags=re.DOTALL)
+
+    # ``[label](url)`` → ``label (url)`` so links survive but the syntax
+    # noise is gone. Apply BEFORE the orphan-bracket strip below.
+    md = re.sub(r"\[([^\[\]]+)\]\(([^)]+)\)", r"\1 (\2)", md)
+
+    # Orphan ``[text]`` (no following ``(`` ) → ``text``.
+    md = re.sub(r"\[([^\[\]]+)\](?!\()", r"\1", md)
+
+    return md
 
 
 def _simplify_markdown(md: str) -> str:
