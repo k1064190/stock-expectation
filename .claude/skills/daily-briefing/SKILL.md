@@ -1,6 +1,6 @@
 ---
 name: daily-briefing
-description: Morning market briefing with stock picks for US and Korean markets. Generates a daily report covering macro environment, sector rotation, 10-12 actionable predictions (5-6 per market) with BUY/WATCH/HOLD/AVOID/SELL labels and Korean reasoning, plus a portfolio review section recommending hold/add/trim/exit per current position. Each pick is logged as a formal prediction for track record tracking. Triggers on keywords like daily briefing, morning report, market overview, today's picks, what should I trade, 오늘 시장, 일일 브리핑.
+description: Morning market briefing with stock picks for US and Korean markets. Generates a daily report covering macro environment, sector rotation, 10-12 actionable predictions (5-6 per market) with BUY/WATCH/HOLD/AVOID/SELL labels and Korean reasoning, plus an auto-Toss-synced portfolio review section recommending hold/add/trim/exit per current position. Each pick is logged as a formal prediction for track record tracking. Triggers on keywords like daily briefing, morning report, market overview, today's picks, what should I trade, 오늘 시장, 일일 브리핑.
 ---
 
 # Daily Briefing
@@ -71,20 +71,42 @@ bin/stock-cli track-record --days 30
 bin/stock-cli calibration
 ```
 
-### 2. 포트폴리오 상태 수집 (있을 때만)
+### 2. 포트폴리오 상태 수집 (필수 단계)
+
+이 단계는 **항상** 실행한다. positions가 비어있는지 여부는 **출력으로 직접 확인**한 뒤에만 판단한다 (가정하지 말 것).
+
+**2-1. Toss 동기화 (idempotent, 실패해도 briefing 계속):**
 
 ```bash
-# 포트폴리오 존재 여부 확인
-bin/stock-cli portfolio positions --market US 2>&1
-bin/stock-cli portfolio positions --market KR 2>&1
+# Toss → 로컬 DB 동기화. tossctl이 설치 + 인증된 호스트에서만 동작.
+# 미설치/미인증/네트워크 실패 시 stderr에 경고만 남기고 0이 아닌 exit 반환 — 무시하고 계속.
+bin/stock-cli portfolio sync 2>&1 | tail -5
+```
 
-# 있으면 평가 데이터까지
+위 명령이 실패해도 (예: tossctl 부재, 인증 만료) 기존 DB는 그대로 사용. briefing은 절대 중단하지 않는다.
+
+**2-2. 포지션 + 평가 데이터 수집:**
+
+```bash
+bin/stock-cli portfolio positions --market US
+bin/stock-cli portfolio positions --market KR
+```
+
+**판단 규칙 (엄격히 준수):**
+
+- 반환 JSON의 `positions` 배열을 직접 파싱한다
+- `len(positions) > 0` 이면 **반드시** 7-4의 "내 포트폴리오 점검" 섹션을 생성한다 — 보유가 있는데 누락하면 안 됨
+- `len(positions) == 0` 일 때만 안내 한 줄로 대체
+- "보유 종목 없음"을 출력하기 전에 반드시 위 명령 출력을 확인하라
+
+**2-3. (positions 비어있지 않을 때만) 평가 데이터:**
+
+```bash
 bin/stock-cli portfolio report --market US
 bin/stock-cli portfolio report --market KR
 bin/stock-cli portfolio risk --market KR
+bin/stock-cli portfolio risk --market US
 ```
-
-포트폴리오가 없거나(`Portfolio not found` 류 에러) 비어있으면(`positions: []`) 포트폴리오 섹션은 건너뛰고 안내 한 줄 표시.
 
 ### 3. 시장 환경 분석
 
@@ -191,44 +213,50 @@ bin/stock-cli predict create \
 
 ### 🇺🇸 미국 (5-6 종목)
 
-#### 1. NVDA — **BUY** (composite 9.0)
-- **점수**: ALGO 6.0 / NEWS 3.0
-- **가격대**: 진입 215.20 → 목표 226 (+5%) / 손절 207 (-4%)
-- **시간**: 1주
-- **분석**: NVIDIA는 RSI14=65.86으로 건강한 모멘텀 구간이며, MA20>MA50>MA200 완전한 상승 정렬을 유지하고 있습니다. 지난 1개월 +17% 상승했지만 52주 고점 대비 -0.6%로 아직 추가 여력이 있고, Finnhub+AV 종합 sentiment +0.28로 뉴스 흐름도 우호적입니다. AI 인프라 수요 지속 + 사이클 리스크 낮은 편으로 **분할 매수 추천**.
-- **로깅**: `predict_id=<uuid>`
+#### 1. NVDA — *BUY* (composite 9.0)
+- *점수*: ALGO 6.0 / NEWS 3.0
+- *가격대*: 진입 215.20 → 목표 226 (+5%) / 손절 207 (-4%)
+- *시간*: 1주
+- *분석*: NVIDIA는 RSI14=65.86으로 건강한 모멘텀 구간이며, MA20>MA50>MA200 완전한 상승 정렬을 유지하고 있습니다. 지난 1개월 +17% 상승했지만 52주 고점 대비 -0.6%로 아직 추가 여력이 있고, Finnhub+AV 종합 sentiment +0.28로 뉴스 흐름도 우호적입니다. AI 인프라 수요 지속 + 사이클 리스크 낮은 편으로 *분할 매수 추천*.
+- *로깅*: `predict_id=<uuid>`
 
-#### 2. AAPL — **WATCH** (composite 7.5)
+#### 2. AAPL — *WATCH* (composite 7.5)
 [동일 구조 — 점수 / 가격대 / 시간 / 분석 / 로깅]
 
 [3-6번 종목 동일 형식]
 
 ### 🇰🇷 한국 (5-6 종목)
 
-#### 1. 005930 삼성전자 — **WATCH** (composite 7.0)
-- **점수**: ALGO 6.0 / NEWS 1.0
-- **가격대**: 진입 285,500원 / 목표 320,000 (+12%) / 손절 263,000 (-8%)
-- **시간**: 1개월
-- **분석**: 삼성전자는 MA20>MA50>MA200 완전한 정렬에 RSI14=74.5로 약간 과열 구간이지만 거래대금 1위로 외국인 매수가 뒷받침되고 있습니다. 지난 1년 +382% 상승해 cycle_risk_flag=True로 단기 조정 가능성 있어 WATCH로 분류 — 285,000 이하 풀백 시 분할 진입 권장. KR 공시 cap 트리거 없음.
-- **로깅**: `predict_id=<uuid>`
+#### 1. 005930 삼성전자 — *WATCH* (composite 7.0)
+- *점수*: ALGO 6.0 / NEWS 1.0
+- *가격대*: 진입 285,500원 / 목표 320,000 (+12%) / 손절 263,000 (-8%)
+- *시간*: 1개월
+- *분석*: 삼성전자는 MA20>MA50>MA200 완전한 정렬에 RSI14=74.5로 약간 과열 구간이지만 거래대금 1위로 외국인 매수가 뒷받침되고 있습니다. 지난 1년 +382% 상승해 cycle_risk_flag=True로 단기 조정 가능성 있어 WATCH로 분류 — 285,000 이하 풀백 시 분할 진입 권장. KR 공시 cap 트리거 없음.
+- *로깅*: `predict_id=<uuid>`
 
 [2-6번 종목 동일 형식]
 
+> **Markdown 주의**: Telegram MarkdownV1는 단일 `*` (별표 1개)만 bold로 인식. 이중 `**bold**`는 unclosed entity 에러 발생 → 출력 시 모든 강조는 단일 `*text*`만 사용.
+
 ## 4. 내 포트폴리오 점검
 
-(보유 종목 있을 때만 표시. 없으면 "보유 종목 없음 — `bin/stock-cli portfolio create` 후 매수 기록을 추가하시면 다음 브리핑부터 자동 점검됩니다." 한 줄.)
+**판단 규칙**: 위 Step 2-2의 `positions` 배열을 직접 보고, 길이 > 0 이면 반드시 이 섹션을 채워라. "보유 종목 없음"은 positions가 진짜 빈 배열일 때만 출력.
+
+(보유 종목 진짜 없을 때) → "보유 종목 없음 — `bin/stock-cli portfolio create` 후 매수 기록을 추가하시면 다음 브리핑부터 자동 점검됩니다." 한 줄.
+
+(보유 종목 있을 때) →
 
 ### 🇺🇸 US 포지션
 
 #### NVDA (10주, 평단 $185.00)
-- 현재가 $215.20, P&L **+16.3%** ($+302)
-- **추천**: 보유 유지
-- **사유**: 추세 정상(MA stack), 모멘텀 건강(RSI 65), 1주 horizon 추가 BUY 예측 발생. 다만 +16% 익절 영역 들어가니 +25% 도달 시 부분 매도(30%) 권장.
+- 현재가 $215.20, P&L *+16.3%* ($+302)
+- *추천*: 보유 유지
+- *사유*: 추세 정상(MA stack), 모멘텀 건강(RSI 65), 1주 horizon 추가 BUY 예측 발생. 다만 +16% 익절 영역 들어가니 +25% 도달 시 부분 매도(30%) 권장.
 
 #### TSLA (5주, 평단 $280.00)
-- 현재가 $240.00, P&L **-14.3%** ($-200)
-- **추천**: 손절 검토
-- **사유**: composite=2.5 (AVOID 구간), MA20<MA50<MA200 풀 베어 정렬, 손절가 $238 근접. 한 번 더 -2% 빠지면 전량 매도 권장.
+- 현재가 $240.00, P&L *-14.3%* ($-200)
+- *추천*: 손절 검토
+- *사유*: composite=2.5 (AVOID 구간), MA20<MA50<MA200 풀 베어 정렬, 손절가 $238 근접. 한 번 더 -2% 빠지면 전량 매도 권장.
 
 ### 🇰🇷 KR 포지션
 

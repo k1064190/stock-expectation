@@ -11,6 +11,7 @@ Usage:
 
 import logging
 import os
+import re
 from typing import Optional
 
 import httpx
@@ -185,6 +186,10 @@ def _simplify_markdown(md: str) -> str:
     Telegram's Markdown V1 is limited. This simplifies:
     - ## headers → *bold*
     - ### headers → *bold*
+    - GitHub-flavored **bold** → Telegram *bold* (defensive: a single
+      stray ``**`` left in the input would otherwise produce
+      "Can't find end of the entity" 400 errors and force a fallback to
+      parse_mode=None, losing all formatting)
     - Tables → simplified text
     - Code blocks → preserved
 
@@ -194,6 +199,13 @@ def _simplify_markdown(md: str) -> str:
     Returns:
         Telegram-compatible markdown string.
     """
+    # Convert ``**bold**`` → ``*bold*`` BEFORE per-line processing so
+    # multi-line ranges are handled the same way as single-line ones.
+    # We require non-greedy capture and a non-whitespace boundary so
+    # accidental ``**`` in code blocks (rare) isn't rewritten across
+    # huge spans.
+    md = re.sub(r"\*\*(\S(?:.*?\S)?)\*\*", r"*\1*", md, flags=re.DOTALL)
+
     lines = []
     for line in md.split("\n"):
         if line.startswith("### "):
