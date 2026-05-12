@@ -432,7 +432,13 @@ def call_claude_code(prompt: str) -> str:
         ],
         capture_output=True,
         text=True,
-        timeout=300,  # 5 minute timeout
+        # 15 min ceiling. KR briefing typically runs 3-5 min; US can run
+        # 5-8 min when the portfolio review section is exercised against
+        # 10+ positions (each needs a current-price fetch + P&L calc +
+        # recommendation), and the 2026-05-12 21:00 cron firing hit
+        # the previous 300s ceiling. 900s keeps headroom while still
+        # bounding the worst case.
+        timeout=900,
         cwd=str(PROJECT_ROOT),
     )
 
