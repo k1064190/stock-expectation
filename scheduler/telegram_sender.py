@@ -206,6 +206,14 @@ def _simplify_markdown(md: str) -> str:
     # huge spans.
     md = re.sub(r"\*\*(\S(?:.*?\S)?)\*\*", r"*\1*", md, flags=re.DOTALL)
 
+    # Telegram MarkdownV1 treats ``[text](url)`` as a link. An LLM
+    # occasionally writes ``[*UNDERCONFIDENT*]`` or ``[1순위 / 2순위]``
+    # without a following ``(url)``, which Telegram parses as a link
+    # start with no end → 400 "Can't find end of the entity". Strip the
+    # square brackets when no immediate ``(`` follows, preserving the
+    # inner text.
+    md = re.sub(r"\[([^\[\]]+)\](?!\()", r"\1", md)
+
     lines = []
     for line in md.split("\n"):
         if line.startswith("### "):

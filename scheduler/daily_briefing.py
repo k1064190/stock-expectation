@@ -199,6 +199,110 @@ def get_track_record_context() -> str:
         conn.close()
 
 
+def get_portfolio_context(market: str) -> str:
+    """Pre-fetch portfolio state for prompt injection.
+
+    Why this lives in Python (not in SKILL.md instructions): a previous
+    KR briefing emitted "보유 종목 없음 — 본 task 범위 밖이라 미조회"
+    even though 5 KR + 11 US positions existed in the local DB. The
+    claude -p run treated portfolio fetch as optional and skipped it.
+    Putting the data directly in the prompt makes it impossible to ignore.
+
+    Steps:
+      1. Attempt ``portfolio sync`` (idempotent; failures are swallowed so a
+         missing/expired tossctl never blocks the briefing).
+      2. Fetch ``portfolio positions`` for the target market and format
+         each holding into a line the LLM can quote directly.
+
+    Args:
+        market: "US" or "KR".
+
+    Returns:
+        Multi-line text block. Header line says whether positions exist;
+        body lists each position (ticker, qty, avg cost). On any error,
+        returns a single-line "Portfolio unavailable" note so the prompt
+        is always well-formed.
+    """
+    import json as _json
+    import subprocess as _sp
+
+    project_root = Path(__file__).parent.parent
+    cli = project_root / "bin" / "stock-cli"
+
+    # Step 1 — Toss sync (best-effort, never raises).
+    try:
+        _sp.run(
+            [str(cli), "portfolio", "sync"],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 — sync failure must never block briefing
+        pass
+
+    # Step 2 — Fetch positions.
+    try:
+        out = _sp.run(
+            [str(cli), "portfolio", "positions", "--market", market],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if out.returncode != 0 or not out.stdout.strip():
+            return f"[{market}] 포트폴리오 데이터 조회 실패 — 점검 섹션 생략 가능."
+        data = _json.loads(out.stdout)
+        positions = data.get("positions") or []
+    except Exception as e:  # noqa: BLE001
+        return f"[{market}] 포트폴리오 데이터 파싱 실패: {e} — 점검 섹션 생략 가능."
+
+    if not positions:
+        return (
+            f"[{market}] 보유 종목 없음. "
+            "출력 시 '보유 종목 없음' 한 줄로 안내하고 다음 섹션으로 진행."
+        )
+
+    lines = [f"[{market}] 현재 보유 {len(positions)}종목 (Toss 동기화 직후):"]
+    for p in positions:
+        ticker = p.get("ticker", "?")
+        # The positions API uses 'quantity' + 'avg_price'; older snapshots
+        # used 'qty' + 'avg_cost'. Support both, but never fail on absence.
+        qty = p.get("quantity", p.get("qty", "?"))
+        avg = p.get("avg_price", p.get("avg_cost", p.get("average_cost", "?")))
+        total_cost = p.get("total_cost")
+        realized = p.get("realized_pnl")
+
+        # Format the cost basis as an integer for KR (no decimals on KRW)
+        # and 2-dec for US. ``positions`` doesn't return current_price, so
+        # the LLM still has to fetch live prices via `bin/stock-cli price`
+        # before computing unrealized P&L — that's an instruction in the
+        # SKILL.md, not something we pre-compute here.
+        try:
+            if market == "KR":
+                avg_str = f"{float(avg):,.0f}원"
+            else:
+                avg_str = f"${float(avg):,.2f}"
+        except (TypeError, ValueError):
+            avg_str = str(avg)
+
+        realized_part = ""
+        if isinstance(realized, (int, float)) and realized != 0:
+            realized_part = f", 실현손익={realized:+,.0f}"
+
+        lines.append(f"  - {ticker} | qty={qty}, 평단={avg_str}{realized_part}")
+    lines.append(
+        "위 각 포지션에 대해 (1) `bin/stock-cli price <ticker> --market "
+        f"{market} --days 5` 로 현재가 확인, (2) 평단 대비 P&L 산정, "
+        "(3) SKILL.md '내 포트폴리오 점검' 룰에 따라 "
+        "보유/추가/부분/손절/전량 중 하나 추천. "
+        "이 데이터는 prompt에 이미 주입됐으니 '미조회'로 스킵 금지."
+    )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Claude Code CLI mode
 # ---------------------------------------------------------------------------
@@ -218,6 +322,7 @@ def build_claude_code_prompt(market: str) -> str:
         Prompt string for `claude -p`.
     """
     track_record = get_track_record_context()
+    portfolio_context = get_portfolio_context(market)
     today = datetime.now().strftime("%Y-%m-%d")
 
     if market == "US":
@@ -236,6 +341,10 @@ Specifically:
 
 Your recent track record (for calibration):
 {track_record}
+
+Your current portfolio (pre-fetched — DO NOT skip the portfolio review section
+if positions exist below):
+{portfolio_context}
 
 Rules:
 - Minimum confidence 0.55, maximum 0.85
@@ -271,6 +380,10 @@ Specifically:
 
 Your recent track record (for calibration):
 {track_record}
+
+Your current portfolio (pre-fetched — DO NOT skip the portfolio review section
+if positions exist below):
+{portfolio_context}
 
 Rules:
 - Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y).
