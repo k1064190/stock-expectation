@@ -1,38 +1,36 @@
 ---
 name: daily-briefing
-description: Morning market briefing with stock picks for US and Korean markets. Generates a daily report covering macro environment, sector rotation, top movers, and 3-5 actionable predictions with direction, confidence level, and reasoning. Each pick is logged as a formal prediction for track record tracking. Triggers on keywords like daily briefing, morning report, market overview, today's picks, what should I trade, 오늘 시장, 일일 브리핑.
+description: Morning market briefing with stock picks for US and Korean markets. Generates a daily report covering macro environment, sector rotation, 10-12 actionable predictions (5-6 per market) with BUY/WATCH/HOLD/AVOID/SELL labels and Korean reasoning, plus a portfolio review section recommending hold/add/trim/exit per current position. Each pick is logged as a formal prediction for track record tracking. Triggers on keywords like daily briefing, morning report, market overview, today's picks, what should I trade, 오늘 시장, 일일 브리핑.
 ---
 
 # Daily Briefing
 
-Generate a comprehensive morning market briefing with actionable stock predictions for both US and Korean markets.
+매크로 + 종목 추천 + 포트폴리오 점검을 통합한 일일 시장 브리핑.
 
 ## When to Use
 
-- Start of trading day (morning routine)
-- When you want today's market overview with specific picks
-- When you want predictions logged for track record tracking
+- 장 시작 전 아침 루틴 (자동 cron 또는 수동 호출)
+- 오늘 시장 전체를 빠르게 파악하고 매수/매도 결정에 활용
+- 트랙 레코드 누적 — 모든 추천이 자동으로 DB에 기록됨
 
 ## Prerequisites
 
-- `bin/stock-cli` must be executable (uses uv-managed environment)
-- No API keys required for Korean data (PyKRX)
-- Optional: `FMP_API_KEY` for enhanced US data
+- `bin/stock-cli` 실행 가능 (uv-managed env)
+- KR 데이터는 키 불필요 (PyKRX)
+- 선택: `FMP_API_KEY` (US 데이터 강화), `FINNHUB_API_KEY` + `ALPHA_VANTAGE_API_KEY` (US 뉴스/sentiment)
 
 ## Workflow
 
-All data access and prediction logging go through `bin/stock-cli` via Bash.
-Every command returns JSON — parse it, analyze it, then call the next command.
+모든 데이터 접근과 예측 등록은 `bin/stock-cli`를 통해 수행. 모든 명령은 JSON 반환 — 파싱 후 다음 단계 호출.
 
-### 1. Gather Market Data
+### 1. 시장 데이터 수집
 
-**US indices and sectors:**
+**US 인덱스 + 섹터:**
 ```bash
 bin/stock-cli price SPY --market US --days 10
 bin/stock-cli price QQQ --market US --days 10
 bin/stock-cli price DIA --market US --days 10
-
-# Sector ETFs
+bin/stock-cli price IWM --market US --days 10   # 소형주 비교
 bin/stock-cli price XLK --market US --days 10
 bin/stock-cli price XLF --market US --days 10
 bin/stock-cli price XLE --market US --days 10
@@ -42,7 +40,7 @@ bin/stock-cli price XLP --market US --days 10
 bin/stock-cli price XLU --market US --days 10
 ```
 
-**Korean blue chips:**
+**KR 인덱스 + 주요 종목:**
 ```bash
 bin/stock-cli price 005930 --market KR --days 10   # 삼성전자
 bin/stock-cli price 000660 --market KR --days 10   # SK하이닉스
@@ -52,105 +50,226 @@ bin/stock-cli price 006400 --market KR --days 10   # 삼성SDI
 bin/stock-cli price 005380 --market KR --days 10   # 현대자동차
 ```
 
-**Check existing state:**
+**Multi-horizon 기술 지표 (점수 산정에 사용):**
 ```bash
-bin/stock-cli predict list --status OPEN --limit 20
+# 후보 종목 한 번에 (US 12-15개, KR 12-15개 정도)
+bin/stock-cli horizon-metrics-batch SPY,QQQ,NVDA,AMD,MSFT,GOOGL,AAPL,META,AMZN,TSLA,AVGO,MU --market US --days 400
+bin/stock-cli horizon-metrics-batch 005930,000660,035420,051910,006400,005380,373220,247540,034020,329180,012450,006800 --market KR --days 400
+```
+
+**뉴스 + sentiment** (각 finalist 종목별):
+```bash
+bin/stock-cli news NVDA --market US --limit 5 --since-days 7
+bin/stock-cli news 005930 --market KR --limit 5 --since-days 7
+bin/stock-cli disclosure 005930 --since-days 14   # KR only — 감자/유상증자/관리 종목 cap 체크
+```
+
+**기존 상태 점검:**
+```bash
+bin/stock-cli predict list --status OPEN --limit 30
 bin/stock-cli track-record --days 30
+bin/stock-cli calibration
 ```
 
-### 2. Analyze Market Environment
+### 2. 포트폴리오 상태 수집 (있을 때만)
 
-Assess the following dimensions:
+```bash
+# 포트폴리오 존재 여부 확인
+bin/stock-cli portfolio positions --market US 2>&1
+bin/stock-cli portfolio positions --market KR 2>&1
 
-**Macro regime:**
-- US: risk-on vs risk-off signals (SPY trend, sector rotation patterns)
-- Korean: KOSPI breadth, foreign investor flow direction, won/dollar impact
+# 있으면 평가 데이터까지
+bin/stock-cli portfolio report --market US
+bin/stock-cli portfolio report --market KR
+bin/stock-cli portfolio risk --market KR
+```
 
-**Sector rotation:**
-- Which sectors are leading/lagging over 1W and 1M?
-- US tech vs Korean semis correlation
-- Defensive vs cyclical positioning
+포트폴리오가 없거나(`Portfolio not found` 류 에러) 비어있으면(`positions: []`) 포트폴리오 섹션은 건너뛰고 안내 한 줄 표시.
 
-**Momentum & breadth:**
-- Are indices making new highs with broad participation?
-- KOSDAQ vs KOSPI relative strength
+### 3. 시장 환경 분석
 
-### 3. Generate and Log Predictions
+다음 차원을 평가:
 
-For each pick, call `predict create` with all fields:
+**매크로 레짐:**
+- US: risk-on / risk-off (SPY 추세, 섹터 로테이션 패턴)
+- KR: KOSPI breadth, 외국인 매매 방향, 원/달러 환율 영향
+- 인덱스 vs IWM(소형주) 상대 강도 → 시장이 폭 넓은지
+
+**섹터 로테이션:**
+- 1W/1M 기준 leading/lagging 섹터
+- US 반도체 ↔ KR 반도체 (cross-market 상관성)
+- 방어주 vs 경기민감주 위치
+
+**모멘텀 + breadth:**
+- 인덱스 신고가 + 광범위 참여 여부
+- KOSDAQ vs KOSPI 상대 강도
+
+### 4. 종목 점수화 + 라벨 결정 (BUY/WATCH/HOLD/AVOID/SELL)
+
+`/expect` 스킬과 동일한 결정론적 포인트 테이블 사용:
+
+**ALGO_SCORE (max +8.0)** — `horizon-metrics-batch` 결과로 산정:
+- Trend: MA20>MA50>MA200 → +3.0 | MA20>MA50 only → +1.0 | full bear → -1.0 | else 0
+- Momentum: RSI14 ∈ [50,70] → +1.5 | [30,50) → +0.5 | >70 → +0.5 | <30 → -0.5
+- Return 1M: ≥+5% → +1.5 | 0~5% → +0.5 | -10%~0 → 0 | ≤-10% → -0.5
+- Volume: `vol_ratio` > 1.3 → +1.0 | else 0
+- Cycle: `pct_from_52w_high` ≥ -10% → +1.0 | `max_drawdown_1y` ≤ -25% → -1.0 | else 0
+
+**NEWS_SCORE (max +3.0)** — `news` + `disclosure` 결과로:
+- Sentiment (US AV): >+0.15 → +2.0 | 0~+0.15 → +1.0 | -0.15~0 → -1.0 | <-0.15 → -2.0
+- Headline volume: 7일 ≥3건 → +1.0 | else 0
+- Hard cap: 부정 키워드(bankrupt, fraud, lawsuit, downgrade, recall, delist) → cap -2.0
+- Hard cap: KR 공시 감자/유상증자/관리종목/거래정지/상장폐지 → cap -2.0
+
+**COMPOSITE = ALGO + NEWS** (범위 -7 ~ +11):
+- ≥ 8.0 → **BUY**
+- [6.0, 8.0) → **WATCH**
+- [3.0, 6.0) → **HOLD**
+- [0, 3.0) → **AVOID**
+- < 0 → **SELL**
+
+각 시장에서 **5-6개 종목 선정**해 라벨 부여 (총 10-12개). 라벨이 BUY/WATCH만 있다면 좋지만, AVOID/SELL도 자연스럽게 포함 가능 (다양성 + 공부 자료).
+
+### 5. 예측 등록 (각 종목별)
+
+BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).
 
 ```bash
 bin/stock-cli predict create \
-  --ticker NVDA \
-  --market US \
-  --direction BULL \
-  --confidence 0.72 \
-  --timeframe 1W \
-  --entry-price 125.50 \
-  --target-price 135.00 \
-  --stop-price 120.00 \
-  --reasoning "Strong breakout above 20-day MA with volume confirmation. Sector leadership in semis. AI capex narrative intact." \
-  --signals technical,momentum,sector \
+  --ticker 005930 --market KR --direction BULL \
+  --confidence 0.62 --timeframe 1M \
+  --entry-price 268500 --target-price 300000 --stop-price 248000 \
+  --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True" \
+  --signals technical,momentum \
   --source LIVE
 ```
 
-For Korean stocks:
+**예측 품질 규칙:**
+- Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
+- 최소 2개 signal 명시 (signals_used)
+- KR 종목 기본 timeframe 1M (유동성 낮음 고려)
+- US 종목 기본 timeframe 1W
+- Target ≥ 2 × Stop 거리 (2:1 reward/risk)
+- 자동 cron이면 `--source LIVE`, 대화형이면 `--source INTERACTIVE`
 
-```bash
-bin/stock-cli predict create \
-  --ticker 005930 \
-  --market KR \
-  --direction BULL \
-  --confidence 0.65 \
-  --timeframe 2W \
-  --entry-price 186200 \
-  --target-price 195000 \
-  --stop-price 178000 \
-  --reasoning "Oversold bounce from key support. US semi recovery tailwind. Foreign net buying returning." \
-  --signals technical,cross_market,breadth \
-  --source LIVE
-```
+### 6. 포트폴리오 액션 추천 (보유 종목 있을 때)
 
-**Prediction quality rules:**
-- Minimum confidence 0.55 (don't predict coin flips)
-- Maximum confidence 0.85 for daily picks
-- Every prediction must cite at least 2 signals
-- Korean stocks default to 2W timeframe (lower liquidity)
-- US stocks default to 1W timeframe
-- Target must be at least 2x the stop distance (2:1 reward/risk)
-- When invoking from interactive session, use `--source INTERACTIVE`
-- When invoking from scheduled automation, use `--source LIVE`
+각 보유 포지션을 다음 기준으로 평가:
 
-### 4. Present the Briefing
+| 기준 | 추천 |
+|---|---|
+| 현재 ALGO/NEWS 점수 + 평단 대비 P&L + RSI/MA 상태 | |
+| composite ≥ 6 & P&L > 0% & 추세 정상 | **보유 유지** |
+| composite ≥ 8 & 평단 대비 +5% 이상 & 추가 진입 여력 | **추가 매수** (분할) |
+| composite 3-6 & P&L > +20% & RSI > 75 | **부분 매도** (이익 실현) |
+| composite < 3 & 손절가 근접 | **손절 검토** |
+| composite < 0 OR 한도 caps 발동 (관리종목 등) | **전량 매도** |
 
-Structure output as:
+각 추천에 1-2문장 한국어 사유 필수 (구체 숫자 인용).
+
+### 7. 최종 출력 (한국어 우선)
 
 ```markdown
-# Daily Market Briefing — [DATE]
+# 📊 Daily Market Briefing — [YYYY-MM-DD]
 
-## Executive Summary
-[3-5 bullet points: key themes, risk level, overall bias]
+## 1. 요약 (Executive Summary)
 
-## US Market Overview
-[SPY/QQQ/DIA performance, sector leaders/laggards, key levels]
+3-5 bullet points 한국어:
+- 오늘 시장의 핵심 테마
+- 리스크 레벨 (낮음/보통/높음)
+- 전반적 bias (강세/중립/약세)
 
-## Korean Market Overview
-[KOSPI/KOSDAQ performance, Samsung/SK Hynix, foreign flows]
+## 2. 매크로 환경
 
-## Today's Predictions
+### 미국
+[SPY/QQQ/DIA 추세 + 섹터 리더십 + 주요 가격대 — 한국어 paragraph 3-5줄]
 
-### US Picks
-[2-3 predictions with full details, including prediction IDs from CLI output]
+### 한국
+[KOSPI/KOSDAQ 추세 + 외국인 흐름 + 원/달러 환율 영향 — 한국어 paragraph 3-5줄]
 
-### Korean Picks
-[2-3 predictions with full details, including prediction IDs from CLI output]
+## 3. 오늘의 종목 추천
 
-## Track Record Update
-[Current win rate, recent streak, calibration notes from track-record output]
+### 🇺🇸 미국 (5-6 종목)
 
-## Key Events Today
-[Economic releases, earnings, central bank decisions]
+#### 1. NVDA — **BUY** (composite 9.0)
+- **점수**: ALGO 6.0 / NEWS 3.0
+- **가격대**: 진입 215.20 → 목표 226 (+5%) / 손절 207 (-4%)
+- **시간**: 1주
+- **분석**: NVIDIA는 RSI14=65.86으로 건강한 모멘텀 구간이며, MA20>MA50>MA200 완전한 상승 정렬을 유지하고 있습니다. 지난 1개월 +17% 상승했지만 52주 고점 대비 -0.6%로 아직 추가 여력이 있고, Finnhub+AV 종합 sentiment +0.28로 뉴스 흐름도 우호적입니다. AI 인프라 수요 지속 + 사이클 리스크 낮은 편으로 **분할 매수 추천**.
+- **로깅**: `predict_id=<uuid>`
+
+#### 2. AAPL — **WATCH** (composite 7.5)
+[동일 구조 — 점수 / 가격대 / 시간 / 분석 / 로깅]
+
+[3-6번 종목 동일 형식]
+
+### 🇰🇷 한국 (5-6 종목)
+
+#### 1. 005930 삼성전자 — **WATCH** (composite 7.0)
+- **점수**: ALGO 6.0 / NEWS 1.0
+- **가격대**: 진입 285,500원 / 목표 320,000 (+12%) / 손절 263,000 (-8%)
+- **시간**: 1개월
+- **분석**: 삼성전자는 MA20>MA50>MA200 완전한 정렬에 RSI14=74.5로 약간 과열 구간이지만 거래대금 1위로 외국인 매수가 뒷받침되고 있습니다. 지난 1년 +382% 상승해 cycle_risk_flag=True로 단기 조정 가능성 있어 WATCH로 분류 — 285,000 이하 풀백 시 분할 진입 권장. KR 공시 cap 트리거 없음.
+- **로깅**: `predict_id=<uuid>`
+
+[2-6번 종목 동일 형식]
+
+## 4. 내 포트폴리오 점검
+
+(보유 종목 있을 때만 표시. 없으면 "보유 종목 없음 — `bin/stock-cli portfolio create` 후 매수 기록을 추가하시면 다음 브리핑부터 자동 점검됩니다." 한 줄.)
+
+### 🇺🇸 US 포지션
+
+#### NVDA (10주, 평단 $185.00)
+- 현재가 $215.20, P&L **+16.3%** ($+302)
+- **추천**: 보유 유지
+- **사유**: 추세 정상(MA stack), 모멘텀 건강(RSI 65), 1주 horizon 추가 BUY 예측 발생. 다만 +16% 익절 영역 들어가니 +25% 도달 시 부분 매도(30%) 권장.
+
+#### TSLA (5주, 평단 $280.00)
+- 현재가 $240.00, P&L **-14.3%** ($-200)
+- **추천**: 손절 검토
+- **사유**: composite=2.5 (AVOID 구간), MA20<MA50<MA200 풀 베어 정렬, 손절가 $238 근접. 한 번 더 -2% 빠지면 전량 매도 권장.
+
+### 🇰🇷 KR 포지션
+
+#### 005930 삼성전자 (50주, 평단 220,000원)
+[동일 구조]
+
+#### 종합
+- US 포지션 평균 +N%
+- KR 포지션 평균 +N%
+- 섹터 집중 위험: [`portfolio risk` 결과 인용]
+- 다음 액션 우선순위: [1순위 / 2순위]
+
+## 5. 트랙 레코드 업데이트
+
+[`track-record` + `calibration` 결과를 한국어로 정리]
+- 30일 적중률: N%
+- Brier score: N
+- 시그널별 성과: technical N%, news N%, momentum N%
+- 과신 버킷: [있으면 명시]
+
+## 6. 오늘의 주요 이벤트
+
+[`economic-calendar-fetcher` 또는 web search로 확인한 이벤트]
+- US: [CPI 발표 / 어닝스 등]
+- KR: [정책 발표 / 어닝스 등]
+- 글로벌: [FOMC / 중국 등]
+
+---
+
+*모든 예측 ID는 `bin/stock-cli predict detail <id>`로 상세 조회 가능*
+*다음 자동 브리핑: [평일 07:00 KR / 21:00 US]*
 ```
 
-Include the prediction IDs returned by `predict create` so the user can
-reference them later with `bin/stock-cli predict detail <id>`.
+## 분석 톤 가이드
+
+- **한국어 우선** — 매크로/분석/추천 사유는 모두 한국어 paragraph로 작성
+- **구체 숫자 명시** — "강한 상승"보다 "RSI 65, 1개월 +17%" 식으로
+- **명확한 액션** — "관심 가질 만함"이 아니라 "215.20 분할 매수, 207 손절"
+- **리스크 동등 비중** — TECH 1줄, NEWS 1줄, RISK 1줄 (transmission chain 원칙)
+- **과신 자제** — calibration에서 발견된 과신 버킷이 있다면 confidence 자동 캡
+
+## 분량 가이드
+
+전체 briefing: ~1500-2500자 (Telegram 한 메시지 4096자 한계 내, 2개 분할 예상). 종목별 분석은 5-6 줄 paragraph로 제한.
