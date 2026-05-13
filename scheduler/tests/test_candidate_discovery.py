@@ -142,25 +142,50 @@ def test_enumerate_returns_market_cap_and_trading_value():
     assert result == [("CCC001", 1234.0, 5678.0)]
 
 
-def test_enumerate_handles_pykrx_failure():
-    """PyKRX exception → empty list (caller falls back to anchors only)."""
+def test_enumerate_pykrx_failure_falls_back_to_static_csv():
+    """PyKRX exception → load data/kr_universe.csv (the production state today
+    since KRX's bulk endpoint is broken upstream)."""
     with patch(
         "pykrx.stock.get_market_cap_by_ticker", side_effect=RuntimeError("boom")
     ):
-        assert enumerate_kr_universe() == []
+        out = enumerate_kr_universe()
+    assert len(out) > 50, "expected static CSV to provide at least ~150 tickers"
+    tickers = {t for (t, _, _) in out}
+    # 5/13 actors + anchors must be in the CSV — that was the whole point.
+    assert {"307950", "066570", "005380", "005930", "000660", "069500"} <= tickers
+    # CSV-mode tuples carry None for cap/value (only the live bulk path knows).
+    assert all(cap is None and val is None for (_, cap, val) in out)
 
 
-def test_enumerate_handles_unexpected_columns():
-    """Missing 시가총액 or 거래대금 column → empty list, no crash."""
+def test_enumerate_unexpected_columns_falls_back_to_static_csv():
+    """Missing 시가총액 or 거래대금 column → CSV fallback (was: empty list)."""
     df = pd.DataFrame({"foo": [1], "bar": [2]}, index=["DDD001"])
     with patch("pykrx.stock.get_market_cap_by_ticker", return_value=df):
-        assert enumerate_kr_universe() == []
+        out = enumerate_kr_universe()
+    tickers = {t for (t, _, _) in out}
+    assert "307950" in tickers
 
 
-def test_enumerate_handles_empty_frame():
-    """PyKRX returning an empty frame → empty list."""
+def test_enumerate_empty_frame_falls_back_to_static_csv():
+    """PyKRX returning an empty frame → CSV fallback (was: empty list)."""
     df = pd.DataFrame(columns=["시가총액", "거래대금"])
     with patch("pykrx.stock.get_market_cap_by_ticker", return_value=df):
+        out = enumerate_kr_universe()
+    tickers = {t for (t, _, _) in out}
+    assert "307950" in tickers
+
+
+def test_enumerate_csv_missing_returns_empty(monkeypatch):
+    """When BOTH PyKRX is broken AND the static CSV is unreadable, return []
+    (anchors-only fallback in discover_kr_candidates still kicks in)."""
+    from pathlib import Path
+
+    import candidate_discovery as cd
+
+    monkeypatch.setattr(cd, "STATIC_UNIVERSE_PATH", Path("/nonexistent.csv"))
+    with patch(
+        "pykrx.stock.get_market_cap_by_ticker", side_effect=RuntimeError("boom")
+    ):
         assert enumerate_kr_universe() == []
 
 

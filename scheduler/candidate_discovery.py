@@ -93,6 +93,70 @@ DEFAULT_RETURN_THRESHOLD_PCT = 15.0
 DEFAULT_VOL_RATIO_THRESHOLD = 2.0
 
 
+STATIC_UNIVERSE_PATH = PROJECT_ROOT / "data" / "kr_universe.csv"
+
+
+def _load_static_universe() -> list[tuple[str, Optional[float], Optional[float]]]:
+    """Read the curated KR universe CSV.
+
+    Used as the fallback when PyKRX's bulk-by-ticker endpoint is broken
+    (which is the current state as of 2026-05; KRX changed its response
+    format and PyKRX 1.2.x does not handle it). The CSV ships
+    ticker+name+market_segment for ~150 KOSPI/KOSDAQ/ETF names — the
+    market_cap/trading_value columns are unknown in this mode (return
+    None) since those numbers also flow through the broken endpoint.
+
+    The companion ``_load_static_universe_names`` exposes the ticker→
+    name mapping for ``_fill_names`` so survivors get readable labels
+    without needing a per-ticker PyKRX name HTTP call.
+    """
+    if not STATIC_UNIVERSE_PATH.exists():
+        logger.warning("static universe CSV not found at %s", STATIC_UNIVERSE_PATH)
+        return []
+
+    out: list[tuple[str, Optional[float], Optional[float]]] = []
+    try:
+        with STATIC_UNIVERSE_PATH.open("r", encoding="utf-8") as f:
+            import csv
+
+            reader = csv.DictReader(f)
+            for row in reader:
+                ticker = (row.get("ticker") or "").strip().zfill(6)
+                if not ticker:
+                    continue
+                out.append((ticker, None, None))
+    except Exception as exc:  # noqa: BLE001 — never block the briefing on CSV parse
+        logger.error("failed to read %s: %s", STATIC_UNIVERSE_PATH, exc)
+        return []
+    return out
+
+
+def _load_static_universe_names() -> dict[str, str]:
+    """Ticker → name map from the static CSV.
+
+    Used by ``_fill_names`` as the first-priority name source — avoids
+    per-ticker ``get_market_ticker_name`` HTTP fan-out when the CSV
+    already has the answer. Re-reads on every call; the cost is a single
+    small CSV parse per briefing (~166 rows) so caching adds complexity
+    without a measurable win.
+    """
+    if not STATIC_UNIVERSE_PATH.exists():
+        return {}
+    out: dict[str, str] = {}
+    try:
+        with STATIC_UNIVERSE_PATH.open("r", encoding="utf-8") as f:
+            import csv
+
+            for row in csv.DictReader(f):
+                t = (row.get("ticker") or "").strip().zfill(6)
+                n = (row.get("name") or "").strip()
+                if t and n:
+                    out[t] = n
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("static name map read failed: %s", exc)
+    return out
+
+
 def enumerate_kr_universe(
     top_n_cap: int = 200,
     top_n_value: int = 50,
@@ -107,31 +171,42 @@ def enumerate_kr_universe(
             back to the most recent business day on holidays.
 
     Returns:
-        List of ``(ticker, market_cap, trading_value)`` tuples,
-        deduplicated. Empty list on PyKRX failure — caller should treat
-        as "anchors only" mode.
+        List of ``(ticker, market_cap, trading_value)`` tuples. PyKRX
+        bulk endpoint failure falls back to the static CSV at
+        ``data/kr_universe.csv`` — market_cap/trading_value are None in
+        that path (the columns only exist on the live bulk endpoint).
+        Empty list only when BOTH live and CSV are unavailable.
     """
-    from pykrx import stock as krx_stock
-
     today_str = today or datetime.now().strftime("%Y%m%d")
     try:
+        from pykrx import stock as krx_stock
+
         df = krx_stock.get_market_cap_by_ticker(today_str, market="ALL")
     except Exception as exc:
-        logger.error("PyKRX get_market_cap_by_ticker(%s) failed: %s", today_str, exc)
-        return []
+        logger.warning(
+            "PyKRX get_market_cap_by_ticker(%s) failed (%s); "
+            "falling back to static CSV universe",
+            today_str,
+            exc,
+        )
+        return _load_static_universe()
 
     if df is None or df.empty:
-        logger.warning("PyKRX returned empty market-cap frame for %s", today_str)
-        return []
+        logger.warning(
+            "PyKRX returned empty market-cap frame for %s; "
+            "falling back to static CSV universe",
+            today_str,
+        )
+        return _load_static_universe()
 
     cap_col = "시가총액" if "시가총액" in df.columns else None
     val_col = "거래대금" if "거래대금" in df.columns else None
     if cap_col is None or val_col is None:
-        logger.error(
-            "Unexpected PyKRX columns; expected 시가총액 & 거래대금, got %s",
+        logger.warning(
+            "Unexpected PyKRX columns (got %s); falling back to static CSV",
             list(df.columns),
         )
-        return []
+        return _load_static_universe()
 
     cap_top = df.nlargest(top_n_cap, cap_col)
     val_top = df.nlargest(top_n_value, val_col)
@@ -180,6 +255,19 @@ def score_and_filter(
     tickers = [t for (t, _, _) in universe]
     meta = {t: (cap, val) for (t, cap, val) in universe}
     bars_by_ticker = provider.get_price_history_batch(tickers, days=30)
+
+    # Surface tickers the provider returned <6 bars for — typically delisted /
+    # merged names in the static CSV. Cron operators rely on this log line
+    # to decide when to refresh the CSV; without it stale entries silently
+    # add 5-15s per cron via FDR retry backoff.
+    stale = sorted(t for t in tickers if len(bars_by_ticker.get(t, [])) < 6)
+    if stale:
+        logger.info(
+            "score_and_filter: %d tickers had insufficient price history "
+            "(delisted/merged/new?) — CSV refresh candidates: %s",
+            len(stale),
+            ", ".join(stale[:20]) + ("..." if len(stale) > 20 else ""),
+        )
 
     survivors: list[Candidate] = []
     for ticker, bars in bars_by_ticker.items():
@@ -359,18 +447,32 @@ def _vol_ratio(volumes: list[int]) -> float:
 
 
 def _fill_names(cands: list[Candidate]) -> list[Candidate]:
-    """Best-effort PyKRX name lookup for each candidate.
+    """Populate ``Candidate.name`` for each surviving candidate.
 
-    Sequential because PyKRX's ``get_market_ticker_name`` is cheap per
-    call (KRX serves it from cache) and we typically run this over fewer
-    than 50 tickers. Failures leave ``name=""`` — the prompt renders ``?``.
+    Two-tier lookup: the static CSV map first (free, in-process), then
+    PyKRX ``get_market_ticker_name`` as a backstop for tickers not in
+    the CSV. PyKRX's name endpoint has been resilient even when its
+    bulk-by-ticker endpoints are broken, so this remains useful even
+    in CSV-fallback mode for any out-of-CSV ticker that snuck in.
     """
+    static_names = _load_static_universe_names()
+    # First pass: in-place mutation of c.name from the CSV map. The second
+    # pass below filters by `not c.name` and sees these updates because
+    # both loops iterate the same Candidate references.
+    for c in cands:
+        if not c.name:
+            static_hit = static_names.get(c.ticker)
+            if static_hit:
+                c.name = static_hit
+    # Second pass: PyKRX backstop for tickers still missing a name.
+    remaining = [c for c in cands if not c.name]
+    if not remaining:
+        return cands
     try:
         from pykrx import stock as krx_stock
     except ImportError:
         return cands
-
-    for c in cands:
+    for c in remaining:
         try:
             c.name = krx_stock.get_market_ticker_name(c.ticker) or ""
         except Exception as exc:

@@ -99,12 +99,18 @@ uv run pytest scheduler/tests/ -v
 # with members 005380/066570/307950, no Samsung-only anchoring
 ```
 
-end-to-end dry-run 결과 확인:
+end-to-end dry-run 결과 확인 (1 종목당 1-2 mock 헤드라인 fixture):
 ```
 ## Active Themes (지난 7일 뉴스 클러스터링)
 - 피지컬 ai [3종목, 3 헤드라인]: 005380, 066570, 307950
   예시: "현대차, 피지컬 AI 로보틱스 뉴욕 공개"
 ```
+
+> 참고: 본 dry-run fixture 는 단위 테스트
+> `test_513_physical_ai_cluster_surfaces_across_three_tickers` 와 *별개* —
+> 단위 테스트 fixture 에는 307950 이 2 헤드라인을 가지므로 거기서는
+> `headline_count == 4` 가 정답이다 (확장된 fixture). 두 숫자는 같은
+> catalyst 의 다른 realization.
 
 라이브 PyKRX/Naver smoke 는 captive portal 로 불가 — cron 실행 환경 (정상
 네트워크) 에서 동일 패턴이 동작. 기존 `KoreanMarketProvider.get_news` 가

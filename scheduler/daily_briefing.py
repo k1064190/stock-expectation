@@ -120,7 +120,8 @@ def fetch_kr_market_data() -> str:
     Stage A: ``discover_kr_candidates`` (시총 top-200 ∪ 거래대금 top-50 →
     momentum/volume filter → 3 anchor merge).
     Stage B: ``fetch_news_for_candidates`` (8-worker parallel Naver scrape)
-    + ``cluster_news`` (3-gram cross-ticker clustering) for the
+    + ``cluster_news`` (2/3-gram cross-ticker clustering, default
+    ``ngram_sizes=(2, 3)``) for the
     Active Themes section.
 
     Returns:
@@ -373,7 +374,7 @@ if positions exist below):
 {portfolio_context}
 
 Rules:
-- Minimum confidence 0.55, maximum 0.85
+- Minimum confidence 0.60 (matches the per-horizon logging gate below), maximum 0.85
 - Every prediction needs at least 2 signals
 - Target must be at least 2x stop distance
 - Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
@@ -441,7 +442,7 @@ if positions exist below):
 
 Rules:
 - Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y).
-- Minimum confidence 0.55, maximum 0.85
+- Minimum confidence 0.60 (matches the per-horizon logging gate below), maximum 0.85
 - Stop-loss wider than US by ~20%
 - Target at least 2x stop distance
 - Consider won/dollar impact on exporters

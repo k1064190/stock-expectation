@@ -129,6 +129,47 @@ def test_superset_preference_over_same_ticker_set():
     ), f"expected superset (length>=2), got: {same_set_clusters[0].keywords}"
 
 
+def test_distinct_themes_share_ticker_set_survive_both():
+    """Two unrelated bigrams on the *same* 3 tickers MUST both survive — the
+    previous design keyed dedup on tuple(tickers), which collapsed unrelated
+    themes (Codex C1 P1 fix). Here '피지컬 ai' and '자율주행 로봇' are not
+    substrings of each other, so both clusters appear."""
+    news = {
+        "AAA": _news(["피지컬 AI 발표", "자율주행 로봇 시연"]),
+        "BBB": _news(["피지컬 AI 강세", "자율주행 로봇 도입"]),
+        "CCC": _news(["피지컬 AI 정책", "자율주행 로봇 실증"]),
+    }
+    clusters = cluster_news(news, min_cluster_size=3, ngram_sizes=(2,))
+    same_set = [c for c in clusters if set(c.tickers) == {"AAA", "BBB", "CCC"}]
+    keyword_strs = {" ".join(c.keywords) for c in same_set}
+    assert "피지컬 ai" in keyword_strs
+    assert "자율주행 로봇" in keyword_strs
+    assert len(same_set) >= 2, f"expected both themes to survive, got: {keyword_strs}"
+
+
+def test_repeated_ngram_in_single_headline_counts_once():
+    """A headline that repeats the same n-gram twice contributes 1, not 2,
+    to ``headline_count`` (Codex C3 P2 fix). Previously the index appended
+    the headline per n-gram occurrence, inflating the count and biasing
+    ranking."""
+    news = {
+        # 'AI 인프라' appears twice in the AAA headline.
+        "AAA": _news(["AI 인프라 도입, AI 인프라 비용 절감"]),
+        "BBB": _news(["AI 인프라 강세"]),
+        "CCC": _news(["AI 인프라 정책"]),
+    }
+    clusters = cluster_news(news, min_cluster_size=3, ngram_sizes=(2,))
+    target = next(
+        (c for c in clusters if "ai" in c.keywords and "인프라" in c.keywords),
+        None,
+    )
+    assert target is not None, f"got clusters: {[c.keywords for c in clusters]}"
+    assert target.headline_count == 3, (
+        f"headline_count was {target.headline_count}; expected 3 "
+        f"(one per ticker, not n-gram occurrences)"
+    )
+
+
 def test_empty_news_returns_empty_list():
     """No news → no clusters, no crash."""
     assert cluster_news({}) == []
