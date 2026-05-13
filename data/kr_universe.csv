@@ -46,7 +46,6 @@ ticker,name,market_segment
 009540,HD한국조선해양,KOSPI
 329180,HD현대중공업,KOSPI
 267260,HD현대일렉트릭,KOSPI
-010620,HD현대미포,KOSPI
 267250,HD현대,KOSPI
 000720,현대건설,KOSPI
 028050,삼성E&A,KOSPI
@@ -89,7 +88,6 @@ ticker,name,market_segment
 180640,한진칼,KOSPI
 032640,LG유플러스,KOSPI
 021240,코웨이,KOSPI
-003410,쌍용C&E,KOSPI
 000080,하이트진로,KOSPI
 033780,KT&G,KOSPI
 000150,두산,KOSPI
@@ -112,7 +110,6 @@ ticker,name,market_segment
 196170,알테오젠,KOSDAQ
 086520,에코프로,KOSDAQ
 247540,에코프로비엠,KOSDAQ
-091990,셀트리온헬스케어,KOSDAQ
 028300,HLB,KOSDAQ
 141080,리가켐바이오,KOSDAQ
 145720,덴티움,KOSDAQ
