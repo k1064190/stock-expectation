@@ -71,9 +71,24 @@ Target Week End: [Current Date + 7 days, e.g., November 9, 2025]
 
 **Format dates in YYYY-MM-DD** for API compatibility.
 
-### Step 2: Load FMP API Guide
+### Step 2: Run the FMP Script (MANDATORY)
 
-Before retrieving data, load the comprehensive FMP API guide:
+**CRITICAL: Always run the Python script to fetch real data. Do NOT use web search as a substitute.**
+
+```bash
+# Load FMP_API_KEY from .env with auto-export so the child Python process
+# sees it. Plain `source .env && uv run ...` only sets SHELL variables, not
+# ENV variables, so `os.environ.get("FMP_API_KEY")` would return None
+# inside the script. `set -a` toggles bash's allexport flag.
+set -a; source /home/cwh/projects/stock-expectation/.env; set +a
+uv run python .claude/skills/earnings-calendar/scripts/fetch_earnings_fmp.py
+```
+
+If the script fails (error exit code), THEN fall back to web search as a secondary source. But always attempt the script first. Do NOT skip the script just because you can answer from training data.
+
+### Step 2b: Load FMP API Guide (if script needs debugging)
+
+If needed, load the comprehensive FMP API guide:
 
 ```
 Read: references/fmp_api_guide.md
