@@ -93,6 +93,21 @@ DEFAULT_RETURN_THRESHOLD_PCT = 15.0
 DEFAULT_VOL_RATIO_THRESHOLD = 2.0
 
 
+def _normalise_csv_ticker(raw: str) -> Optional[str]:
+    """Validate a CSV ticker cell and return the 6-digit normalised form.
+
+    KRX tickers are always exactly 6 decimal digits. The CSV ships them
+    as-is, but manual quarterly edits can introduce typos — empty cells,
+    stray text, wrong length. Reject anything that isn't 1–6 digits so
+    a typo doesn't slip into ``get_price_history_batch`` and burn per-
+    ticker FDR retry backoff for every cron run (Codex PR #13 finding).
+    """
+    stripped = (raw or "").strip()
+    if not stripped or len(stripped) > 6 or not stripped.isdigit():
+        return None
+    return stripped.zfill(6)
+
+
 STATIC_UNIVERSE_PATH = PROJECT_ROOT / "data" / "kr_universe.csv"
 
 
@@ -121,14 +136,10 @@ def _load_static_universe() -> list[tuple[str, Optional[float], Optional[float]]
 
             reader = csv.DictReader(f)
             for row in reader:
-                # Validate BEFORE zfill — ''.zfill(6) returns '000000' which
-                # is truthy, so a blank ticker would otherwise pass through
-                # as the literal '000000' phantom ticker (Copilot PR #13
-                # finding).
-                ticker_raw = (row.get("ticker") or "").strip()
-                if not ticker_raw:
+                ticker = _normalise_csv_ticker(row.get("ticker", ""))
+                if ticker is None:
                     continue
-                out.append((ticker_raw.zfill(6), None, None))
+                out.append((ticker, None, None))
     except Exception as exc:  # noqa: BLE001 — never block the briefing on CSV parse
         logger.error("failed to read %s: %s", STATIC_UNIVERSE_PATH, exc)
         return []
@@ -152,10 +163,10 @@ def _load_static_universe_names() -> dict[str, str]:
             import csv
 
             for row in csv.DictReader(f):
-                t = (row.get("ticker") or "").strip().zfill(6)
-                n = (row.get("name") or "").strip()
-                if t and n:
-                    out[t] = n
+                ticker = _normalise_csv_ticker(row.get("ticker", ""))
+                name = (row.get("name") or "").strip()
+                if ticker and name:
+                    out[ticker] = name
     except Exception as exc:  # noqa: BLE001
         logger.warning("static name map read failed: %s", exc)
     return out

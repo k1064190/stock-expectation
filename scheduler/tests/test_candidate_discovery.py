@@ -175,6 +175,31 @@ def test_enumerate_empty_frame_falls_back_to_static_csv():
     assert "307950" in tickers
 
 
+def test_csv_ticker_validator_rejects_malformed_inputs():
+    """`_normalise_csv_ticker` must reject blank, non-digit, and too-long
+    inputs — defends both `_load_static_universe` and
+    `_load_static_universe_names` from quarterly-edit typos and the
+    `''.zfill(6) == '000000'` phantom-ticker trap (Codex PR #13 findings)."""
+    from candidate_discovery import _normalise_csv_ticker
+
+    # Valid: 1-6 digits → 6-digit zero-padded.
+    assert _normalise_csv_ticker("005930") == "005930"
+    assert _normalise_csv_ticker("5930") == "005930"
+    assert _normalise_csv_ticker("  5930  ") == "005930"
+
+    # Invalid: blank / whitespace.
+    assert _normalise_csv_ticker("") is None
+    assert _normalise_csv_ticker(None) is None  # type: ignore[arg-type]
+    assert _normalise_csv_ticker("   ") is None
+
+    # Invalid: non-digit characters.
+    assert _normalise_csv_ticker("AAPL") is None
+    assert _normalise_csv_ticker("00593O") is None  # capital O, not zero
+
+    # Invalid: longer than 6 digits.
+    assert _normalise_csv_ticker("1234567") is None
+
+
 def test_enumerate_csv_missing_returns_empty(monkeypatch):
     """When BOTH PyKRX is broken AND the static CSV is unreadable, return []
     (anchors-only fallback in discover_kr_candidates still kicks in)."""
