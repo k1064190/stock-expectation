@@ -26,18 +26,22 @@ description: Morning market briefing with stock picks for US and Korean markets.
 ### 1. 시장 데이터 수집
 
 **US 인덱스 + 섹터:**
+
+> Cron 브리핑은 `scheduler/candidate_discovery.py` 의 `discover_us_candidates()`
+> 로 후보를 동적 결정한다 (static S&P 500 + ETF + ADR universe in
+> `data/us_universe.csv` → 5일 |return|≥15% OR vol_ratio≥2x 필터 → 3 ETF 앵커
+> SPY/QQQ/DIA 병합). 결과 ticker 리스트가 prompt에 직접 주입되므로 LLM은 그
+> 목록 안에서만 조회한다. 인터랙티브 사용 시에도 동일하게 호출하거나, 아래
+> anchor + 주요 sector ETF 만 빠르게 본 뒤 화제 종목을 추가 조회한다:
+
 ```bash
-bin/stock-cli price SPY --market US --days 10
-bin/stock-cli price QQQ --market US --days 10
-bin/stock-cli price DIA --market US --days 10
-bin/stock-cli price IWM --market US --days 10   # 소형주 비교
-bin/stock-cli price XLK --market US --days 10
-bin/stock-cli price XLF --market US --days 10
-bin/stock-cli price XLE --market US --days 10
-bin/stock-cli price XLV --market US --days 10
-bin/stock-cli price XLI --market US --days 10
-bin/stock-cli price XLP --market US --days 10
-bin/stock-cli price XLU --market US --days 10
+bin/stock-cli price SPY --market US --days 10   # broad market (anchor)
+bin/stock-cli price QQQ --market US --days 10   # NASDAQ 100 (anchor)
+bin/stock-cli price DIA --market US --days 10   # Dow Jones 30 (anchor)
+bin/stock-cli price IWM --market US --days 10   # 소형주 breadth
+bin/stock-cli price XLK --market US --days 10   # tech sector
+bin/stock-cli price XLF --market US --days 10   # financials
+bin/stock-cli price XLE --market US --days 10   # energy
 ```
 
 **KR 인덱스 + 주요 종목:**

@@ -52,6 +52,7 @@ from providers.kr import KoreanMarketProvider
 from telegram_sender import send_briefing
 from candidate_discovery import (
     discover_kr_candidates,
+    discover_us_candidates,
     format_candidates_for_prompt,
 )
 from theme_clusterer import (
@@ -79,37 +80,64 @@ MAX_TRACK_RECORD_CHARS = 800
 
 
 def fetch_us_market_data() -> str:
-    """Fetch US market data and format as context string.
+    """Fetch US market data via the dynamic candidate scanner + news themes.
+
+    Parallel to ``fetch_kr_market_data`` — uses the static
+    ``data/us_universe.csv`` (~135 S&P 500 + ETF + ADR names) as the
+    enumeration source, filters by 5-day momentum / volume, merges
+    the 3 broad-market ETF anchors (SPY/QQQ/DIA), then runs the same
+    n-gram theme clusterer over the news fetched for each survivor.
 
     Returns:
-        Formatted market data string for prompt injection.
+        Formatted market data string for prompt injection (API mode).
+        Falls back to anchors-only if the provider can't fetch
+        anything — never raises.
     """
     us = USMarketProvider()
+    cands = discover_us_candidates(top_n_output=20, provider=us)
+    # Guard the second batch fetch (yfinance can raise on transient
+    # network/auth failures). The function "never raises" per docstring,
+    # so swallow into an empty dict — candidates and themes still flow
+    # to the prompt, just without the per-ticker $price snapshot block
+    # (Codex Stage 5 P2 finding).
+    try:
+        bars_by_ticker = us.get_price_history_batch([c.ticker for c in cands], days=10)
+    except Exception as exc:  # noqa: BLE001 — never block on data provider
+        logger.warning(
+            "fetch_us_market_data: 10-day batch fetch failed (%s); "
+            "continuing with candidate/theme context only",
+            exc,
+        )
+        bars_by_ticker = {}
 
-    indices = ["SPY", "QQQ", "DIA"]
-    sectors = ["XLK", "XLF", "XLE", "XLV", "XLI", "XLP", "XLU"]
+    news_by_ticker = fetch_news_for_candidates(cands, days=7, provider=us)
+    backfill_news_counts(cands, news_by_ticker)
+    themes = cluster_news(news_by_ticker, min_cluster_size=3)
 
-    lines = ["## US Market Data\n"]
+    lines = [
+        "## US Market Data\n",
+        format_candidates_for_prompt(cands),
+        "",
+        format_themes_for_prompt(themes),
+        "",
+    ]
 
-    for ticker in indices:
-        bars = us.get_price_history(ticker, days=10)
-        if bars:
-            latest = bars[-1]
-            prev = bars[-2] if len(bars) > 1 else bars[0]
-            change_pct = (latest.close - prev.close) / prev.close * 100
-            lines.append(
-                f"**{ticker}**: ${latest.close:.2f} ({change_pct:+.1f}%) | "
-                f"Vol: {latest.volume:,}"
-            )
-
-    lines.append("\n### Sector Performance (latest close)")
-    for ticker in sectors:
-        bars = us.get_price_history(ticker, days=10)
-        if bars and len(bars) >= 5:
-            latest = bars[-1]
-            week_ago = bars[-5] if len(bars) >= 5 else bars[0]
-            change_1w = (latest.close - week_ago.close) / week_ago.close * 100
-            lines.append(f"- {ticker}: ${latest.close:.2f} (1W: {change_1w:+.1f}%)")
+    for c in cands:
+        bars = bars_by_ticker.get(c.ticker, [])
+        if not bars:
+            continue
+        latest = bars[-1]
+        prev = bars[-2] if len(bars) > 1 else bars[0]
+        change_pct = (
+            (latest.close - prev.close) / prev.close * 100 if prev.close else 0.0
+        )
+        name = c.name or c.ticker
+        lines.append(
+            f"**{c.ticker} ({name}) [{c.reason}]**: "
+            f"${latest.close:,.2f} ({change_pct:+.1f}%) | "
+            f"Vol: {latest.volume:,} | "
+            f"news7d={c.news_count_7d}"
+        )
 
     return "\n".join(lines)
 
@@ -353,14 +381,31 @@ def build_claude_code_prompt(market: str) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
 
     if market == "US":
+        us_provider = USMarketProvider()
+        us_candidates = discover_us_candidates(top_n_output=20, provider=us_provider)
+        us_news = fetch_news_for_candidates(us_candidates, days=7, provider=us_provider)
+        backfill_news_counts(us_candidates, us_news)
+        us_themes = cluster_news(us_news, min_cluster_size=3)
+        candidate_block = format_candidates_for_prompt(us_candidates)
+        themes_block = format_themes_for_prompt(us_themes)
+        ticker_csv = ",".join(c.ticker for c in us_candidates) or "SPY,QQQ,DIA"
         return f"""Generate a US market daily briefing for {today}.
 
 Follow the `daily-briefing` skill in `.claude/skills/daily-briefing/SKILL.md`.
 All data access goes through `bin/stock-cli` via Bash.
 
+The following candidates were chosen by a Python scanner (static S&P 500 + ETF
+universe → 5-day |return|≥15% OR vol_ratio≥2x filter → 3 broad-market ETF
+anchors merged). Analyze/recommend ONLY from this list — do not add new
+tickers on your own judgment.
+
+{candidate_block}
+
+{themes_block}
+
 Specifically:
-1. Fetch SPY, QQQ, DIA and sector ETFs (XLK, XLF, XLE, XLV, XLI, XLP, XLU) with
-   `bin/stock-cli price <TICKER> --market US --days 10`
+1. Fetch each candidate's price/volume:
+   `bin/stock-cli price-batch {ticker_csv} --market US --days 10`
 2. Check existing state: `bin/stock-cli predict list --status OPEN --market US`
 3. Check track record: `bin/stock-cli track-record --days 30 --market US`
 4. Generate 2-3 predictions, logging each with

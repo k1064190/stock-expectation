@@ -1,0 +1,139 @@
+ticker,name,market_segment
+NVDA,NVIDIA,SP500
+MSFT,Microsoft,SP500
+AAPL,Apple,SP500
+GOOGL,Alphabet Class A,SP500
+GOOG,Alphabet Class C,SP500
+AMZN,Amazon,SP500
+META,Meta Platforms,SP500
+AVGO,Broadcom,SP500
+TSLA,Tesla,SP500
+BRK-B,Berkshire Hathaway B,SP500
+LLY,Eli Lilly,SP500
+V,Visa,SP500
+JPM,JPMorgan Chase,SP500
+WMT,Walmart,SP500
+MA,Mastercard,SP500
+XOM,Exxon Mobil,SP500
+NFLX,Netflix,SP500
+COST,Costco,SP500
+JNJ,Johnson & Johnson,SP500
+ORCL,Oracle,SP500
+HD,Home Depot,SP500
+ABBV,AbbVie,SP500
+PG,Procter & Gamble,SP500
+BAC,Bank of America,SP500
+KO,Coca-Cola,SP500
+PFE,Pfizer,SP500
+ADBE,Adobe,SP500
+CRM,Salesforce,SP500
+CVX,Chevron,SP500
+AMD,Advanced Micro Devices,SP500
+TMO,Thermo Fisher Scientific,SP500
+MRK,Merck,SP500
+PEP,PepsiCo,SP500
+WFC,Wells Fargo,SP500
+CSCO,Cisco Systems,SP500
+MCD,McDonald's,SP500
+ACN,Accenture,SP500
+BX,Blackstone,SP500
+ABT,Abbott Laboratories,SP500
+NOW,ServiceNow,SP500
+NEE,NextEra Energy,SP500
+IBM,IBM,SP500
+LIN,Linde,SP500
+INTC,Intel,SP500
+AXP,American Express,SP500
+GS,Goldman Sachs,SP500
+QCOM,Qualcomm,SP500
+MS,Morgan Stanley,SP500
+DIS,Walt Disney,SP500
+GE,GE Aerospace,SP500
+ISRG,Intuitive Surgical,SP500
+TXN,Texas Instruments,SP500
+PM,Philip Morris International,SP500
+T,AT&T,SP500
+RTX,RTX Corp,SP500
+CAT,Caterpillar,SP500
+AMGN,Amgen,SP500
+BKNG,Booking Holdings,SP500
+PLTR,Palantir Technologies,SP500
+LOW,Lowe's,SP500
+BA,Boeing,SP500
+UBER,Uber Technologies,SP500
+BLK,BlackRock,SP500
+SCHW,Charles Schwab,SP500
+UNH,UnitedHealth Group,SP500
+TJX,TJX Companies,SP500
+DE,Deere,SP500
+NKE,Nike,SP500
+COP,ConocoPhillips,SP500
+SBUX,Starbucks,SP500
+INTU,Intuit,SP500
+MU,Micron Technology,SP500
+ELV,Elevance Health,SP500
+C,Citigroup,SP500
+BMY,Bristol-Myers Squibb,SP500
+HON,Honeywell,SP500
+AMAT,Applied Materials,SP500
+GILD,Gilead Sciences,SP500
+MO,Altria,SP500
+REGN,Regeneron Pharmaceuticals,SP500
+MDT,Medtronic,SP500
+PNC,PNC Financial Services,SP500
+USB,US Bancorp,SP500
+ADP,Automatic Data Processing,SP500
+ANET,Arista Networks,SP500
+COF,Capital One,SP500
+CI,Cigna,SP500
+PYPL,PayPal,SP500
+EOG,EOG Resources,SP500
+PGR,Progressive,SP500
+ETN,Eaton,SP500
+MMM,3M,SP500
+FCX,Freeport-McMoRan,SP500
+TGT,Target,SP500
+KLAC,KLA Corp,SP500
+SHW,Sherwin-Williams,SP500
+LRCX,Lam Research,SP500
+PANW,Palo Alto Networks,SP500
+ADI,Analog Devices,SP500
+SNPS,Synopsys,SP500
+CDNS,Cadence Design Systems,SP500
+MRVL,Marvell Technology,SP500
+SMCI,Super Micro Computer,SP500
+CRWD,CrowdStrike,SP500
+SNOW,Snowflake,SP500
+NET,Cloudflare,SP500
+DDOG,Datadog,SP500
+F,Ford Motor,SP500
+GM,General Motors,SP500
+SLB,Schlumberger,SP500
+KMI,Kinder Morgan,SP500
+TSM,Taiwan Semiconductor ADR,ADR
+ASML,ASML Holding ADR,ADR
+BABA,Alibaba ADR,ADR
+JD,JD.com ADR,ADR
+PDD,PDD Holdings ADR,ADR
+NIO,NIO ADR,ADR
+SPY,SPDR S&P 500 ETF,ETF
+QQQ,Invesco QQQ Trust,ETF
+DIA,SPDR Dow Jones ETF,ETF
+IWM,iShares Russell 2000 ETF,ETF
+VOO,Vanguard S&P 500 ETF,ETF
+VTI,Vanguard Total Market ETF,ETF
+XLK,Technology Select Sector SPDR,ETF
+XLF,Financial Select Sector SPDR,ETF
+XLE,Energy Select Sector SPDR,ETF
+XLV,Health Care Select Sector SPDR,ETF
+XLI,Industrial Select Sector SPDR,ETF
+XLP,Consumer Staples Select SPDR,ETF
+XLU,Utilities Select Sector SPDR,ETF
+XLY,Consumer Discretionary SPDR,ETF
+XLB,Materials Select Sector SPDR,ETF
+XLRE,Real Estate Select Sector SPDR,ETF
+XLC,Communication Services SPDR,ETF
+SMH,VanEck Semiconductor ETF,ETF
+SOXX,iShares Semiconductor ETF,ETF
+ARKK,ARK Innovation ETF,ETF
+GLD,SPDR Gold Shares,ETF
