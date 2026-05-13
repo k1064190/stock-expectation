@@ -19,10 +19,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp-market-data"))
 
 from candidate_discovery import (  # noqa: E402
     ANCHORS_KR,
+    ANCHORS_US,
     Candidate,
     DEFAULT_RETURN_THRESHOLD_PCT,
     DEFAULT_VOL_RATIO_THRESHOLD,
     discover_kr_candidates,
+    discover_us_candidates,
     enumerate_kr_universe,
     format_candidates_for_prompt,
     score_and_filter,
@@ -434,3 +436,123 @@ def test_default_thresholds_match_plan():
     """Sanity: defaults match the values quoted in the plan."""
     assert DEFAULT_RETURN_THRESHOLD_PCT == 15.0
     assert DEFAULT_VOL_RATIO_THRESHOLD == 2.0
+
+
+# ---------------------------------------------------------------------------
+# US mirror (discover_us_candidates + ANCHORS_US + ticker validator)
+# ---------------------------------------------------------------------------
+
+
+def test_us_anchors_are_three_broad_market_etfs():
+    """SPY / QQQ / DIA are the analogues to KR's 005930 / 000660 / 069500."""
+    tickers = {t for t, _ in ANCHORS_US}
+    assert tickers == {"SPY", "QQQ", "DIA"}
+
+
+def test_us_ticker_validator_accepts_standard_forms():
+    """1-5 uppercase letters, optional dot/dash class separator (BRK.B / BRK-B)."""
+    from candidate_discovery import _normalise_us_ticker
+
+    assert _normalise_us_ticker("AAPL") == "AAPL"
+    assert _normalise_us_ticker(" nvda ") == "NVDA"  # strip + uppercase
+    assert _normalise_us_ticker("BRK-B") == "BRK-B"
+    assert _normalise_us_ticker("BRK.B") == "BRK.B"
+    # Short tickers (one to four letters) all valid.
+    assert _normalise_us_ticker("F") == "F"
+
+
+def test_us_ticker_validator_rejects_malformed():
+    """Non-letters, too long, blank — all rejected with None."""
+    from candidate_discovery import _normalise_us_ticker
+
+    assert _normalise_us_ticker("") is None
+    assert _normalise_us_ticker(None) is None  # type: ignore[arg-type]
+    assert _normalise_us_ticker("   ") is None
+    assert _normalise_us_ticker("005930") is None  # KR-style, all digits leading
+    assert _normalise_us_ticker("TOOLONG") is None  # 7 chars
+    # Must start with a letter — '1AAPL' rejected.
+    assert _normalise_us_ticker("1AAPL") is None
+
+
+def test_us_csv_loads_anchors_and_breakouts():
+    """The shipped data/us_universe.csv must contain at minimum the 3 anchors
+    plus a handful of well-known breakout candidates so the scanner has real
+    coverage."""
+    from candidate_discovery import _load_static_us_universe
+
+    universe = _load_static_us_universe()
+    tickers = {t for (t, _, _) in universe}
+    # Anchors.
+    assert {"SPY", "QQQ", "DIA"} <= tickers
+    # Big tech + breakout candidates we hand-curated.
+    assert {"NVDA", "AAPL", "MSFT", "AMD", "MU"} <= tickers
+    assert len(universe) > 100
+
+
+def test_discover_us_anchors_when_filter_empty():
+    """When no dynamic candidates pass, the 3 ETF anchors still appear."""
+    import candidate_discovery as cd
+
+    with patch.object(cd, "_load_static_us_universe", return_value=[]):
+        out = discover_us_candidates(top_n_output=10, provider=FakeProvider({}))
+    assert {c.ticker for c in out} == {"SPY", "QQQ", "DIA"}
+    assert all(c.reason == "anchor" for c in out)
+    assert all(c.market == "US" for c in out)
+
+
+def test_discover_us_dynamic_surfaces_breakouts():
+    """A mock universe with one strong mover plus the anchors yields the
+    mover as a momentum candidate alongside the anchors."""
+    import candidate_discovery as cd
+
+    fake_universe = [("MOVER", None, None)]
+    fake_bars = {"MOVER": _bars_with_return(100.0, 160.0)}  # +60%
+    with patch.object(cd, "_load_static_us_universe", return_value=fake_universe):
+        out = discover_us_candidates(top_n_output=10, provider=FakeProvider(fake_bars))
+    tickers = [c.ticker for c in out]
+    assert "MOVER" in tickers
+    mover = next(c for c in out if c.ticker == "MOVER")
+    assert mover.reason == "momentum"
+    assert mover.market == "US"
+
+
+def test_format_usd_cap_boundaries():
+    """Unit-threshold edge cases for the US cap formatter (code-reviewer
+    Stage 5 nit). Verifies $T → $B → $M → bare-dollar tiering doesn't
+    drift if precision changes later."""
+    from candidate_discovery import _format_usd_cap
+
+    # $T tier (>= 1 trillion).
+    assert _format_usd_cap(3.5e12) == "$3.50T"
+    assert _format_usd_cap(1.0e12) == "$1.00T"
+    # $B tier (>= 1 billion, < 1 trillion).
+    assert _format_usd_cap(999.5e9).endswith("B")
+    assert _format_usd_cap(1.0e9) == "$1.0B"
+    # $M tier (>= 1 million, < 1 billion).
+    assert _format_usd_cap(500e6) == "$500M"
+    assert _format_usd_cap(1.0e6) == "$1M"
+    # Below $1M — bare dollar with thousand separator.
+    assert _format_usd_cap(500) == "$500"
+
+
+def test_format_us_uses_english_labels_and_dollar_cap():
+    """US-market candidate block uses 'cap' / '$T' instead of '시총' / '조'."""
+    cands = [
+        Candidate(
+            ticker="NVDA",
+            name="NVIDIA",
+            market="US",
+            market_cap=3.5e12,  # $3.5T
+            trading_value=None,
+            return_5d_pct=18.0,
+            vol_ratio_5d=2.1,
+            reason="momentum",
+        )
+    ]
+    out = format_candidates_for_prompt(cands)
+    assert "US Candidates" in out
+    assert "NVDA NVIDIA [momentum]" in out
+    assert "cap=$3.50T" in out
+    # KR-specific labels must NOT appear.
+    assert "시총" not in out
+    assert "₩" not in out

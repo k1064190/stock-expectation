@@ -29,6 +29,7 @@ re-rank.
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -87,8 +88,20 @@ ANCHORS_KR: tuple[tuple[str, str], ...] = (
     ("069500", "KODEX 200"),
 )
 
-# Filter thresholds. Empirical: 5/13 breakouts (현대오토에버 +55%, LG전자
-# +34%) sit far above 15%, anchor names typically below.
+# Three US anchors — broad-market ETFs analogous to the KR trio. SPY = S&P 500,
+# QQQ = NASDAQ 100, DIA = Dow Jones 30. These always appear in the briefing's
+# candidate block regardless of dynamic filter score, giving the LLM stable
+# breadth reference points alongside any individual-stock breakouts.
+ANCHORS_US: tuple[tuple[str, str], ...] = (
+    ("SPY", "SPDR S&P 500 ETF"),
+    ("QQQ", "Invesco QQQ Trust"),
+    ("DIA", "SPDR Dow Jones ETF"),
+)
+
+# Filter thresholds. Empirical: 5/13 KR breakouts (현대오토에버 +55%, LG전자
+# +34%) sit far above 15%, anchor names typically below. US daily moves are
+# generally smaller-magnitude than KR mid-caps, so 15% / 2x will be stricter
+# in US — adjust at call sites if needed via the optional kwargs.
 DEFAULT_RETURN_THRESHOLD_PCT = 15.0
 DEFAULT_VOL_RATIO_THRESHOLD = 2.0
 
@@ -109,6 +122,90 @@ def _normalise_csv_ticker(raw: str) -> Optional[str]:
 
 
 STATIC_UNIVERSE_PATH = PROJECT_ROOT / "data" / "kr_universe.csv"
+STATIC_US_UNIVERSE_PATH = PROJECT_ROOT / "data" / "us_universe.csv"
+
+# Pre-compiled per gemini Stage 5 review (hot path: ~135 candidates per cron).
+# Strict form per code-reviewer-pro: 1-5 uppercase letters, optionally followed
+# by a single `.X` or `-X` class separator where X is a letter. Rejects digits
+# entirely (no legitimate US ticker has them; class suffixes are always letter).
+_US_TICKER_RE = re.compile(r"^[A-Z]{1,5}(?:[.\-][A-Z])?$")
+
+
+def _normalise_us_ticker(raw: str) -> Optional[str]:
+    """Validate a US CSV ticker cell.
+
+    US tickers are 1-5 uppercase letters with an optional `.<letter>` or
+    `-<letter>` class separator (BRK.B / BRK-B, BF.B). The validator
+    strips whitespace, uppercases, and rejects anything that doesn't fit
+    so a manual CSV refresh typo doesn't leak into
+    ``get_price_history_batch``.
+    """
+    stripped = (raw or "").strip().upper()
+    if not stripped:
+        return None
+    return stripped if _US_TICKER_RE.match(stripped) else None
+
+
+def _load_static_us_universe() -> list[tuple[str, Optional[float], Optional[float]]]:
+    """Read the curated US universe CSV (primary data source, no fallback).
+
+    Unlike KR, US has no bulk-by-ticker endpoint — this CSV IS the universe.
+    Market cap and trading value are not collected (would need an FMP key +
+    per-ticker fan-out); ``score_and_filter`` works fine without them since
+    the filter is return/volume-based, and ``format_candidates_for_prompt``
+    renders ``cap=n/a`` for US entries.
+
+    Maintenance: refresh quarterly as S&P 500 composition changes;
+    delisted tickers are automatically surfaced by the stale-ticker
+    logging in ``score_and_filter``.
+    """
+    if not STATIC_US_UNIVERSE_PATH.exists():
+        logger.warning(
+            "static US universe CSV not found at %s", STATIC_US_UNIVERSE_PATH
+        )
+        return []
+
+    out: list[tuple[str, Optional[float], Optional[float]]] = []
+    try:
+        with STATIC_US_UNIVERSE_PATH.open("r", encoding="utf-8") as f:
+            import csv
+
+            reader = csv.DictReader(f)
+            for row in reader:
+                ticker = _normalise_us_ticker(row.get("ticker", ""))
+                if ticker is None:
+                    continue
+                out.append((ticker, None, None))
+    except Exception as exc:  # noqa: BLE001 — never block on CSV parse
+        # Log exception class so encoding vs permission vs malformed
+        # rows are distinguishable in cron logs (gemini Stage 5 nit).
+        logger.error(
+            "failed to read %s: %s: %s",
+            STATIC_US_UNIVERSE_PATH,
+            type(exc).__name__,
+            exc,
+        )
+        return []
+    return out
+
+
+def _load_static_us_universe_names() -> dict[str, str]:
+    """Ticker → name map from the US static CSV. Mirrors the KR helper."""
+    if not STATIC_US_UNIVERSE_PATH.exists():
+        return {}
+    out: dict[str, str] = {}
+    try:
+        with STATIC_US_UNIVERSE_PATH.open("r", encoding="utf-8") as f:
+            import csv
+
+            for row in csv.DictReader(f):
+                ticker = _normalise_us_ticker(row.get("ticker", ""))
+                name = (row.get("name") or "").strip()
+                if ticker and name:
+                    out[ticker] = name
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("US static name map read failed: %s", exc)
+    return out
 
 
 def _load_static_universe() -> list[tuple[str, Optional[float], Optional[float]]]:
@@ -246,6 +343,7 @@ def score_and_filter(
     provider: KoreanMarketProvider,
     return_threshold_pct: float = DEFAULT_RETURN_THRESHOLD_PCT,
     vol_ratio_threshold: float = DEFAULT_VOL_RATIO_THRESHOLD,
+    market: str = "KR",
 ) -> list[Candidate]:
     """Filter the universe by momentum and volume, returning Candidates.
 
@@ -254,22 +352,43 @@ def score_and_filter(
     and keeps the ticker if **either** clears its threshold.
 
     Args:
-        universe: Output of ``enumerate_kr_universe``.
-        provider: A ``KoreanMarketProvider`` instance. Tests pass in a
+        universe: Output of ``enumerate_kr_universe`` or
+            ``_load_static_us_universe``.
+        provider: A ``MarketDataProvider`` instance. Tests pass in a
             mock that implements ``get_price_history_batch``.
         return_threshold_pct: ``|return_5d_pct| >= this`` → reason="momentum".
         vol_ratio_threshold: ``vol_ratio_5d >= this`` → reason="volume".
+        market: ``"KR"`` or ``"US"``. Stamped on every returned
+            ``Candidate.market`` so ``format_candidates_for_prompt`` can
+            branch on it without callers needing a post-hoc relabel pass.
 
     Returns:
-        Surviving candidates with ``name=""`` (caller fills name lookups
-        on the smaller surviving set to save sequential PyKRX HTTP).
+        Surviving candidates. Network/provider failure during the batch
+        fetch returns ``[]`` so the caller's anchor-only fallback path
+        still runs — never raises (Codex Stage 5 P2 finding).
     """
     if not universe:
         return []
 
     tickers = [t for (t, _, _) in universe]
     meta = {t: (cap, val) for (t, cap, val) in universe}
-    bars_by_ticker = provider.get_price_history_batch(tickers, days=30)
+    # days=35 (bumped from 30) ensures both providers return ≥ 25 bars
+    # for _vol_ratio's 25-bar window (recent 5 + prior 20). PyKRX (KR)
+    # returns ~26 bars at days=30; yfinance (US) returns ~23, below the
+    # threshold. Raising to days=35 lifts both safely. KR unaffected
+    # (30 → 35 bars, harmless).
+    # Wrapped in try/except so transient yfinance/network failures
+    # collapse to an empty survivor set instead of aborting the briefing
+    # before the anchor-only fallback path can run.
+    try:
+        bars_by_ticker = provider.get_price_history_batch(tickers, days=35)
+    except Exception as exc:  # noqa: BLE001 — never block on data provider
+        logger.warning(
+            "score_and_filter: batch price fetch failed (%s); returning empty "
+            "survivor set, caller's anchor fallback should still run",
+            exc,
+        )
+        return []
 
     # Surface tickers the provider returned <6 bars for — typically delisted /
     # merged names in the static CSV. Cron operators rely on this log line
@@ -304,7 +423,7 @@ def score_and_filter(
             Candidate(
                 ticker=ticker,
                 name="",
-                market="KR",
+                market=market,
                 market_cap=cap,
                 trading_value=val,
                 return_5d_pct=return_5d_pct,
@@ -397,38 +516,141 @@ def discover_kr_candidates(
     return out[:top_n_output]
 
 
-def format_candidates_for_prompt(cands: list[Candidate]) -> str:
-    """Render the candidate list as a Korean-language block for the LLM.
+def discover_us_candidates(
+    top_n_output: int = 20,
+    return_threshold_pct: float = DEFAULT_RETURN_THRESHOLD_PCT,
+    vol_ratio_threshold: float = DEFAULT_VOL_RATIO_THRESHOLD,
+    include_anchors: bool = True,
+    provider=None,
+) -> list[Candidate]:
+    """End-to-end US: load CSV universe → filter → merge anchors → sort → truncate.
 
-    The output is plain markdown — anchors first, then dynamic survivors.
-    Each line carries the ticker, name, reason tag, 5-day return, volume
-    ratio, and (when available) market cap rounded to 조/억 units.
+    Mirrors ``discover_kr_candidates`` but uses the static CSV directly
+    (no bulk-by-ticker endpoint exists for US providers like yfinance/FMP
+    on a free tier, so the CSV is the universe).
 
     Args:
-        cands: Output of ``discover_kr_candidates``.
+        top_n_output: Cap on returned list size.
+        return_threshold_pct / vol_ratio_threshold: Filter thresholds.
+        include_anchors: When ``False``, return dynamic-only.
+        provider: Injectable for tests. Defaults to a fresh
+            ``USMarketProvider``.
+
+    Returns:
+        Up to ``top_n_output`` ``Candidate`` instances, anchors first
+        (always), then dynamic survivors ordered by descending
+        ``|return_5d_pct|``.
+    """
+    # Lazy import — keeps the module importable even when the US provider
+    # isn't installed (it brings yfinance etc.) and matches the pattern
+    # used by the KR side.
+    if provider is None:
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _sys.path.insert(
+            0, str(_Path(__file__).resolve().parent.parent / "mcp-market-data")
+        )
+        from providers.us import USMarketProvider
+
+        provider = USMarketProvider()
+
+    universe = _load_static_us_universe()
+    survivors = score_and_filter(
+        universe,
+        provider,
+        return_threshold_pct=return_threshold_pct,
+        vol_ratio_threshold=vol_ratio_threshold,
+        market="US",
+    )
+
+    # Name fill from CSV (no provider HTTP needed for the common path —
+    # the CSV ships ticker → name as authoritative).
+    survivors = _fill_us_names(survivors)
+
+    out: list[Candidate] = []
+    seen: set[str] = set()
+    if include_anchors:
+        for ticker, name in ANCHORS_US:
+            existing = next((c for c in survivors if c.ticker == ticker), None)
+            if existing is not None:
+                existing.reason = "anchor"
+                out.append(existing)
+                seen.add(ticker)
+            else:
+                out.append(
+                    Candidate(
+                        ticker=ticker,
+                        name=name,
+                        market="US",
+                        market_cap=None,
+                        trading_value=None,
+                        return_5d_pct=0.0,
+                        vol_ratio_5d=1.0,
+                        reason="anchor",
+                    )
+                )
+                seen.add(ticker)
+
+    dynamic_sorted = sorted(
+        (c for c in survivors if c.ticker not in seen),
+        key=lambda c: abs(c.return_5d_pct),
+        reverse=True,
+    )
+    out.extend(dynamic_sorted)
+    return out[:top_n_output]
+
+
+def format_candidates_for_prompt(cands: list[Candidate]) -> str:
+    """Render the candidate list as a markdown block for the LLM.
+
+    Branches on ``cands[0].market`` to choose KR vs US labels (시총
+    vs market_cap, 조/억 vs T/B, 후보 종목 vs Candidates). Mixed-market
+    lists are not expected from the cron pipeline.
+
+    Args:
+        cands: Output of ``discover_kr_candidates`` or
+            ``discover_us_candidates``.
 
     Returns:
         Multi-line string. Empty universe → a single-line fallback the
         prompt can still parse.
     """
     if not cands:
+        # Empty path keeps the KR fallback since US briefings always
+        # carry the 3 ETF anchors and never hit this branch in practice.
+        # If a future caller produces an empty US list, the LLM still
+        # gets a parseable section.
         return (
             "## KR 후보 종목\n"
             "  (스캐너 실패 — 동적 발굴 결과 없음. LLM은 기본 앵커만 참고하라.)\n"
         )
+    market = cands[0].market.upper()
 
-    lines = [
-        "## KR 후보 종목 (시총 top-200 ∪ 거래대금 top-50 스캔, "
-        "momentum/volume 필터 통과)",
-    ]
+    if market == "US":
+        header = (
+            "## US Candidates (static S&P 500 + ETF universe scan, "
+            "momentum/volume filter)"
+        )
+        cap_label = "cap"
+        cap_fmt = _format_usd_cap
+    else:
+        header = (
+            "## KR 후보 종목 (시총 top-200 ∪ 거래대금 top-50 스캔, "
+            "momentum/volume 필터 통과)"
+        )
+        cap_label = "시총"
+        cap_fmt = _format_krw_cap
+
+    lines = [header]
     for c in cands:
-        cap_str = _format_krw_cap(c.market_cap) if c.market_cap else "n/a"
+        cap_str = cap_fmt(c.market_cap) if c.market_cap else "n/a"
         ret_str = f"{c.return_5d_pct:+.1f}%"
         vol_str = f"{c.vol_ratio_5d:.2f}x"
         name = c.name or "?"
         lines.append(
             f"  - {c.ticker} {name} [{c.reason}]: "
-            f"5d={ret_str}, vol_ratio={vol_str}, 시총={cap_str}"
+            f"5d={ret_str}, vol_ratio={vol_str}, {cap_label}={cap_str}"
         )
     return "\n".join(lines)
 
@@ -505,3 +727,32 @@ def _format_krw_cap(cap_krw: float) -> str:
     if cap_krw >= eok:
         return f"{cap_krw / eok:,.0f}억"
     return f"{cap_krw:,.0f}원"
+
+
+def _format_usd_cap(cap_usd: float) -> str:
+    """Format a market cap in $T / $B / $M for US readability."""
+    t = 10**12
+    b = 10**9
+    m = 10**6
+    if cap_usd >= t:
+        return f"${cap_usd / t:,.2f}T"
+    if cap_usd >= b:
+        return f"${cap_usd / b:,.1f}B"
+    if cap_usd >= m:
+        return f"${cap_usd / m:,.0f}M"
+    return f"${cap_usd:,.0f}"
+
+
+def _fill_us_names(cands: list[Candidate]) -> list[Candidate]:
+    """Populate ``Candidate.name`` from the US static CSV map.
+
+    Unlike the KR path there's no PyKRX-style ticker-name endpoint to
+    fall back on for US — the CSV is the authoritative source. Out-of-
+    CSV tickers (rare; only possible if a caller hands us a custom
+    universe) keep ``name=""`` and render as "?" in the prompt.
+    """
+    static_names = _load_static_us_universe_names()
+    for c in cands:
+        if not c.name:
+            c.name = static_names.get(c.ticker, "")
+    return cands
