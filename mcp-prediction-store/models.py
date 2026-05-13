@@ -4,6 +4,7 @@ SQLite-backed storage for predictions with WAL mode for concurrent access.
 """
 
 import json
+import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -32,6 +33,8 @@ class Timeframe(str, Enum):
     TWO_WEEKS = "2W"
     ONE_MONTH = "1M"
     THREE_MONTHS = "3M"
+    SIX_MONTHS = "6M"
+    ONE_YEAR = "1Y"
 
 
 class Market(str, Enum):
@@ -51,6 +54,8 @@ TIMEFRAME_TRADING_DAYS = {
     Timeframe.TWO_WEEKS: 10,
     Timeframe.ONE_MONTH: 21,
     Timeframe.THREE_MONTHS: 63,
+    Timeframe.SIX_MONTHS: 126,
+    Timeframe.ONE_YEAR: 252,
 }
 
 
@@ -65,7 +70,7 @@ class Prediction:
         market: "US" or "KR".
         direction: "BULL", "BEAR", or "NEUTRAL".
         confidence: Predicted probability of correctness (0.0-1.0).
-        timeframe: "1W", "2W", "1M", or "3M".
+        timeframe: "1W", "2W", "1M", "3M", "6M", or "1Y".
         reasoning: Claude's analysis summary.
         entry_price: Stock price at prediction time.
         signals_used: List of analysis signals used.
@@ -76,6 +81,9 @@ class Prediction:
         outcome_price: Final price when prediction closed.
         outcome_date: When the prediction was resolved.
         outcome_return: Percentage return from entry to outcome.
+        analysis_group_id: Optional UUID shared by predictions that come
+            from the same multi-horizon analysis (e.g. the 4 horizons emitted
+            by a single ``/expect MU`` run). Legacy predictions have None.
     """
 
     ticker: str
@@ -97,11 +105,12 @@ class Prediction:
     outcome_price: Optional[float] = None
     outcome_date: Optional[str] = None
     outcome_return: Optional[float] = None
+    analysis_group_id: Optional[str] = None
 
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
 
-CREATE_TABLE_SQL = """
+CREATE_TABLE_STMT = """
 CREATE TABLE IF NOT EXISTS predictions (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -109,7 +118,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     market TEXT NOT NULL CHECK(market IN ('US', 'KR')),
     direction TEXT NOT NULL CHECK(direction IN ('BULL', 'BEAR', 'NEUTRAL')),
     confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
-    timeframe TEXT NOT NULL CHECK(timeframe IN ('1W', '2W', '1M', '3M')),
+    timeframe TEXT NOT NULL CHECK(timeframe IN ('1W', '2W', '1M', '3M', '6M', '1Y')),
     reasoning TEXT NOT NULL,
     entry_price REAL NOT NULL,
     signals_used TEXT NOT NULL DEFAULT '[]',
@@ -119,18 +128,40 @@ CREATE TABLE IF NOT EXISTS predictions (
     status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'HIT', 'MISS', 'EXPIRED', 'CANCELLED')),
     outcome_price REAL,
     outcome_date TEXT,
-    outcome_return REAL
-);
-
-CREATE INDEX IF NOT EXISTS idx_predictions_status ON predictions(status);
-CREATE INDEX IF NOT EXISTS idx_predictions_market ON predictions(market);
-CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(ticker);
-CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at);
+    outcome_return REAL,
+    analysis_group_id TEXT
+)
 """
+
+CREATE_INDEX_STMTS = (
+    "CREATE INDEX IF NOT EXISTS idx_predictions_status ON predictions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_predictions_market ON predictions(market)",
+    "CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(ticker)",
+    "CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_predictions_group ON predictions(analysis_group_id)",
+)
+
+
+def _create_schema(conn: sqlite3.Connection) -> None:
+    """Run the table + index DDL via ``execute`` (not ``executescript``).
+
+    Why not ``executescript``: it implicitly commits the surrounding
+    transaction per Python's sqlite3 contract, which would defeat the
+    atomicity guarantee of the migration's ``with conn:`` block. By
+    issuing each statement individually we stay inside whatever
+    transaction the caller opened.
+    """
+    conn.execute(CREATE_TABLE_STMT)
+    for stmt in CREATE_INDEX_STMTS:
+        conn.execute(stmt)
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get a SQLite connection with WAL mode and busy timeout.
+
+    Runs ``_migrate_schema_if_needed`` after the idempotent CREATE so
+    pre-v2 ``predictions.db`` files (no ``analysis_group_id``, old
+    timeframe CHECK) get upgraded transparently.
 
     Args:
         db_path: Path to the database file. Defaults to data/predictions.db.
@@ -144,8 +175,114 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
-    conn.executescript(CREATE_TABLE_SQL)
+    # Migration must run BEFORE the schema-create — the index on
+    # analysis_group_id references the new column and would fail with
+    # ``no such column`` on a legacy DB if we created indexes first.
+    _migrate_schema_if_needed(conn)
+    _create_schema(conn)
     return conn
+
+
+def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
+    """Bring a legacy ``predictions`` table up to the current schema.
+
+    Two changes vs the pre-v2 schema:
+
+    1. New ``analysis_group_id TEXT`` column (nullable) so all the
+       horizons emitted by one ``/expect`` run can be grouped together.
+    2. ``timeframe`` CHECK constraint widened to include ``6M`` and ``1Y``.
+
+    SQLite cannot modify a CHECK constraint in place, so the migration
+    is a full table swap: snapshot the legacy rows into a TEMP table,
+    drop the legacy table (cascading its indexes), re-create the schema,
+    then copy rows back. The whole thing runs inside a single
+    ``with conn:`` transaction.
+
+    Critical detail: every statement inside the transaction uses
+    ``conn.execute``, NEVER ``conn.executescript``. Python's sqlite3
+    contract has ``executescript`` implicitly commit any open
+    transaction *before* it runs, which would silently break the
+    ``with conn:`` rollback guarantee — a DROP followed by a failing
+    INSERT would leave the table permanently gone. The ``_create_schema``
+    helper uses per-statement ``execute`` for exactly this reason.
+
+    The presence of ``analysis_group_id`` is the migration flag — if
+    it is already a column, the function is a no-op. Idempotent across
+    repeated calls and cron runs.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        cur = conn.execute("PRAGMA table_info(predictions)")
+        cols = {row[1] for row in cur.fetchall()}
+    except sqlite3.DatabaseError as exc:
+        # PRAGMA failure here usually means a corrupt or locked DB.
+        # Surface the error rather than silently treating it as a
+        # brand-new DB and risking a wrong-schema CREATE on top.
+        logger.error("Failed to read predictions table schema: %s", exc)
+        raise
+
+    if not cols:
+        # Brand-new DB — the caller's ``_create_schema`` will handle it.
+        return
+    if "analysis_group_id" in cols:
+        return  # Already on current schema.
+
+    logger.info(
+        "predictions schema migration: adding analysis_group_id + "
+        "widening timeframe CHECK (legacy schema detected)"
+    )
+
+    # Python 3.11 sqlite3 has a long-standing isolation quirk: in the
+    # default (legacy) mode, ``conn.execute`` *implicitly commits any
+    # open transaction before a DDL statement*. ``with conn:`` therefore
+    # cannot wrap a DROP+CREATE+INSERT block atomically — by the time
+    # the INSERT runs, the DROP is already committed and the legacy
+    # table is permanently gone if anything fails. The fix is to drive
+    # transaction state manually: explicit BEGIN, then COMMIT on
+    # success or ROLLBACK on failure. SQLite honours the explicit
+    # transaction even for DDL, so DROP stays uncommitted until the
+    # final COMMIT.
+    try:
+        conn.execute("BEGIN")
+        # Snapshot legacy rows. TEMP tables carry no indexes so we
+        # don't collide with the post-migration ``CREATE INDEX``.
+        conn.execute(
+            "CREATE TEMP TABLE _predictions_legacy AS SELECT * FROM predictions"
+        )
+        # Drop the legacy table — indexes cascade away with it.
+        conn.execute("DROP TABLE predictions")
+        # Re-materialise the schema using per-statement execute (see
+        # ``_create_schema`` docstring for why ``executescript`` is
+        # banned here).
+        _create_schema(conn)
+        # Copy legacy rows back. ``analysis_group_id`` is NULL —
+        # legacy rows predate the multi-horizon /expect feature.
+        conn.execute(
+            """
+            INSERT INTO predictions
+            (id, created_at, ticker, market, direction, confidence,
+             timeframe, reasoning, entry_price, signals_used, source,
+             target_price, stop_price, status, outcome_price,
+             outcome_date, outcome_return)
+            SELECT id, created_at, ticker, market, direction, confidence,
+                   timeframe, reasoning, entry_price, signals_used, source,
+                   target_price, stop_price, status, outcome_price,
+                   outcome_date, outcome_return
+            FROM _predictions_legacy
+            """
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    finally:
+        # Best-effort cleanup. The TEMP table is session-scoped, so
+        # this DROP IF EXISTS just keeps the namespace tidy for any
+        # retry the caller may attempt.
+        try:
+            conn.execute("DROP TABLE IF EXISTS _predictions_legacy")
+        except sqlite3.DatabaseError:
+            pass
 
 
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
@@ -162,8 +299,8 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
         """INSERT INTO predictions
            (id, created_at, ticker, market, direction, confidence, timeframe,
             reasoning, entry_price, signals_used, source, target_price, stop_price,
-            status, outcome_price, outcome_date, outcome_return)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            status, outcome_price, outcome_date, outcome_return, analysis_group_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             pred.id,
             pred.created_at,
@@ -182,6 +319,7 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
             pred.outcome_price,
             pred.outcome_date,
             pred.outcome_return,
+            pred.analysis_group_id,
         ),
     )
     conn.commit()
@@ -198,9 +336,7 @@ def get_prediction(conn: sqlite3.Connection, pred_id: str) -> Optional[Predictio
     Returns:
         Prediction if found, None otherwise.
     """
-    row = conn.execute(
-        "SELECT * FROM predictions WHERE id = ?", (pred_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM predictions WHERE id = ?", (pred_id,)).fetchone()
     if row is None:
         return None
     return _row_to_prediction(row)
@@ -318,4 +454,5 @@ def _row_to_prediction(row: sqlite3.Row) -> Prediction:
         outcome_price=row["outcome_price"],
         outcome_date=row["outcome_date"],
         outcome_return=row["outcome_return"],
+        analysis_group_id=row["analysis_group_id"],
     )
