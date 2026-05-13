@@ -262,10 +262,14 @@ def cluster_news(
 
     Returns:
         Clusters sorted by (ticker_count desc, headline_count desc).
-        Supersets win: when two n-grams share the exact same ticker set,
-        the longer one is kept and the shorter dropped. This is what
-        turns ``("ai",)`` + ``("피지컬", "ai")`` over the same 3 tickers
-        into one cluster keyed by the bigram.
+        Within a single ticker set the dedup rule is **subsequence-based**
+        (see ``_is_subseq``): when one n-gram is a strictly-shorter
+        contiguous subsequence of another with the exact same ticker set,
+        the shorter one is dropped. This collapses ``("ai",)`` +
+        ``("피지컬", "ai")`` into the bigram, but preserves *unrelated*
+        n-grams on the same tickers (e.g. ``("피지컬", "ai")`` and
+        ``("자율주행", "로봇")``) — both survive when neither is a
+        subsequence of the other.
     """
     if not news_by_ticker:
         return []
@@ -274,17 +278,23 @@ def cluster_news(
     ngram_index: dict[tuple[str, ...], dict[str, list[str]]] = {}
 
     for ticker, items in news_by_ticker.items():
-        seen_for_ticker: set[tuple[str, ...]] = set()
         for item in items:
             headline = (item.get("headline") or "").strip()
             if not headline:
                 continue
             tokens = _tokenise(headline)
+            # Within a single headline, dedupe n-grams so a headline that
+            # repeats the same phrase ("AI 인프라 도입, AI 인프라 비용") only
+            # contributes one entry per cluster (Codex C3 fix: headline_count
+            # must count headlines, not n-gram occurrences).
+            seen_in_headline: set[tuple[str, ...]] = set()
             for n in ngram_sizes:
                 for ngram in _ngrams(tokens, n):
+                    if ngram in seen_in_headline:
+                        continue
+                    seen_in_headline.add(ngram)
                     bucket = ngram_index.setdefault(ngram, {})
                     bucket.setdefault(ticker, []).append(headline)
-                    seen_for_ticker.add(ngram)
 
     # First pass: keep only ngrams hitting ≥min_cluster_size distinct tickers.
     candidates: list[ThemeCluster] = []
@@ -303,30 +313,49 @@ def cluster_news(
             )
         )
 
-    # Second pass: superset preference. Group clusters by their ticker set;
-    # within each group, keep only the longest n-gram (if multiple share the
-    # same length we keep the one with more headlines).
-    by_ticker_set: dict[tuple[str, ...], ThemeCluster] = {}
-    for cluster in candidates:
-        key = tuple(cluster.tickers)
-        incumbent = by_ticker_set.get(key)
-        if incumbent is None:
-            by_ticker_set[key] = cluster
-            continue
-        if len(cluster.keywords) > len(incumbent.keywords):
-            by_ticker_set[key] = cluster
-        elif (
-            len(cluster.keywords) == len(incumbent.keywords)
-            and cluster.headline_count > incumbent.headline_count
+    # Second pass: substring dedup. Two distinct themes on the same ticker
+    # set must both survive (Codex C1 fix) — earlier we keyed dedup on the
+    # ticker tuple itself, which collapsed "피지컬 ai" and "자율주행 로봇"
+    # into one cluster when both hit the same 3 tickers. Now we drop only
+    # the shorter n-gram when it is a contiguous subsequence of a longer
+    # n-gram with the same ticker set (e.g. ``("ai",)`` ⊂ ``("피지컬", "ai")``).
+    candidates_sorted = sorted(
+        candidates,
+        key=lambda c: (len(c.keywords), len(c.tickers), c.headline_count),
+        reverse=True,
+    )
+    deduped: list[ThemeCluster] = []
+    for c in candidates_sorted:
+        if any(
+            tuple(c.tickers) == tuple(kept.tickers)
+            and _is_subseq(c.keywords, kept.keywords)
+            for kept in deduped
         ):
-            by_ticker_set[key] = cluster
-
-    deduped = list(by_ticker_set.values())
+            continue
+        deduped.append(c)
     deduped.sort(
         key=lambda c: (len(c.tickers), c.headline_count),
         reverse=True,
     )
     return deduped[:max_themes]
+
+
+def _is_subseq(short_kw: tuple[str, ...], long_kw: tuple[str, ...]) -> bool:
+    """True if ``short_kw`` is a strictly-shorter contiguous subsequence of
+    ``long_kw``. Used by the substring-dedup pass in ``cluster_news``.
+
+    Examples:
+        _is_subseq(("ai",), ("피지컬", "ai"))            → True
+        _is_subseq(("ai", "인프라"), ("ai", "인프라"))      → False (identical, not strictly shorter)
+        _is_subseq(("ai", "인프라"), ("ai", "인프라", "정책")) → True
+        _is_subseq(("ai",), ("자율주행", "로봇"))          → False (no shared token)
+    """
+    if len(short_kw) >= len(long_kw):
+        return False
+    for i in range(len(long_kw) - len(short_kw) + 1):
+        if long_kw[i : i + len(short_kw)] == short_kw:
+            return True
+    return False
 
 
 def _tokenise(text: str) -> list[str]:
