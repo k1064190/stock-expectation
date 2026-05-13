@@ -100,9 +100,7 @@ def get_track_record(
         conditions.append("source = ?")
         params.append(source)
 
-    conditions.append(
-        "outcome_date >= datetime('now', ?)"
-    )
+    conditions.append("outcome_date >= datetime('now', ?)")
     params.append(f"-{days} days")
 
     where = " AND ".join(conditions)
@@ -171,6 +169,7 @@ def get_track_record(
 def get_calibration_report(
     conn: sqlite3.Connection,
     source: Optional[str] = None,
+    timeframe: Optional[str] = None,
     buckets: int = 5,
 ) -> list[CalibrationBucket]:
     """Compute calibration curve: predicted confidence vs actual accuracy.
@@ -178,6 +177,10 @@ def get_calibration_report(
     Args:
         conn: SQLite connection.
         source: Optional filter (LIVE, BACKTEST, INTERACTIVE).
+        timeframe: Optional filter (1W, 2W, 1M, 3M, 6M, 1Y). When set, the
+            calibration curve is computed only from predictions with that
+            timeframe — useful because short- and long-horizon predictions
+            have very different base rates and shouldn't share buckets.
         buckets: Number of confidence buckets. Defaults to 5 (0.5-0.6, ..., 0.9-1.0).
 
     Returns:
@@ -188,6 +191,9 @@ def get_calibration_report(
     if source:
         conditions.append("source = ?")
         params.append(source)
+    if timeframe:
+        conditions.append("timeframe = ?")
+        params.append(timeframe)
 
     where = " AND ".join(conditions)
     rows = conn.execute(
@@ -202,7 +208,10 @@ def get_calibration_report(
         low = 0.5 + i * step
         high = 0.5 + (i + 1) * step
         bucket_rows = [
-            r for r in rows if low <= r["confidence"] < high or (i == buckets - 1 and r["confidence"] == high)
+            r
+            for r in rows
+            if low <= r["confidence"] < high
+            or (i == buckets - 1 and r["confidence"] == high)
         ]
         if not bucket_rows:
             continue

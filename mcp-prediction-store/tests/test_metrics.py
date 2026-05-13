@@ -10,7 +10,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import Prediction, get_connection, insert_prediction, update_prediction_outcome
+from models import (
+    Prediction,
+    get_connection,
+    insert_prediction,
+    update_prediction_outcome,
+)
 from metrics import get_track_record, get_calibration_report, get_signal_performance
 
 
@@ -27,7 +32,9 @@ def db_conn():
     Path(str(db_path) + "-shm").unlink(missing_ok=True)
 
 
-def _make_prediction(ticker, direction="BULL", confidence=0.7, signals=None, market="US"):
+def _make_prediction(
+    ticker, direction="BULL", confidence=0.7, signals=None, market="US"
+):
     return Prediction(
         ticker=ticker,
         market=market,
@@ -152,8 +159,12 @@ def test_calibration_buckets(db_conn):
     """Calibration report groups predictions by confidence."""
     # Create predictions at different confidence levels
     for conf, outcome in [
-        (0.55, "HIT"), (0.58, "MISS"), (0.52, "HIT"),  # 0.50-0.60 bucket
-        (0.75, "HIT"), (0.78, "HIT"), (0.72, "MISS"),  # 0.70-0.80 bucket
+        (0.55, "HIT"),
+        (0.58, "MISS"),
+        (0.52, "HIT"),  # 0.50-0.60 bucket
+        (0.75, "HIT"),
+        (0.78, "HIT"),
+        (0.72, "MISS"),  # 0.70-0.80 bucket
     ]:
         p = _make_prediction(f"T{conf}", confidence=conf)
         insert_prediction(db_conn, p)
@@ -161,6 +172,69 @@ def test_calibration_buckets(db_conn):
 
     report = get_calibration_report(db_conn, buckets=5)
     assert len(report) >= 1
+
+
+def test_calibration_by_timeframe(db_conn):
+    """timeframe filter restricts calibration to a single horizon."""
+    # Two 1W predictions, both HIT at 0.70 confidence.
+    for i in range(2):
+        p = Prediction(
+            ticker=f"W{i}",
+            market="US",
+            direction="BULL",
+            confidence=0.70,
+            timeframe="1W",
+            reasoning="short",
+            entry_price=100.0,
+            signals_used=["technical"],
+        )
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+
+    # Two 1Y predictions, both MISS at 0.70 confidence.
+    for i in range(2):
+        p = Prediction(
+            ticker=f"Y{i}",
+            market="US",
+            direction="BULL",
+            confidence=0.70,
+            timeframe="1Y",
+            reasoning="cycle",
+            entry_price=100.0,
+            signals_used=["cycle"],
+        )
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "MISS", 90.0, -10.0)
+
+    # Without filter, buckets contain both 1W HITs and 1Y MISSes → 50% accuracy.
+    all_report = get_calibration_report(db_conn)
+    combined = [b for b in all_report if b.count == 4]
+    assert combined, "expected one bucket with all 4 predictions"
+    assert combined[0].actual_accuracy == pytest.approx(0.5, abs=0.001)
+
+    # With timeframe=1W, only the HITs count → 100% accuracy.
+    w_report = get_calibration_report(db_conn, timeframe="1W")
+    assert len(w_report) == 1
+    assert w_report[0].count == 2
+    assert w_report[0].actual_accuracy == pytest.approx(1.0)
+
+    # With timeframe=1Y, only the MISSes count → 0% accuracy.
+    y_report = get_calibration_report(db_conn, timeframe="1Y")
+    assert len(y_report) == 1
+    assert y_report[0].count == 2
+    assert y_report[0].actual_accuracy == pytest.approx(0.0)
+
+
+def test_calibration_no_timeframe_filter(db_conn):
+    """Omitting timeframe returns unchanged pre-P2 behavior."""
+    for conf, outcome in [(0.65, "HIT"), (0.75, "MISS")]:
+        p = _make_prediction(f"T{conf}", confidence=conf)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, outcome, 100.0, 0.0)
+
+    report = get_calibration_report(db_conn)
+    total_counted = sum(b.count for b in report)
+    assert total_counted == 2
 
 
 def test_signal_performance_min_count(db_conn):

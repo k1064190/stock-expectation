@@ -86,12 +86,22 @@ def test_list_predictions_no_filter(db_conn, sample_prediction):
 def test_list_predictions_with_status_filter(db_conn):
     """Filter predictions by status."""
     pred1 = Prediction(
-        ticker="AAPL", market="US", direction="BULL", confidence=0.6,
-        timeframe="1M", reasoning="test", entry_price=150.0,
+        ticker="AAPL",
+        market="US",
+        direction="BULL",
+        confidence=0.6,
+        timeframe="1M",
+        reasoning="test",
+        entry_price=150.0,
     )
     pred2 = Prediction(
-        ticker="MSFT", market="US", direction="BEAR", confidence=0.7,
-        timeframe="1W", reasoning="test", entry_price=400.0,
+        ticker="MSFT",
+        market="US",
+        direction="BEAR",
+        confidence=0.7,
+        timeframe="1W",
+        reasoning="test",
+        entry_price=400.0,
     )
     insert_prediction(db_conn, pred1)
     insert_prediction(db_conn, pred2)
@@ -109,12 +119,22 @@ def test_list_predictions_with_status_filter(db_conn):
 def test_list_predictions_with_market_filter(db_conn):
     """Filter predictions by market."""
     us_pred = Prediction(
-        ticker="AAPL", market="US", direction="BULL", confidence=0.6,
-        timeframe="1W", reasoning="test", entry_price=150.0,
+        ticker="AAPL",
+        market="US",
+        direction="BULL",
+        confidence=0.6,
+        timeframe="1W",
+        reasoning="test",
+        entry_price=150.0,
     )
     kr_pred = Prediction(
-        ticker="005930", market="KR", direction="BULL", confidence=0.7,
-        timeframe="2W", reasoning="test", entry_price=70000.0,
+        ticker="005930",
+        market="KR",
+        direction="BULL",
+        confidence=0.7,
+        timeframe="2W",
+        reasoning="test",
+        entry_price=70000.0,
     )
     insert_prediction(db_conn, us_pred)
     insert_prediction(db_conn, kr_pred)
@@ -192,6 +212,96 @@ def test_busy_timeout_set(db_conn):
     assert timeout == 5000
 
 
+def test_analysis_group_id_roundtrip(db_conn):
+    """Two predictions sharing an analysis_group_id roundtrip correctly."""
+    group_id = "group-uuid-test-1"
+    pred_short = Prediction(
+        ticker="MU",
+        market="US",
+        direction="BULL",
+        confidence=0.72,
+        timeframe="1W",
+        reasoning="short-term",
+        entry_price=426.56,
+        analysis_group_id=group_id,
+    )
+    pred_cycle = Prediction(
+        ticker="MU",
+        market="US",
+        direction="BEAR",
+        confidence=0.65,
+        timeframe="1Y",
+        reasoning="cycle",
+        entry_price=426.56,
+        analysis_group_id=group_id,
+    )
+    insert_prediction(db_conn, pred_short)
+    insert_prediction(db_conn, pred_cycle)
+
+    fetched_short = get_prediction(db_conn, pred_short.id)
+    fetched_cycle = get_prediction(db_conn, pred_cycle.id)
+    assert fetched_short.analysis_group_id == group_id
+    assert fetched_cycle.analysis_group_id == group_id
+
+    rows = db_conn.execute(
+        "SELECT id FROM predictions WHERE analysis_group_id = ?", (group_id,)
+    ).fetchall()
+    assert len(rows) == 2
+
+
+def test_analysis_group_id_nullable(db_conn, sample_prediction):
+    """Existing behavior: analysis_group_id is optional and defaults to None."""
+    insert_prediction(db_conn, sample_prediction)
+    fetched = get_prediction(db_conn, sample_prediction.id)
+    assert fetched.analysis_group_id is None
+
+
+def test_timeframe_6m_accepted(db_conn):
+    """Schema accepts the newly added 6M timeframe."""
+    pred = Prediction(
+        ticker="NVDA",
+        market="US",
+        direction="BULL",
+        confidence=0.65,
+        timeframe="6M",
+        reasoning="medium-term trend",
+        entry_price=120.0,
+    )
+    insert_prediction(db_conn, pred)
+    fetched = get_prediction(db_conn, pred.id)
+    assert fetched is not None
+    assert fetched.timeframe == "6M"
+
+
+def test_timeframe_1y_accepted(db_conn):
+    """Schema accepts the newly added 1Y timeframe."""
+    pred = Prediction(
+        ticker="NVDA",
+        market="US",
+        direction="BEAR",
+        confidence=0.65,
+        timeframe="1Y",
+        reasoning="cycle peak risk",
+        entry_price=120.0,
+    )
+    insert_prediction(db_conn, pred)
+    fetched = get_prediction(db_conn, pred.id)
+    assert fetched is not None
+    assert fetched.timeframe == "1Y"
+
+
+def test_timeframe_invalid_rejected(db_conn):
+    """Schema still rejects timeframe values outside the enum."""
+    with pytest.raises(sqlite3.IntegrityError):
+        db_conn.execute(
+            """INSERT INTO predictions
+               (id, created_at, ticker, market, direction, confidence, timeframe,
+                reasoning, entry_price, signals_used, source, status)
+               VALUES ('tf-bad', '2026-01-01', 'AAPL', 'US', 'BULL', 0.5,
+                       '5Y', 'test', 100.0, '[]', 'LIVE', 'OPEN')"""
+        )
+
+
 def test_prediction_schema_constraints(db_conn):
     """Schema rejects invalid market/direction/status values."""
     with pytest.raises(sqlite3.IntegrityError):
@@ -211,3 +321,211 @@ def test_prediction_schema_constraints(db_conn):
                VALUES ('test2', '2026-01-01', 'AAPL', 'US', 'BULL', 1.5,
                        '1W', 'test', 100.0, '[]', 'LIVE', 'OPEN')"""
         )
+
+
+# ---------------------------------------------------------------------------
+# Legacy-schema migration (codex P1 finding on PR #12/#13)
+# ---------------------------------------------------------------------------
+
+
+# Exact schema before the multi-horizon /expect redesign — no
+# ``analysis_group_id`` column, ``timeframe`` CHECK only allows the four
+# short horizons. Anyone whose ``predictions.db`` was created before
+# this PR carries this schema; ``_migrate_schema_if_needed`` must
+# transparently upgrade them to the current one.
+_LEGACY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS predictions (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    market TEXT NOT NULL CHECK(market IN ('US', 'KR')),
+    direction TEXT NOT NULL CHECK(direction IN ('BULL', 'BEAR', 'NEUTRAL')),
+    confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    timeframe TEXT NOT NULL CHECK(timeframe IN ('1W', '2W', '1M', '3M')),
+    reasoning TEXT NOT NULL,
+    entry_price REAL NOT NULL,
+    signals_used TEXT NOT NULL DEFAULT '[]',
+    source TEXT NOT NULL DEFAULT 'LIVE' CHECK(source IN ('LIVE', 'BACKTEST', 'INTERACTIVE')),
+    target_price REAL,
+    stop_price REAL,
+    status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'HIT', 'MISS', 'EXPIRED', 'CANCELLED')),
+    outcome_price REAL,
+    outcome_date TEXT,
+    outcome_return REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_predictions_status ON predictions(status);
+CREATE INDEX IF NOT EXISTS idx_predictions_market ON predictions(market);
+CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(ticker);
+CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at);
+"""
+
+
+@pytest.fixture
+def legacy_db_path():
+    """A predictions.db file that starts on the pre-v2 schema and carries
+    one realistic row. The fixture deliberately bypasses ``get_connection``
+    so the migration code path is exercised by the test, not bypassed by
+    the fixture setup."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    raw = sqlite3.connect(str(path))
+    raw.executescript(_LEGACY_SCHEMA_SQL)
+    raw.execute(
+        """INSERT INTO predictions
+           (id, created_at, ticker, market, direction, confidence, timeframe,
+            reasoning, entry_price, signals_used, source, status)
+           VALUES ('legacy-1', '2026-04-01T00:00:00', 'NVDA', 'US', 'BULL',
+                   0.7, '1W', 'pre-v2 row', 120.0, '[]', 'LIVE', 'OPEN')"""
+    )
+    raw.commit()
+    raw.close()
+    yield path
+    path.unlink(missing_ok=True)
+    Path(str(path) + "-wal").unlink(missing_ok=True)
+    Path(str(path) + "-shm").unlink(missing_ok=True)
+
+
+def test_migration_adds_analysis_group_id_column(legacy_db_path):
+    """get_connection() on a legacy DB transparently upgrades the schema
+    so the new column is present and queryable."""
+    conn = get_connection(legacy_db_path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+        assert "analysis_group_id" in cols
+    finally:
+        conn.close()
+
+
+def test_migration_widens_timeframe_check(legacy_db_path):
+    """Post-migration, inserts with the new 6M/1Y timeframes succeed."""
+    conn = get_connection(legacy_db_path)
+    try:
+        for tf in ("6M", "1Y"):
+            conn.execute(
+                """INSERT INTO predictions
+                   (id, created_at, ticker, market, direction, confidence,
+                    timeframe, reasoning, entry_price, signals_used, source,
+                    status)
+                   VALUES (?, '2026-05-14', 'AAPL', 'US', 'BULL', 0.65, ?,
+                           'migration test', 200.0, '[]', 'LIVE', 'OPEN')""",
+                (f"new-{tf}", tf),
+            )
+        conn.commit()
+        timeframes = {
+            row[0]
+            for row in conn.execute(
+                "SELECT DISTINCT timeframe FROM predictions WHERE id LIKE 'new-%'"
+            )
+        }
+        assert timeframes == {"6M", "1Y"}
+    finally:
+        conn.close()
+
+
+def test_migration_preserves_existing_rows(legacy_db_path):
+    """Legacy rows survive the table swap intact."""
+    conn = get_connection(legacy_db_path)
+    try:
+        row = conn.execute("SELECT * FROM predictions WHERE id = 'legacy-1'").fetchone()
+        assert row is not None
+        assert row["ticker"] == "NVDA"
+        assert row["entry_price"] == 120.0
+        assert row["timeframe"] == "1W"
+        # The new column is NULL for legacy rows.
+        assert row["analysis_group_id"] is None
+    finally:
+        conn.close()
+
+
+def test_migration_is_idempotent(legacy_db_path):
+    """Calling get_connection() twice — once to migrate, once after —
+    must not double-swap or corrupt indexes."""
+    conn = get_connection(legacy_db_path)
+    conn.close()
+    # Second call: schema is now current, so _migrate_schema_if_needed
+    # must early-return and the table must remain healthy.
+    conn = get_connection(legacy_db_path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+        assert "analysis_group_id" in cols
+        # Index for the new column is present (was missing in legacy schema).
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='predictions'"
+            )
+        }
+        assert "idx_predictions_group" in indexes
+        # Row count unchanged from the one legacy row.
+        (n,) = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()
+        assert n == 1
+    finally:
+        conn.close()
+
+
+def test_migration_rollback_preserves_legacy_data(legacy_db_path, monkeypatch):
+    """If something raises mid-migration (e.g. the new-schema CREATE fails),
+    the ``with conn:`` block must roll back and leave the legacy table
+    fully intact — including its row count. This regression-tests the
+    critical fix that swapped ``conn.executescript`` (which auto-commits)
+    for ``conn.execute`` per-statement (which stays inside the
+    transaction)."""
+    import models as _models
+
+    real_create = _models._create_schema
+
+    def boom(_conn):
+        # First call is from get_connection's post-migration step; we
+        # want the migration-internal call to fail. Easiest path: fail
+        # on every call and verify the migration block rolled back.
+        real_create  # touch to keep linters quiet
+        raise sqlite3.OperationalError("simulated DDL failure")
+
+    monkeypatch.setattr(_models, "_create_schema", boom)
+
+    with pytest.raises(sqlite3.OperationalError):
+        _models.get_connection(legacy_db_path)
+
+    # Reopen with the real implementation restored. If the rollback
+    # worked, the legacy table is still here with its original row;
+    # if it didn't, the DROP would have committed and the row is gone.
+    monkeypatch.setattr(_models, "_create_schema", real_create)
+    conn = _models.get_connection(legacy_db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, ticker, entry_price FROM predictions WHERE id = 'legacy-1'"
+        ).fetchone()
+        assert row is not None, (
+            "legacy row vanished — migration rollback failed; the DROP "
+            "committed before the CREATE failure"
+        )
+        assert row["ticker"] == "NVDA"
+        # Migration now succeeds (real _create_schema), so the new column
+        # is present on this second pass.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+        assert "analysis_group_id" in cols
+    finally:
+        conn.close()
+
+
+def test_migration_fresh_db_is_noop():
+    """A brand-new DB hits the migration function but returns immediately
+    (no rows to copy, no legacy schema to swap). Verifies the early-return
+    branches don't mis-fire on first-time installs."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    try:
+        conn = get_connection(path)
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+            assert "analysis_group_id" in cols
+            (n,) = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()
+            assert n == 0
+        finally:
+            conn.close()
+    finally:
+        path.unlink(missing_ok=True)
+        Path(str(path) + "-wal").unlink(missing_ok=True)
+        Path(str(path) + "-shm").unlink(missing_ok=True)
