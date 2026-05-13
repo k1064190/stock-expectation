@@ -104,14 +104,21 @@ Assistant: "I'll fetch the economic calendar. I'll use the FMP_API_KEY environme
 - Ensure range ≤ 90 days
 - Warn if querying past dates
 
-### Step 3: Execute API Fetch Script
+### Step 3: Execute API Fetch Script (MANDATORY)
 
-**Run the get_economic_calendar.py script with appropriate parameters:**
+**CRITICAL: Always run the Python script to fetch real data. Do NOT use web search as a substitute.**
 
 **Basic usage (default 7 days):**
 ```bash
-uv run python .claude/skills/economic-calendar-fetcher/scripts/get_economic_calendar.py --api-key YOUR_KEY
+# Load FMP_API_KEY from .env with auto-export so the child Python process
+# sees it. Plain `source .env && uv run ...` only sets SHELL variables, not
+# ENV variables, so `os.environ.get("FMP_API_KEY")` would return None
+# inside the script. `set -a` toggles bash's allexport flag.
+set -a; source /home/cwh/projects/stock-expectation/.env; set +a
+uv run python .claude/skills/economic-calendar-fetcher/scripts/get_economic_calendar.py
 ```
+
+**If the script fails** (error exit code), THEN fall back to web search. But always attempt the script first. Do NOT skip the script just because you can answer from training data.
 
 **With specific date range:**
 ```bash
