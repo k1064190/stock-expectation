@@ -121,10 +121,14 @@ def _load_static_universe() -> list[tuple[str, Optional[float], Optional[float]]
 
             reader = csv.DictReader(f)
             for row in reader:
-                ticker = (row.get("ticker") or "").strip().zfill(6)
-                if not ticker:
+                # Validate BEFORE zfill — ''.zfill(6) returns '000000' which
+                # is truthy, so a blank ticker would otherwise pass through
+                # as the literal '000000' phantom ticker (Copilot PR #13
+                # finding).
+                ticker_raw = (row.get("ticker") or "").strip()
+                if not ticker_raw:
                     continue
-                out.append((ticker, None, None))
+                out.append((ticker_raw.zfill(6), None, None))
     except Exception as exc:  # noqa: BLE001 — never block the briefing on CSV parse
         logger.error("failed to read %s: %s", STATIC_UNIVERSE_PATH, exc)
         return []

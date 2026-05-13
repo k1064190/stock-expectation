@@ -262,10 +262,14 @@ def cluster_news(
 
     Returns:
         Clusters sorted by (ticker_count desc, headline_count desc).
-        Supersets win: when two n-grams share the exact same ticker set,
-        the longer one is kept and the shorter dropped. This is what
-        turns ``("ai",)`` + ``("피지컬", "ai")`` over the same 3 tickers
-        into one cluster keyed by the bigram.
+        Within a single ticker set the dedup rule is **subsequence-based**
+        (see ``_is_subseq``): when one n-gram is a strictly-shorter
+        contiguous subsequence of another with the exact same ticker set,
+        the shorter one is dropped. This collapses ``("ai",)`` +
+        ``("피지컬", "ai")`` into the bigram, but preserves *unrelated*
+        n-grams on the same tickers (e.g. ``("피지컬", "ai")`` and
+        ``("자율주행", "로봇")``) — both survive when neither is a
+        subsequence of the other.
     """
     if not news_by_ticker:
         return []
