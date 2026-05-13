@@ -50,6 +50,16 @@ from metrics import get_track_record, get_calibration_report, get_signal_perform
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from telegram_sender import send_briefing
+from candidate_discovery import (
+    discover_kr_candidates,
+    format_candidates_for_prompt,
+)
+from theme_clusterer import (
+    backfill_news_counts,
+    cluster_news,
+    fetch_news_for_candidates,
+    format_themes_for_prompt,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,34 +115,50 @@ def fetch_us_market_data() -> str:
 
 
 def fetch_kr_market_data() -> str:
-    """Fetch Korean market data and format as context string.
+    """Fetch Korean market data via the dynamic candidate scanner + news themes.
+
+    Stage A: ``discover_kr_candidates`` (시총 top-200 ∪ 거래대금 top-50 →
+    momentum/volume filter → 3 anchor merge).
+    Stage B: ``fetch_news_for_candidates`` (8-worker parallel Naver scrape)
+    + ``cluster_news`` (3-gram cross-ticker clustering) for the
+    Active Themes section.
 
     Returns:
-        Formatted market data string for prompt injection.
+        Formatted market data string for prompt injection (API mode).
+        Falls back to anchors-only if PyKRX fails — never raises.
     """
     kr = KoreanMarketProvider()
+    cands = discover_kr_candidates(top_n_output=20, provider=kr)
+    bars_by_ticker = kr.get_price_history_batch([c.ticker for c in cands], days=10)
 
-    blue_chips = [
-        ("005930", "삼성전자"),
-        ("000660", "SK하이닉스"),
-        ("035420", "NAVER"),
-        ("051910", "LG화학"),
-        ("006400", "삼성SDI"),
-        ("005380", "현대자동차"),
+    news_by_ticker = fetch_news_for_candidates(cands, days=7, provider=kr)
+    backfill_news_counts(cands, news_by_ticker)
+    themes = cluster_news(news_by_ticker, min_cluster_size=3)
+
+    lines = [
+        "## Korean Market Data\n",
+        format_candidates_for_prompt(cands),
+        "",
+        format_themes_for_prompt(themes),
+        "",
     ]
 
-    lines = ["## Korean Market Data\n"]
-
-    for ticker, name in blue_chips:
-        bars = kr.get_price_history(ticker, days=10)
-        if bars:
-            latest = bars[-1]
-            prev = bars[-2] if len(bars) > 1 else bars[0]
-            change_pct = (latest.close - prev.close) / prev.close * 100
-            lines.append(
-                f"**{ticker} ({name})**: ₩{latest.close:,.0f} ({change_pct:+.1f}%) | "
-                f"Vol: {latest.volume:,}"
-            )
+    for c in cands:
+        bars = bars_by_ticker.get(c.ticker, [])
+        if not bars:
+            continue
+        latest = bars[-1]
+        prev = bars[-2] if len(bars) > 1 else bars[0]
+        change_pct = (
+            (latest.close - prev.close) / prev.close * 100 if prev.close else 0.0
+        )
+        name = c.name or c.ticker
+        lines.append(
+            f"**{c.ticker} ({name}) [{c.reason}]**: "
+            f"₩{latest.close:,.0f} ({change_pct:+.1f}%) | "
+            f"Vol: {latest.volume:,} | "
+            f"news7d={c.news_count_7d}"
+        )
 
     return "\n".join(lines)
 
@@ -373,16 +399,30 @@ last thing you emit is the full markdown briefing, beginning with
 every section to the Predictions Logged table."""
 
     else:  # KR
+        kr_provider = KoreanMarketProvider()
+        kr_candidates = discover_kr_candidates(top_n_output=20, provider=kr_provider)
+        kr_news = fetch_news_for_candidates(kr_candidates, days=7, provider=kr_provider)
+        backfill_news_counts(kr_candidates, kr_news)
+        kr_themes = cluster_news(kr_news, min_cluster_size=3)
+        candidate_block = format_candidates_for_prompt(kr_candidates)
+        themes_block = format_themes_for_prompt(kr_themes)
+        ticker_csv = ",".join(c.ticker for c in kr_candidates) or "005930,000660"
         return f"""Generate a Korean market daily briefing for {today}.
 
 Follow the `daily-briefing` and `korean-market-analysis` skills in
 `.claude/skills/`. All data access goes through `bin/stock-cli` via Bash.
 
+다음 후보 종목은 Python 스캐너가 결정했다 (시총 top-200 ∪ 거래대금 top-50
+유니버스 → 5일 |return|≥15% OR 거래량비≥2x 필터 → 3 앵커 병합). LLM은 이
+목록 안에서만 분석/추천을 진행하라 — 자체 판단으로 새 종목을 추가하지 말 것.
+
+{candidate_block}
+
+{themes_block}
+
 Specifically:
-1. Fetch Korean blue chips with
-   `bin/stock-cli price <TICKER> --market KR --days 10`:
-   005930 (삼성전자), 000660 (SK하이닉스), 035420 (NAVER),
-   051910 (LG화학), 006400 (삼성SDI), 005380 (현대자동차)
+1. Fetch each candidate's price/volume:
+   `bin/stock-cli price-batch {ticker_csv} --market KR --days 10`
 2. Fetch US reference data for cross-market context:
    `bin/stock-cli price SPY --market US --days 10`
    `bin/stock-cli price NVDA --market US --days 10`
@@ -405,8 +445,10 @@ Rules:
 - Stop-loss wider than US by ~20%
 - Target at least 2x stop distance
 - Consider won/dollar impact on exporters
-- Cross-market: NVDA/SMH moves affect Samsung/SK Hynix with 1-day lag
-- Must actually call `bin/stock-cli predict create` for each pick
+- Cross-market: US 반도체·AI·auto-tech 모멘텀은 KR 반도체·전장·SW 통합사로
+  통상 1일 지연 전이된다. 위 'Active Themes' 블록이 비어있지 않다면 거기에
+  명시된 테마가 가장 활성화된 narrative — 추천 thesis에 직접 인용 가능.
+- Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick (same as US workflow)
 - Use --source LIVE
 
 After creating predictions, output the full briefing as markdown. Include a

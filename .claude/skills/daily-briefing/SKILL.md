@@ -41,13 +41,18 @@ bin/stock-cli price XLU --market US --days 10
 ```
 
 **KR 인덱스 + 주요 종목:**
+
+> Cron 브리핑(`scheduler/daily_briefing.py`)은 `scheduler/candidate_discovery.py` 의
+> `discover_kr_candidates()` 로 후보를 동적 결정한다 (시총 top-200 ∪ 거래대금
+> top-50 → 5일 |return|≥15% OR 거래량비≥2x → 3 앵커 005930/000660/069500 병합).
+> 결과 ticker 리스트가 prompt에 직접 주입되므로 LLM은 그 목록 안에서만 조회한다.
+> 인터랙티브 사용 시에도 동일하게 호출하거나, 아래 anchor 3종목만 빠르게 본 뒤
+> 화제 종목을 추가 조회한다:
+
 ```bash
-bin/stock-cli price 005930 --market KR --days 10   # 삼성전자
-bin/stock-cli price 000660 --market KR --days 10   # SK하이닉스
-bin/stock-cli price 035420 --market KR --days 10   # NAVER
-bin/stock-cli price 051910 --market KR --days 10   # LG화학
-bin/stock-cli price 006400 --market KR --days 10   # 삼성SDI
-bin/stock-cli price 005380 --market KR --days 10   # 현대자동차
+bin/stock-cli price 005930 --market KR --days 10   # 삼성전자 (anchor)
+bin/stock-cli price 000660 --market KR --days 10   # SK하이닉스 (anchor)
+bin/stock-cli price 069500 --market KR --days 10   # KODEX 200 (anchor)
 ```
 
 **Multi-horizon 기술 지표 (점수 산정에 사용):**
