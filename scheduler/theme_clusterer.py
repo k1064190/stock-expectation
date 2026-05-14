@@ -246,6 +246,7 @@ def _normalise_news(item) -> dict:
 def cluster_news(
     news_by_ticker: dict[str, list[dict]],
     min_cluster_size: int = 3,
+    min_distinct_articles: int = 2,
     ngram_sizes: tuple[int, ...] = (2, 3),
     max_themes: int = 8,
 ) -> list[ThemeCluster]:
@@ -255,6 +256,20 @@ def cluster_news(
         news_by_ticker: Output of ``fetch_news_for_candidates``.
         min_cluster_size: Minimum distinct tickers an n-gram must hit to
             qualify as a theme.
+        min_distinct_articles: Minimum distinct *articles* (by URL, or
+            headline string when URL is empty) backing the cluster.
+            Defaults to 2 — rejects two real noise patterns that live
+            cron runs exposed: (a) one general-market article echoed
+            across several anchor tickers (SPY/QQQ/DIA share the same
+            "Market Brief" / KOSPI index articles) and (b) sliding-
+            window trigrams of one article ("하루만에 변동성은" /
+            "변동성은 지속" / "지속 사상최고" — all carved out of the
+            same single headline). Day-1 trade-off: a brand-new theme
+            with only ONE supporting article will not surface until a
+            second distinct source picks it up (typically <24h for hot
+            narratives). A theme with 2 distinct articles on Day 1 does
+            surface. If early-signal detection is later prioritised,
+            lower this gate to 1.
         ngram_sizes: Which n-gram lengths to consider. Default ``(2, 3)``
             — unigrams are too noisy (single common words form spurious
             clusters); 4-grams are too specific (rarely cross 3 tickers).
@@ -276,12 +291,18 @@ def cluster_news(
 
     # Map ngram → {ticker: [headlines containing ngram]}.
     ngram_index: dict[tuple[str, ...], dict[str, list[str]]] = {}
+    # Parallel: ngram → {distinct article identifiers}. URL preferred; if
+    # absent (test fixtures, certain providers), fall back to the headline
+    # string itself. This is what gates the noise patterns from the
+    # docstring — see ``min_distinct_articles``.
+    ngram_articles: dict[tuple[str, ...], set[str]] = {}
 
     for ticker, items in news_by_ticker.items():
         for item in items:
             headline = (item.get("headline") or "").strip()
             if not headline:
                 continue
+            article_id = (item.get("url") or "").strip() or headline
             tokens = _tokenise(headline)
             # Within a single headline, dedupe n-grams so a headline that
             # repeats the same phrase ("AI 인프라 도입, AI 인프라 비용") only
@@ -295,11 +316,16 @@ def cluster_news(
                     seen_in_headline.add(ngram)
                     bucket = ngram_index.setdefault(ngram, {})
                     bucket.setdefault(ticker, []).append(headline)
+                    ngram_articles.setdefault(ngram, set()).add(article_id)
 
-    # First pass: keep only ngrams hitting ≥min_cluster_size distinct tickers.
+    # First pass: keep only ngrams hitting ≥min_cluster_size distinct tickers
+    # AND ≥min_distinct_articles distinct articles. The second gate filters
+    # echo-only and sliding-window-only clusters that live cron exposed.
     candidates: list[ThemeCluster] = []
     for ngram, ticker_to_headlines in ngram_index.items():
         if len(ticker_to_headlines) < min_cluster_size:
+            continue
+        if len(ngram_articles.get(ngram, set())) < min_distinct_articles:
             continue
         tickers = sorted(ticker_to_headlines.keys())
         headline_count = sum(len(v) for v in ticker_to_headlines.values())
