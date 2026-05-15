@@ -198,11 +198,81 @@ def test_clusters_sorted_by_ticker_count_then_headlines():
 
 
 def test_sample_headlines_capped_at_five_and_dedup():
-    """`sample_headlines` collects one per ticker, dedup'd, max 5."""
-    news = {f"T{i:02d}": _news(["AI 반도체 호재"]) for i in range(7)}
+    """`sample_headlines` collects one per ticker, dedup'd, max 5.
+    Each ticker gets a *distinct* headline so the new
+    `min_distinct_articles` gate passes — pure echoing of the same
+    headline is exactly what Stage 6 filters out."""
+    news = {f"T{i:02d}": _news([f"AI 반도체 호재 {i}편"]) for i in range(7)}
     clusters = cluster_news(news, min_cluster_size=3)
     assert clusters
     assert len(clusters[0].sample_headlines) <= 5
+
+
+def test_single_article_echoed_across_tickers_is_rejected():
+    """The exact noise pattern live US cron exposed: SPY/QQQ/DIA all carry
+    the SAME general-market article (e.g. "Market Brief: SpaceX IPO Pop"),
+    so the ngram passes ``min_cluster_size`` but only from one underlying
+    article. Stage 6's ``min_distinct_articles=2`` filter drops it."""
+    shared_url = "https://example.com/market-brief-spacex"
+    shared_headline = "Market Brief Will SpaceX IPO Pop The Stock Bubble"
+    news = {
+        "SPY": [{"headline": shared_headline, "url": shared_url, "date": ""}],
+        "QQQ": [{"headline": shared_headline, "url": shared_url, "date": ""}],
+        "DIA": [{"headline": shared_headline, "url": shared_url, "date": ""}],
+    }
+    # Default min_distinct_articles=2 — only 1 distinct URL → rejected.
+    assert cluster_news(news) == []
+    # Lower the gate explicitly and the cluster comes back, proving the
+    # filter (not some other change) is what's rejecting it.
+    out = cluster_news(news, min_distinct_articles=1)
+    assert out, "lowering min_distinct_articles must let the cluster through"
+
+
+def test_sliding_window_trigrams_from_one_article_rejected():
+    """Stage B's n-gram slide produced ``("하루만에", "변동성은", "지속")``
+    + ``("변동성은", "지속", "사상최고")`` + ``("지속", "사상최고", "844")``
+    all from a single KOSPI headline. Each looks like a 3-ticker cluster
+    (because the same article appears in 3 anchors), but they all share
+    one article → Stage 6 filter drops every one."""
+    shared = "하루만에 변동성은 지속 사상최고 7844 마감"
+    shared_url = "https://example.com/kospi-7844"
+    news = {
+        f"T{i:03d}": [{"headline": shared, "url": shared_url, "date": ""}]
+        for i in range(4)
+    }
+    assert cluster_news(news, ngram_sizes=(3,)) == []
+
+
+def test_distinct_articles_with_shared_ngram_survive():
+    """Three *different* articles with the same theme phrase pass the
+    filter — this is the legitimate "real theme" case from the 5/13 KR
+    catalyst (the "피지컬 AI" cluster across 3 unique articles)."""
+    news = {
+        "307950": [
+            {
+                "headline": "현대오토에버 피지컬 AI 강세",
+                "url": "https://example.com/auto-ai",
+                "date": "",
+            }
+        ],
+        "066570": [
+            {
+                "headline": "LG전자 피지컬 AI 로봇주 수혜",
+                "url": "https://example.com/lg-ai",
+                "date": "",
+            }
+        ],
+        "005380": [
+            {
+                "headline": "현대차 피지컬 AI 로보틱스 공개",
+                "url": "https://example.com/hmc-ai",
+                "date": "",
+            }
+        ],
+    }
+    out = cluster_news(news, min_cluster_size=3, ngram_sizes=(2,))
+    keyword_strs = {" ".join(c.keywords) for c in out}
+    assert "피지컬 ai" in keyword_strs
 
 
 # ---------------------------------------------------------------------------
