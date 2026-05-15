@@ -29,8 +29,18 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # Korean market briefing — 07:00 KST (22:00 UTC previous day)
 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
 
+# Korean mid-session briefing — 12:00 KST (03:00 UTC, KOSPI lunch break)
+# Re-runs the same briefing against intraday price action and surfaces
+# breakouts that emerged after the 07:00 pre-open run.
+0 3 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr_midday.log 2>&1
+
 # US market briefing — 21:00 KST (12:00 UTC)
 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+
+# US mid-session briefing — 01:00 KST next day (16:00 UTC, NYSE ~11:00–12:00 ET)
+# Re-runs the same briefing against the actual open + first 90 minutes
+# of trading. UTC weekday match (Mon–Fri) shifts results to Tue–Sat KST.
+0 16 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us_midday.log 2>&1
 
 # Outcome tracker — 00:00 KST (15:00 UTC)
 # No LLM needed, pure Python price check + DB update
