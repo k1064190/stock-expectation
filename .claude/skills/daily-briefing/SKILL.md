@@ -137,7 +137,7 @@ bin/stock-cli portfolio risk --market US
 
 ### 4. 종목 점수화 + 라벨 결정 (BUY/WATCH/HOLD/AVOID/SELL)
 
-`/expect` 스킬과 동일한 결정론적 포인트 테이블 사용:
+`/expect` 스킬과 **동일한** 결정론적 포인트 테이블 사용 (sync 유지 필수):
 
 **ALGO_SCORE (max +8.0)** — `horizon-metrics-batch` 결과로 산정:
 - Trend: MA20>MA50>MA200 → +3.0 | MA20>MA50 only → +1.0 | full bear → -1.0 | else 0
@@ -152,12 +152,35 @@ bin/stock-cli portfolio risk --market US
 - Hard cap: 부정 키워드(bankrupt, fraud, lawsuit, downgrade, recall, delist) → cap -2.0
 - Hard cap: KR 공시 감자/유상증자/관리종목/거래정지/상장폐지 → cap -2.0
 
-**COMPOSITE = ALGO + NEWS** (범위 -7 ~ +11):
+**LLM_CONTEXT_SCORE (range -5.0 ~ +3.0)** — 매크로/내러티브 컨텍스트 (모멘텀 편향 보정):
+
+**Macro detector invocation (amortised, mandatory once per market)**:
+시장별 (US, KR) 한 번씩 호출하고 결과를 모든 후보 종목에 재사용:
+- `market-top-detector` — 분배일 / defensive rotation / leadership breakdown
+- `ftd-detector` — rally attempt / FTD confirmed 상태
+- `macro-regime-detector` — Concentration / Broadening / Contraction 등
+- `theme-detector` — 섹터 lifecycle phase
+
+브리핑 전체 런타임 < 10분 (cron timeout 여유) 목표. 종목별로 detector 재호출 금지 (10-12배 latency).
+
+Section 3 (시장 환경 분석) 결과 + 섹터 lifecycle + narrative themes 종합해서 종목별로 -5.0 ~ +3.0 부여. 앵커:
+- **+3.0**: 강한 매크로 호재 + 섹터 early-stage breakout
+- **+1.5**: 약한 호재 (favorable regime, mid-stage)
+- **0**: 중립 (default — 특별한 매크로/내러티브 시그널 없을 때)
+- **-1.5**: 약한 악재 (late-stage 섹터, 중립 매크로)
+- **-3.0**: 매크로 톱 + 섹터 late + 단기 이벤트 (예: KOSPI 분배일, 외인 매도 가속, FX 1500↑, 어닝 직전)
+- **-5.0**: 시스템 위기 (베어마켓 진입 + 펀더 악화)
+
+**반드시 `llm_context_reasoning` 텍스트도 같이** — 매크로 시그널 1개 이상 인용 ("외인 -5조", "분배일 4건", "FTD 미확인" 등). Section 3에서 이미 분석한 내용을 종목별로 매핑.
+
+**COMPOSITE = ALGO_SCORE + NEWS_SCORE + LLM_CONTEXT_SCORE** (범위 -12 ~ +14):
 - ≥ 8.0 → **BUY**
 - [6.0, 8.0) → **WATCH**
 - [3.0, 6.0) → **HOLD**
 - [0, 3.0) → **AVOID**
 - < 0 → **SELL**
+
+**임계값은 유지** — LLM_CONTEXT가 음수면 자연스럽게 BUY → WATCH/HOLD 다운그레이드, 양수면 약한 ALGO+NEWS 조합도 BUY 진입 가능.
 
 각 시장에서 **5-6개 종목 선정**해 라벨 부여 (총 10-12개). 라벨이 BUY/WATCH만 있다면 좋지만, AVOID/SELL도 자연스럽게 포함 가능 (다양성 + 공부 자료).
 
@@ -170,14 +193,14 @@ bin/stock-cli predict create \
   --ticker 005930 --market KR --direction BULL \
   --confidence 0.62 --timeframe 1M \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
-  --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True" \
-  --signals technical,momentum \
+  --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
+  --signals technical,momentum,llm_context \
   --source LIVE
 ```
 
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
-- 최소 2개 signal 명시 (signals_used)
+- 최소 2개 signal 명시 (signals_used). `llm_context` 시그널은 `LLM_CONTEXT_SCORE`가 0이 아닐 때만 포함 (주별 calibration이 이 시그널 단독 측정)
 - KR 종목 기본 timeframe 1M (유동성 낮음 고려)
 - US 종목 기본 timeframe 1W
 - Target ≥ 2 × Stop 거리 (2:1 reward/risk)

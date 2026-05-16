@@ -24,7 +24,23 @@ Based on the market data above, produce:
 
 2. **Cross-Market Impact**: How did yesterday's US session affect Korean market outlook? Key correlations to monitor (US semis → Samsung/SK Hynix, US rates → won).
 
-3. **2-3 Stocks × up to 4 Horizons** in this exact JSON format (one entry
+3. **Macro/Narrative Context Pass (LLM_CONTEXT_SCORE)**
+
+   Before scoring individual stocks, judge the overall KR market context on a -5.0 to +3.0 scale (asymmetric — bigger negative range to mitigate the algorithmic momentum bias built into ALGO/NEWS scoring).
+
+   Anchors:
+   - **+3.0**: FTD confirmed, sector early breakout, supportive macro regime
+   - **+1.5**: Mid-stage uptrend, favorable regime, no top signal
+   - **0**: Neutral, no specific context
+   - **-1.5**: Late-stage sector, neutral macro
+   - **-3.0**: Macro top signal (분배일, 외인 매도 가속, FX 1500↑, breadth deterioration)
+   - **-5.0**: Confirmed bear market entry, fundamentals deteriorating
+
+   Apply this LLM_CONTEXT_SCORE per stock (most stocks share the macro context but individual sector lifecycle can shift it by ±1). Cite at least one concrete signal in the reasoning (e.g., "외인 -5.56조 매도 5/15", "KOSPI 분배일 3건 누적"). Include `llm_context` in `signals_used` whenever the score is non-zero.
+
+   When LLM_CONTEXT_SCORE is strongly negative (≤ -2.0), be cautious about emitting BULL direction even if technicals look strong — this is exactly the anti-momentum-bias circuit the score is designed to fire.
+
+4. **2-3 Stocks × up to 4 Horizons** in this exact JSON format (one entry
    per horizon per stock, reporting Short(1W), Medium(1M), Long(6M),
    Cycle(1Y) where applicable). Emit entries only for horizons with
    confidence ≥ 0.60:
@@ -40,8 +56,10 @@ Based on the market data above, produce:
     "entry_price": CURRENT_PRICE_KRW,
     "target_price": TARGET_KRW,
     "stop_price": STOP_KRW,
-    "reasoning": "2-3 sentence thesis for the SHORT horizon",
-    "signals_used": ["technical", "news", "cross_market"]
+    "reasoning": "2-3 sentence thesis. Cite ALGO/NEWS/LLM_CONTEXT scores or specific signals.",
+    "signals_used": ["technical", "news", "cross_market", "llm_context"],
+    "llm_context_score": -2.5,
+    "llm_context_reasoning": "KOSPI 분배일 3건 누적, 외인 -2.3조 누적, USD/KRW 1505 돌파 = 매크로 톱 시그널 active. 반도체 섹터 late-stage parabolic."
   },
   {
     "ticker": "006_DIGIT_CODE",
@@ -53,7 +71,9 @@ Based on the market data above, produce:
     "target_price": TARGET_CYCLE_KRW,
     "stop_price": STOP_CYCLE_KRW,
     "reasoning": "Cycle thesis: return_1y, 52W high distance, chaebol valuation",
-    "signals_used": ["cycle", "valuation", "mean_reversion"]
+    "signals_used": ["cycle", "valuation", "mean_reversion", "llm_context"],
+    "llm_context_score": -2.5,
+    "llm_context_reasoning": "(same macro context applies to cycle horizon)"
   }
 ]
 ```
