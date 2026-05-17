@@ -1,6 +1,6 @@
 ---
 name: expect
-description: "Stock expectation analysis. Combines algorithmic technical scoring + structured news/sentiment + multi-horizon directional predictions to emit a deterministic BUY / WATCH / HOLD / AVOID / SELL recommendation per stock. Modes: (1) /expect KR or /expect US auto-discover 5 trending stocks, (2) /expect NVDA or /expect 삼성전자 single-ticker deep dive, (3) /expect NVDA,AMD,AVGO multi-ticker batch, (4) /expect ALL or /expect runs both markets. Triggers: expect, expectation, stock picks, what should I buy, hot stocks, trending stocks, buy or sell, 기대값, 종목 추천, 뭐 사야돼, 매수, 매도, 핫한 종목"
+description: "Stock expectation analysis. Combines algorithmic technical scoring + structured news/sentiment + LLM macro/narrative context + multi-horizon directional predictions to emit a deterministic BUY / WATCH / HOLD / AVOID / SELL recommendation per stock. Modes: (1) /expect KR or /expect US auto-discover 5 trending stocks, (2) /expect NVDA or /expect 삼성전자 single-ticker deep dive, (3) /expect NVDA,AMD,AVGO multi-ticker batch, (4) /expect ALL or /expect runs both markets. Triggers: expect, expectation, stock picks, what should I buy, hot stocks, trending stocks, buy or sell, 기대값, 종목 추천, 뭐 사야돼, 매수, 매도, 핫한 종목"
 ---
 
 # Expect — Multi-Horizon Buy/Sell Recommender
@@ -8,9 +8,10 @@ description: "Stock expectation analysis. Combines algorithmic technical scoring
 ## What this produces
 
 Per stock:
-- A deterministic **BUY / WATCH / HOLD / AVOID / SELL** label, derived from a fixed point table
+- A deterministic **BUY / WATCH / HOLD / AVOID / SELL** label, derived from a fixed point table augmented by an LLM-judged macro/narrative score
 - A **transmission chain** of exactly 3 facts: one technical, one news/fundamental, one risk
-- A **composite score** in the range -3 .. +15 with the components broken out
+- A **composite score** in the range -12 .. +14 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
+- An **LLM context score** (-5 .. +3) with reasoning text capturing macro regime, sector lifecycle, and narrative that the deterministic table can't see
 - Independent **multi-horizon predictions** (1W / 1M / 6M / 1Y) logged to `data/predictions.db`
 - An **outcome-telemetry sidecar** at `state/last-outcome-expect.json` for the weekly calibration loop
 
@@ -129,6 +130,65 @@ Max positive sum: 3 + 1.5 + 1.5 + 1 + 1 + 0 = **8.0**. Max negative drag: -1 + -
 
 When a `horizon-metrics` field is `null` (insufficient bars on a young listing), assign 0 to that component and append `(N/A: <field>)` to the transmission chain's RISK slot.
 
+### Step 5b — LLM macro/narrative context score (mitigates momentum bias)
+
+The deterministic ALGO_SCORE rewards stocks that are already trending (full bull MA stack, RSI 50-70, return_1m ≥ +5%, near 52W high). This is intentional (momentum factor) but creates a structural bias: **a parabolic blow-off top scores identically to a healthy mid-stage uptrend**. The 5/15/2026 KOSPI key reversal day exposed this — 000660 SK하이닉스 would have scored ALGO 7.0 + NEWS 1.0 = BUY threshold despite +925% YoY and a confirmed macro top signal.
+
+`LLM_CONTEXT_SCORE` is your explicit channel to encode macro/narrative context the table can't see. **Range -5.0 to +3.0** (asymmetric — bigger negative range mitigates the algorithmic momentum bias which dominates upside).
+
+**When to evaluate**: Always compute, but spend more effort when `ALGO_SCORE >= 6.0` (i.e., the stock would otherwise be WATCH+ on raw mechanics). For `ALGO_SCORE < 6.0`, default to 0 unless something specific is obvious.
+
+**Inputs to consider** (gather before scoring):
+
+1. **Macro detector outputs** (call when `ALGO_SCORE >= 6.0`):
+   - `market-top-detector` — distribution days, defensive rotation, leadership breakdown
+   - `ftd-detector` — rally attempt / FTD confirmed / post-FTD health
+   - `macro-regime-detector` — Concentration / Broadening / Contraction / Inflationary / Transitional
+2. **Sector lifecycle** (`theme-detector` or web search):
+   - Early-stage breakout / mid-stage run / late-stage parabolic / decay
+3. **Recent narrative themes** from news + web search:
+   - Foreign capital flow direction (KR: 외인 순매수/매도 trend)
+   - FX context (USD/KRW > 1500 = capital outflow stress)
+   - Supply chain disruptions (strikes, geopolitics)
+   - Regulatory / antitrust
+   - Earnings season binary events nearby
+4. **Cross-asset confirmation**: bonds, related sectors, SOXL vs SPY divergence
+
+**Scoring rubric** (anchors — pick the nearest):
+
+| Score | Anchor | Example |
+|---|---|---|
+| **+3.0** | Major macro tailwind aligned with this stock | FTD confirmed last week + sector early breakout + positive narrative |
+| **+1.5** | Moderate tailwind | Sector in mid-stage uptrend, no top signal, supportive macro regime |
+| **+0.5** | Mild tailwind | Favorable macro regime, neutral sector |
+| **0** | Neutral / no specific context | LLM has no strong reason to adjust either way |
+| **-1.5** | Mild headwind | Late-stage sector, neutral macro |
+| **-3.0** | Strong headwind | Macro top signal + late-stage sector + specific event risk (e.g., earnings pre-binary) |
+| **-5.0** | Crisis | Confirmed bear market entry + sector blow-off + fundamentals deteriorating |
+
+Interpolate between anchors (e.g., -2.5 is allowed and common).
+
+**Required output** — emit both:
+
+```json
+"llm_context_score": -3.0,
+"llm_context_reasoning": "KOSPI 5/15 key reversal day -6.12% off ATH 8047 + 외인 5.56조 매도 + USD/KRW 1500 돌파 = 매크로 톱 확인. 반도체 섹터 late-stage parabolic (+25% / 22d). 삼성 노조 파업 5/21 임박. 펀더 자체는 견고 (NVDA Blackwell 수요)이므로 -5는 아님."
+```
+
+**Reasoning text rules** (apply to ALL non-zero scores):
+- Quote specific numbers, not adjectives ("외인 -5.56조" not "외인 매도 심함")
+- Reference at least one **named** macro signal source ("market-top-detector triggered defensive rotation", "ftd-detector still in rally attempt", "USD/KRW 1500 stress", "distribution day count = 4")
+- Explain why this anchor (and not adjacent ones) — e.g., "펀더는 견고 (NVDA Blackwell 수요)이므로 -5는 아님"
+- Korean OK for KR market analysis, English for US
+- When `LLM_CONTEXT_SCORE == 0.0`, emit reasoning text anyway ("Neutral — no specific macro/narrative context.") and **do NOT** include `llm_context` in `signals_used` for the horizon predictions (it would pollute calibration)
+- Vague reasoning at `|score| >= 2.0` is a Quality Gate failure (Step 11 Rule 5) — dampen the score toward 0 if you cannot cite a concrete signal
+
+**Calibration honesty**:
+- Track record shows valuation/cycle/mean_reversion signals at 0% win rate. LLM_CONTEXT_SCORE is your channel to encode these qualitative signals more carefully. Weekly calibration will measure this signal separately under `--signals llm_context` — be conservative until 6-8 weeks of data confirms it adds alpha.
+- When ALGO_SCORE is high (+7 or +8), be wary of confirming with a positive LLM_CONTEXT_SCORE (avoid double-counting bullish momentum). Most algorithmic BUY candidates should get LLM_CONTEXT in [-2.0, +1.0] range.
+
+**Recursion guard**: this skill can call `market-top-detector`, `ftd-detector`, `macro-regime-detector`, `theme-detector`. None of those currently call `/expect`. If that changes, add a `--no-gate-recursion` flag to suppress the macro context call.
+
 ### Step 6 — Compute the news score (deterministic point table)
 
 **NEWS_SCORE — sums to a max of +3.0, can be hard-capped negative.** Sentiment buckets are mutually exclusive:
@@ -155,8 +215,9 @@ Max positive sum: 2 + 1 = **3.0**. Floor without hard caps: -2 + 0 = -2.0. With 
 ### Step 7 — Composite + decision label
 
 ```
-COMPOSITE = ALGO_SCORE + NEWS_SCORE
-  range:  -7.0 (worst case)  ..  +11.0 (perfect)
+COMPOSITE = ALGO_SCORE + NEWS_SCORE + LLM_CONTEXT_SCORE
+  range:  -12.0 (worst case)  ..  +14.0 (perfect)
+  (algo floor -5.0 with earnings penalty + news floor -2.0 + llm_context floor -5.0)
 
 Label mapping (contiguous half-open ranges — every score lands in exactly one bucket):
   COMPOSITE >= 8.0          →  BUY     high-conviction long
@@ -168,7 +229,15 @@ Label mapping (contiguous half-open ranges — every score lands in exactly one 
 
 Round COMPOSITE to one decimal in the output.
 
-Threshold rationale: BUY requires ≥73% of the +11 max, which forces both technicals and news to be confirming. WATCH (≥55%) is for technical strength without news support, or vice versa. The HOLD floor at 3.0 keeps mediocre setups from being labelled AVOID.
+Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
+
+**Worked example — 000660 SK하이닉스 on 2026-05-14 (pre-crash)**:
+- ALGO = 7.0 (trend +3, momentum +0.5, return_1m +1.5, volume +1.0, cycle +1.0)
+- NEWS = 1.0 (5 headlines/7d, no AV sentiment, no hard cap)
+- LLM_CONTEXT = -3.0 (KOSPI parabolic +25% / 22d, magazine cover "1만피" target, FX 1500 stress, sector late-stage)
+- COMPOSITE = **5.0 → HOLD** (downgrade from raw 8.0 BUY because macro context overrides)
+
+Without LLM_CONTEXT the system would have labelled this BUY at the very top of a blow-off — exactly the failure mode this score is designed to prevent.
 
 ### Step 8 — Transmission chain (exactly 3 facts)
 
@@ -185,6 +254,7 @@ Format rules:
 - One line per slot. If a slot has no relevant fact, write "—" rather than padding.
 - Quote the data field name when relevant (`return_1m=+7.4%`) so a future weekly aggregator can parse it.
 - For HOLD / AVOID labels, the transmission chain is optional but recommended.
+- The 3 transmission chain slots (tech/news/risk) are **separate from** `llm_context_reasoning` — do NOT merge the macro narrative into the RISK slot. RISK should cover stock-specific risks (earnings event, cycle_risk_flag, drawdown); macro/sector lifecycle lives in `llm_context_reasoning` only.
 
 ### Step 9 — Multi-horizon predictions (existing logic, preserved)
 
@@ -215,7 +285,7 @@ bin/stock-cli predict create \
   --analysis-group-id "$GROUP_ID"
 ```
 
-`--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `cycle`, `valuation`, `mean_reversion`, `disclosure`. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
+`--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `cycle`, `valuation`, `mean_reversion`, `disclosure`, `llm_context`. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
 
 Generate a fresh `GROUP_ID` for each stock — never reuse across tickers.
 
@@ -244,6 +314,8 @@ After the run completes (all stocks scored, all predictions saved), write `state
       "algo_components": {"trend": 3.0, "momentum": 1.5, "return_1m": 1.5, "volume": 1.0, "cycle": 1.0, "earnings": 0},
       "news_score": 3.0,
       "news_components": {"sentiment": 2.0, "headline_volume": 1.0, "neg_keyword_cap": false, "disclosure_cap": false},
+      "llm_context_score": 0.0,
+      "llm_context_reasoning": "Neutral macro: FTD post-confirmation health intact, AI sector mid-stage, no specific event risk. Algo + news already capture the bull case so no further uplift warranted.",
       "transmission_chain": {
         "tech": "RSI14=62 above midline; MA20>MA50>MA200 stack",
         "news": "Finnhub avg sentiment +0.21 across 5 articles in last 7d",
@@ -281,6 +353,8 @@ Each pick object:
 | `news_score` | float | yes — NOT `news` |
 | `algo_components` | object with `trend`, `momentum`, `return_1m`, `volume`, `cycle`, `earnings` | yes |
 | `news_components` | object with `sentiment`, `headline_volume`, `neg_keyword_cap`, `disclosure_cap` | yes |
+| `llm_context_score` | float in [-5.0, +3.0], 1 decimal | yes — NOT `llm_score` or `context_score` |
+| `llm_context_reasoning` | str, 1-3 sentences citing macro/sector/narrative signals | yes (use "Neutral; no specific context." when score is 0) |
 | `transmission_chain` | object with `tech`, `news`, `risk` | yes for BUY/WATCH/SELL; optional for HOLD/AVOID |
 | `horizons_logged` | list of `"1W"`/`"1M"`/`"6M"`/`"1Y"` | yes (empty list if none ≥ 0.60 conf) |
 | `analysis_group_id` | UUID str or null | yes — null when no horizons were logged |
@@ -295,17 +369,19 @@ Before printing the final markdown, sanity-check each pick. If any check fails, 
 2. **Target separation:** if a horizon prediction is logged, `target_price` and `stop_price` differ from `entry_price` by at least one ATR-equivalent (use `max_drawdown_1y / 12` as a rough proxy if ATR not available).
 3. **Transmission chain hygiene:** each slot quotes a specific number or named fact. No bare adjectives.
 4. **Fresh-data check:** every `news` and `horizon-metrics-batch` `generated_at` is within 1 hour of now. If older, re-fetch.
+5. **LLM_CONTEXT_SCORE justification:** if `|llm_context_score| >= 2.0`, `llm_context_reasoning` must cite at least one specific macro/sector/narrative signal (named detector output, FX number, sector lifecycle phase, etc.) — no vague "market feels risky" justifications. If reasoning is weak, dampen score toward 0.
+6. **Double-counting guard:** if `algo_score >= 7.0` and `llm_context_score >= +2.0`, recheck — you may be double-counting bullish momentum already captured by trend/momentum/cycle algo components. Most algorithmic BUY candidates should get `llm_context_score` in `[-2.0, +1.0]`.
 
-### Step 12 — Bias checklist (final pass before output)
+### Step 12 — Bias checklist (informs LLM_CONTEXT_SCORE; final audit)
 
-Briefly self-audit for the 4 retail biases JoelLewis's `finance-psychology` highlights:
+The 4 retail biases below are inputs into your LLM_CONTEXT_SCORE — they should already be reflected in the score and reasoning text. This step is a final cross-check that the score wasn't infected by these biases:
 
-- **Recency:** am I weighting yesterday's news above the 1Y trend? If yes, dampen.
-- **Confirmation:** did I read past contradicting headlines? If only positives, recheck.
-- **Anchoring:** is the prediction anchored to the discovery price rather than current price?
-- **Overconfidence:** is the composite ≥ 9 with weak news + thin volume? Step down to WATCH.
+- **Recency:** am I weighting yesterday's news above the 1Y trend? If yes, my LLM_CONTEXT_SCORE may be over-negative (or over-positive on a 1-day pop). Dampen toward 0.
+- **Confirmation:** did I read past contradicting headlines? If only positives went into the reasoning, recheck and rebalance.
+- **Anchoring:** is the prediction anchored to the discovery price rather than current price? Cross-check with `entry_price` field.
+- **Overconfidence:** is the composite ≥ 10 with weak news + thin volume + minimal LLM_CONTEXT justification? Step down to WATCH.
 
-Note in the per-stock detail if any of these fired and what was adjusted.
+Note in the per-stock detail if any of these fired and what was adjusted in the LLM_CONTEXT_SCORE.
 
 ---
 
@@ -316,18 +392,18 @@ Note in the per-stock detail if any of these fired and what was adjusted.
 
 ### Headline picks
 
-| # | Ticker | Price | Label | Composite | Algo / News | Horizons logged |
-|---|--------|-------|-------|-----------|-------------|-----------------|
-| 1 | NVDA   | $130  | **BUY**   | 11.0 | 8.0 / 3.0 | 1W, 1M |
-| 2 | MU     | $426  | WATCH | 7.0 | 5.0 / 2.0 | 1W (capped by RULE C1) |
-| 3 | XYZ    | $42   | SELL  | -1.5 | -0.5 / -1.0 | — |
+| # | Ticker | Price | Label | Composite | Algo / News / Context | Horizons logged |
+|---|--------|-------|-------|-----------|------------------------|-----------------|
+| 1 | NVDA   | $130  | **BUY**   | 11.0 | 8.0 / 3.0 / 0.0 | 1W, 1M |
+| 2 | 000660 | ₩1.82M| HOLD  | 5.0 | 7.0 / 1.0 / **-3.0** | — (LLM context downgraded from raw 8.0 BUY) |
+| 3 | XYZ    | $42   | SELL  | -1.5 | -0.5 / -1.0 / 0.0 | — |
 
 Track record: 58% win rate over last 30 days, Brier 0.21.
 Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 
 ### Per-stock detail
 
-#### 1. NVDA ($130) — BUY (composite 11.5)
+#### 1. NVDA ($130) — BUY (composite 11.0)
 
 **Transmission chain:**
 - TECH: RSI14=62 above midline; MA20>MA50>MA200 stack
@@ -336,6 +412,7 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 
 **Algo (8.0/8):** Trend +3.0, Momentum +1.5, Return_1M +1.5, Volume +1.0, Cycle +1.0
 **News (3.0/3):** Sentiment +2.0, Headline_volume +1.0, no hard caps fired
+**LLM Context (0.0):** Neutral macro — FTD post-confirmation health intact, AI sector mid-stage. No specific event risk.
 
 **Horizons:**
 - Short (1W) — BULL 0.72 → logged
@@ -345,7 +422,20 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 
 **Bias check:** none triggered.
 
-#### 2. MU ($426) — WATCH (composite 7.0, capped by RULE C1)
+#### 2. 000660 SK하이닉스 (₩1,819,000) — HOLD (composite 5.0, LLM_CONTEXT downgrade)
+
+**Transmission chain:**
+- TECH: MA20>MA50>MA200 stack; RSI14=71.9 OVERBOUGHT; return_1m=+64.9%
+- NEWS: 5 headlines/7d including "검은 월요일" macro panic; treasury share disposal 5/13
+- RISK: cycle_risk_flag=True; parabolic blow-off context; US semis -4% Fri
+
+**Algo (7.0/8):** Trend +3.0, Momentum +0.5, Return_1M +1.5, Volume +1.0, Cycle +1.0
+**News (1.0/3):** Headline_volume +1.0
+**LLM Context (-3.0):** KOSPI 5/15 key reversal day -6.12% off ATH 8047 + 외인 -5.56조 매도 + USD/KRW 1500 돌파 = market-top-detector defensive. Sector late-stage parabolic (+25% / 22d). Samsung 노조 파업 5/21 imminent. Fundamentals intact (NVDA Blackwell demand, HBM cycle), so -3.0 (not -5.0).
+
+**Without LLM_CONTEXT this would have been BUY at the very top.** Anti-momentum-bias circuit fired correctly.
+
+#### 3. MU ($426) — WATCH (composite 7.0, capped by RULE C1)
 ...
 ```
 
@@ -380,14 +470,14 @@ In `ALL` mode, also drop AVOID rows below the table (a one-line note per skipped
 
 ## Calling skills from inside `/expect` (composition, not absorption)
 
-`/expect` orchestrates other active skills as gates rather than re-implementing their logic:
+`/expect` orchestrates other active skills as gates rather than re-implementing their logic. These now feed **into** `LLM_CONTEXT_SCORE` (Step 5b), so the call threshold has moved earlier in the pipeline:
 
-- `market-top-detector` and `ftd-detector`: invoke when COMPOSITE ≥ 9 in a market; if either fires a defensive reading, downgrade BUY → WATCH and note in the bias check.
-- `macro-regime-detector`: cite the current regime in the bias check ("Concentration regime — top mega-caps overweighted in news").
-- `theme-detector`: if a stock's primary theme is in late-stage decay, cap label at WATCH.
-- `prediction-review`: surface specific tickers with poor recent calibration — adjust their confidence floor.
+- `market-top-detector` and `ftd-detector`: invoke when `ALGO_SCORE >= 6.0` (i.e., any candidate that would land WATCH+ on mechanics). Their outputs are the primary input to a negative `llm_context_score` when defensive signals fire.
+- `macro-regime-detector`: invoke once per `/expect` run (or once per market) and cite the regime explicitly in `llm_context_reasoning` for every pick.
+- `theme-detector`: if a stock's primary theme is in late-stage decay, push `llm_context_score` toward -1.5 or worse and note the theme phase.
+- `prediction-review`: surface specific tickers with poor recent calibration — adjust their confidence floor (separate from LLM_CONTEXT_SCORE).
 - `position-sizer`: link out for actual share-count math; do not output share counts directly.
 
-Do **not** invoke these for every stock — only when COMPOSITE ≥ 8.0 (BUY threshold) or for the macro context print at the top. Composition costs latency; the goal is `/expect ALL` finishing in under 5 minutes.
+**Latency budget**: macro detector calls are amortised across all picks in a market scan — call once per `/expect` invocation, reuse the output for each ticker. The goal is `/expect ALL` finishing in under 5 minutes even with macro context enabled.
 
 **Recursion guard:** none of the gate skills above currently call `/expect`. If any of them are extended in future to invoke `/expect`, this composition pattern would loop — track this in a CLAUDE.md note before adding a back-reference, or add a `--no-gate-recursion` flag to suppress the macro-context call.

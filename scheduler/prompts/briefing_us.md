@@ -24,7 +24,23 @@ Based on the market data above, produce:
    across multiple candidate tickers — prefer themes there over generic
    sector heuristics when they have ≥3 ticker breadth.
 
-3. **2-3 Stocks × up to 4 Horizons** in this exact JSON format (one JSON entry
+3. **Macro/Narrative Context Pass (LLM_CONTEXT_SCORE)**
+
+   Before scoring individual stocks, judge the overall US market context on a -5.0 to +3.0 scale (asymmetric — bigger negative range to mitigate the algorithmic momentum bias built into ALGO/NEWS scoring).
+
+   Anchors:
+   - **+3.0**: FTD confirmed, sector early breakout, supportive macro regime
+   - **+1.5**: Mid-stage uptrend, favorable regime, no top signal
+   - **0**: Neutral, no specific context
+   - **-1.5**: Late-stage sector, neutral macro
+   - **-3.0**: Macro top signal (distribution days ≥ 4, defensive rotation, leadership breakdown, VIX > 25 with rising yields)
+   - **-5.0**: Confirmed bear market entry, fundamentals deteriorating
+
+   Apply this LLM_CONTEXT_SCORE per stock (most stocks share the macro context but individual sector lifecycle can shift it by ±1). Cite at least one concrete signal in the reasoning (e.g., "4 distribution days on QQQ over 25 sessions", "SOXL -11.8% Fri while SPY only -1.2% = sector-specific weakness"). Include `llm_context` in `signals_used` whenever the score is non-zero.
+
+   When LLM_CONTEXT_SCORE is strongly negative (≤ -2.0), be cautious about emitting BULL direction even if technicals look strong — this is exactly the anti-momentum-bias circuit the score is designed to fire.
+
+4. **2-3 Stocks × up to 4 Horizons** in this exact JSON format (one JSON entry
    per horizon per stock, at least Short/1W and ideally all four of
    Short/Medium/Long/Cycle). Emit entries only for horizons with confidence
    ≥ 0.60 — lower-confidence horizons go in the narrative but not the JSON:
@@ -40,8 +56,10 @@ Based on the market data above, produce:
     "entry_price": CURRENT_PRICE,
     "target_price": TARGET,
     "stop_price": STOP,
-    "reasoning": "2-3 sentence thesis for the SHORT horizon",
-    "signals_used": ["technical", "news", "momentum"]
+    "reasoning": "2-3 sentence thesis. Cite ALGO/NEWS/LLM_CONTEXT scores or specific signals.",
+    "signals_used": ["technical", "news", "momentum", "llm_context"],
+    "llm_context_score": -1.5,
+    "llm_context_reasoning": "SOXL -11.8% Fri vs SPY -1.2% = semi-specific risk-off. NVDA earnings 5/20 binary event. Macro otherwise mid-stage."
   },
   {
     "ticker": "SYMBOL",
@@ -53,7 +71,9 @@ Based on the market data above, produce:
     "target_price": TARGET_CYCLE,
     "stop_price": STOP_CYCLE,
     "reasoning": "Cycle-horizon thesis: return_1y, pct_from_52w_high, max_drawdown",
-    "signals_used": ["cycle", "valuation", "mean_reversion"]
+    "signals_used": ["cycle", "valuation", "mean_reversion", "llm_context"],
+    "llm_context_score": -1.5,
+    "llm_context_reasoning": "(same macro context applies)"
   }
 ]
 ```

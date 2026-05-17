@@ -15,6 +15,14 @@ Usage:
 Outputs:
     reports/weekly-calibration-YYYY-MM-DD.md
     state/calibration-trend.json (rolling last 12 weeks)
+
+Tracked signals (per-signal win rate aggregation):
+    Algorithmic signals - technical, news, fundamental, momentum, volume, cycle,
+        valuation, mean_reversion, disclosure, sector, cross_market.
+    LLM-judgment signal (added 2026-05): llm_context — captures macro/narrative
+        context score from /expect Step 5b and daily-briefing Section 4.
+        First 6-8 weeks of data will calibrate whether this signal adds alpha
+        over the deterministic ALGO/NEWS table; expect noisy initial readings.
 """
 
 from __future__ import annotations
