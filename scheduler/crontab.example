@@ -1,5 +1,11 @@
 # Stock Expectation — Scheduled Tasks
-# All times in KST (Asia/Seoul, UTC+9)
+# All times are interpreted as KST (Asia/Seoul) because of the explicit
+# TZ= line below. Earlier revisions of this file used "UTC times with
+# KST comments" but the cron daemon on this host runs under the system
+# timezone (KST), which made every line silently fire at the wrong wall
+# clock — the 2026-05-18 21:00 KST US briefing miss was diagnosed back
+# to this. With `TZ=Asia/Seoul` here, the `H M * * D` fields below mean
+# exactly what they read.
 #
 # Install:
 #   crontab scheduler/crontab.example
@@ -25,49 +31,52 @@
 
 SHELL=/bin/bash
 PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+TZ=Asia/Seoul
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
 # === Codex CLI mode (active) ===
 # Uses codex exec with bin/stock-cli. ChatGPT Plus credit, no Anthropic cost.
 
-# Korean market briefing — 07:00 KST (22:00 UTC previous day)
-0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
+# Korean market briefing — 07:00 KST Mon-Fri (before KR market opens 09:00)
+0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
-# US market pre-market briefing — 21:00 KST (12:00 UTC), Mon-Fri
-# Fires right before US pre-market starts so the briefing reflects the
-# overnight setup the user will trade against.
-0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+# US market pre-market briefing — 21:00 KST Mon-Fri (US pre-market starts ~22:00 KST)
+0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
-# US market mid-session briefing — 00:00 KST (15:00 UTC), Mon-Fri UTC
-# Fires roughly 1.5h into US regular trading (= 11:00 ET). KST day-of-week
-# is Tue-Sat at 00:00 KST, but the cron entry uses UTC weekdays so it lines
-# up with the underlying US trading sessions (Mon trading -> Tue 00:00 KST,
-# ..., Fri trading -> Sat 00:00 KST).
-0 15 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+# US market mid-session briefing — 00:00 KST Tue-Sat
+# US regular trading is 22:30-05:00 KST (next day). 00:00 KST = ~1.5h into the
+# session = 11:00 ET. Day-of-week filter is Tue-Sat (2-6) so we get exactly
+# the five US trading days: Mon trading -> Tue 00:00 KST, ..., Fri trading
+# -> Sat 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
+0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # === Claude Code mode (commented fallback) ===
 # Uncomment + comment out the codex-cli lines above to switch back if codex
 # CLI breaks. Note: as of 2026-05-18 this mode is rate-limited by Anthropic
 # for headless subscription usage and can hang silently.
-# 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
-# 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
 
-# Outcome tracker — 00:00 KST (15:00 UTC)
-# No LLM needed, pure Python price check + DB update
-0 15 * * 1-5 cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
+# Outcome tracker — 06:00 KST daily
+# US regular session closes at 05:00 KST. Running outcome tracker at 06:00
+# catches each day's full close (both KR previous-day and US overnight) in
+# one pass without colliding with the 00:00 US mid-session briefing.
+0 6 * * * cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
 
-# Weekly calibration aggregator — Sunday 22:00 KST (13:00 UTC)
+# Weekly calibration aggregator — Sunday 22:00 KST
 # Pure Python; reads predictions.db, writes reports/weekly-calibration-YYYY-MM-DD.md
 # and rolls state/calibration-trend.json (last 12 weeks).
-0 13 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
+0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
 
-# Toss session auth check — daily 07:30 KST (22:30 UTC previous day)
+# Toss session auth check — daily 07:30 KST
 # Detects Toss session expiry (~weekly) and sends Telegram alert. Transition
 # alert fires once; reminder repeats every 24h while invalid until re-auth.
-30 22 * * * cd $PROJECT && uv run python scheduler/toss_auth_check.py >> $LOG_DIR/toss_auth_check.log 2>&1
+30 7 * * * cd $PROJECT && uv run python scheduler/toss_auth_check.py >> $LOG_DIR/toss_auth_check.log 2>&1
 
 # === Anthropic API mode (alternative) ===
 # Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
-# 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
-# 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
+# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
+# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
+# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
