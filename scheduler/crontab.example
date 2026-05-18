@@ -30,7 +30,12 @@
 # Logs written to ~/logs/stock-expectation/
 
 SHELL=/bin/bash
-PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+# nvm-managed node is required by `codex` and `claude` CLI subprocesses.
+# Without the nvm bin dir on PATH, cron-triggered codex-cli runs fail with
+# `/usr/bin/env: 'node': No such file or directory` (exit 127) — observed
+# on the 2026-05-19 00:00 KST US mid-session briefing. Update this path
+# when nvm gets a different version pinned as default.
+PATH=/home/cwh/.local/share/nvm/v22.20.0/bin:/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
 # CRON_TZ pins the schedule-parsing timezone (vixie cron / cronie); without
 # it the daemon reads schedule fields in the daemon's host timezone, which
 # may not be KST on every box. TZ separately sets the child process env so
