@@ -31,6 +31,11 @@
 
 SHELL=/bin/bash
 PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+# CRON_TZ pins the schedule-parsing timezone (vixie cron / cronie); without
+# it the daemon reads schedule fields in the daemon's host timezone, which
+# may not be KST on every box. TZ separately sets the child process env so
+# the briefing scripts see the right wall clock for logging/datetime.
+CRON_TZ=Asia/Seoul
 TZ=Asia/Seoul
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
@@ -45,10 +50,14 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # US market mid-session briefing — 00:00 KST Tue-Sat
-# US regular trading is 22:30-05:00 KST (next day). 00:00 KST = ~1.5h into the
-# session = 11:00 ET. Day-of-week filter is Tue-Sat (2-6) so we get exactly
-# the five US trading days: Mon trading -> Tue 00:00 KST, ..., Fri trading
-# -> Sat 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
+# US regular trading runs 22:30-05:00 KST during EDT (Mar-Nov) and shifts
+# one hour later during EST (Nov-Mar) — KR-to-ET offset is 13h in EDT and
+# 14h in EST. So 00:00 KST = 11:00 ET (EDT, ~1.5h into session) or
+# 10:00 ET (EST, ~30 min after open). Both are firmly inside US regular
+# trading and produce a useful mid-session read either way.
+# Day-of-week filter is Tue-Sat (2-6) so we get exactly the five US
+# trading days: Mon trading -> Tue 00:00 KST, ..., Fri trading -> Sat
+# 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # === Claude Code mode (commented fallback) ===
