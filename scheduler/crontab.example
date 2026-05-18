@@ -34,8 +34,17 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # Korean market briefing — 07:00 KST (22:00 UTC previous day)
 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
-# US market briefing — 21:00 KST (12:00 UTC)
+# US market pre-market briefing — 21:00 KST (12:00 UTC), Mon-Fri
+# Fires right before US pre-market starts so the briefing reflects the
+# overnight setup the user will trade against.
 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+
+# US market mid-session briefing — 00:00 KST (15:00 UTC), Mon-Fri UTC
+# Fires roughly 1.5h into US regular trading (= 11:00 ET). KST day-of-week
+# is Tue-Sat at 00:00 KST, but the cron entry uses UTC weekdays so it lines
+# up with the underlying US trading sessions (Mon trading -> Tue 00:00 KST,
+# ..., Fri trading -> Sat 00:00 KST).
+0 15 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # === Claude Code mode (commented fallback) ===
 # Uncomment + comment out the codex-cli lines above to switch back if codex
