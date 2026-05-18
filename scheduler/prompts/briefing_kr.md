@@ -40,10 +40,12 @@ Based on the market data above, produce:
 
    When LLM_CONTEXT_SCORE is strongly negative (≤ -2.0), be cautious about emitting BULL direction even if technicals look strong — this is exactly the anti-momentum-bias circuit the score is designed to fire.
 
-4. **2-3 Stocks × up to 4 Horizons** in this exact JSON format (one entry
+4. **5-6 Stocks × up to 4 Horizons** in this exact JSON format (one entry
    per horizon per stock, reporting Short(1W), Medium(1M), Long(6M),
    Cycle(1Y) where applicable). Emit entries only for horizons with
-   confidence ≥ 0.60:
+   confidence ≥ 0.60. Picking fewer than 5 is allowed only when the
+   candidate pool genuinely lacks setups that clear confidence 0.60
+   on any horizon — explain why in the narrative if so:
 
 ```json
 [
