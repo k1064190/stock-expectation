@@ -117,7 +117,7 @@ Round 2 (commit `dcb9c69`) — 2 findings:
 - **P1: codex sandbox network access not explicit** — even though smoke test verified network works on this host, codex's `workspace-write` policy is host-configurable and may default to no-network elsewhere. **Fixed**: added `--config sandbox_workspace_write.network_access=true` to the `call_codex_cli` flag set with an inline comment explaining bin/stock-cli's outbound HTTPS requirements. Smoke-tested with new flag, still works in 3 s for a trivial prompt.
 - **P2: hard-coded `gpt-5.5` model in cron path** — OpenAI's gpt-5.5 rollout is gradual; account drift could break briefing without recourse. **Fixed**: model now read from `CODEX_MODEL` env var with default `gpt-5.5`. Operator can override via env without touching this file or redeploying.
 
-Round 3 (after the next commit) — expected clean unless Codex finds something new.
+Round 3 (commit `748cdcf`) — **clean** ("Didn't find any major issues. Chef's kiss."). 3 of 3 rounds used; PR #22 ready to land from Codex's perspective.
 
 ### Net outcome
 
