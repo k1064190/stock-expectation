@@ -4,11 +4,16 @@
 # Install:
 #   crontab scheduler/crontab.example
 #
-# Two modes available:
-#   --mode claude-code (default): Uses `claude -p` CLI. No API key needed.
-#       Claude Code uses `bin/stock-cli` via Bash to fetch data and log predictions.
+# Three modes available (pick one per briefing line):
+#   --mode codex-cli (active default): Uses `codex exec` CLI. Draws on
+#       ChatGPT Plus credit, no API key needed. Replaced claude-code on
+#       2026-05-18 after the Anthropic subscription headless quota started
+#       silently rate-limiting our cron jobs (see docs/stage-9/codex-cli-mode.md).
+#   --mode claude-code: Uses `claude -p` CLI. No API key needed. Anthropic
+#       subscription. Currently risk of silent hang on cron triggers — kept
+#       as commented fallback.
 #   --mode api: Uses Anthropic API directly. Requires ANTHROPIC_API_KEY
-#       and `uv sync --extra api` beforehand.
+#       and `uv sync --extra api`. Pay-per-call; most stable.
 #
 # Environment variables:
 #   TELEGRAM_BOT_TOKEN — for Telegram delivery
@@ -23,14 +28,21 @@ PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
-# === Claude Code mode (default, recommended) ===
-# Uses claude CLI with bin/stock-cli. No Anthropic API cost.
+# === Codex CLI mode (active) ===
+# Uses codex exec with bin/stock-cli. ChatGPT Plus credit, no Anthropic cost.
 
 # Korean market briefing — 07:00 KST (22:00 UTC previous day)
-0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
 # US market briefing — 21:00 KST (12:00 UTC)
-0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+
+# === Claude Code mode (commented fallback) ===
+# Uncomment + comment out the codex-cli lines above to switch back if codex
+# CLI breaks. Note: as of 2026-05-18 this mode is rate-limited by Anthropic
+# for headless subscription usage and can hang silently.
+# 0 22 * * 0-4 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+# 0 12 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
 
 # Outcome tracker — 00:00 KST (15:00 UTC)
 # No LLM needed, pure Python price check + DB update
