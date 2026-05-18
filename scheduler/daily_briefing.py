@@ -29,6 +29,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -625,6 +626,13 @@ def call_codex_cli(prompt: str) -> str:
     # When codex-cli 0.131+ ships, smoke-test removing this flag and drop it
     # if the bundled tool schema is fixed upstream. Without this flag every
     # codex exec call fails with HTTP 400.
+    #
+    # CODEX_MODEL env var override (default gpt-5.5): codex-cli requires a
+    # specific model name and gpt-5.5 is the project's preferred quality tier
+    # (matches codex-subagent skill default). OpenAI's rollout is gradual and
+    # individual accounts may lose/gain access — set CODEX_MODEL=gpt-5.4
+    # (or similar) in the environment to override without touching this file.
+    codex_model = os.environ.get("CODEX_MODEL", "gpt-5.5")
     result = subprocess.run(
         [
             codex_path,
@@ -633,9 +641,16 @@ def call_codex_cli(prompt: str) -> str:
             "--disable",
             "apps",
             "-m",
-            "gpt-5.5",
+            codex_model,
             "--config",
             'model_reasoning_effort="high"',
+            # Explicit network grant: codex's workspace-write sandbox can be
+            # configured (per-host or per-profile) to disable network by
+            # default. bin/stock-cli needs outbound HTTPS (yfinance, Naver
+            # Finance, Telegram delivery, FMP fallback) so we override here
+            # rather than trusting the host default.
+            "--config",
+            "sandbox_workspace_write.network_access=true",
             "--sandbox",
             "workspace-write",
             "--full-auto",

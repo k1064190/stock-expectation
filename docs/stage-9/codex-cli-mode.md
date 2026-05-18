@@ -108,9 +108,16 @@ Two independent reviews ran on the diff:
 - 🟢 **`--disable apps` TODO** — same as code-reviewer-pro #2 above. **Fixed**: inline NOTE added.
 - 🟢 **`build_claude_code_prompt` docstring still says "for Claude Code CLI"** — misleading after this change. **Fixed**: docstring rewritten to describe the function as LLM-agnostic and called by both modes.
 
-### `codex-pr-review` (after PR opens)
+### `codex-pr-review` on PR #22
 
-To be triggered by the PR workflow per CLAUDE.md line 58. Will be recorded under this header once the bot responds.
+Round 1 (commit `8186d57`) — 1 finding, P3:
+- **Module docstring still labelled `claude-code` as default** while argparse and `run_briefing` were both flipped to `codex-cli`. **Fixed** in commit `dcb9c69`: docstring reordered so `codex-cli (default)` is listed first with the throttling-incident pointer; `claude-code` demoted to fallback.
+
+Round 2 (commit `dcb9c69`) — 2 findings:
+- **P1: codex sandbox network access not explicit** — even though smoke test verified network works on this host, codex's `workspace-write` policy is host-configurable and may default to no-network elsewhere. **Fixed**: added `--config sandbox_workspace_write.network_access=true` to the `call_codex_cli` flag set with an inline comment explaining bin/stock-cli's outbound HTTPS requirements. Smoke-tested with new flag, still works in 3 s for a trivial prompt.
+- **P2: hard-coded `gpt-5.5` model in cron path** — OpenAI's gpt-5.5 rollout is gradual; account drift could break briefing without recourse. **Fixed**: model now read from `CODEX_MODEL` env var with default `gpt-5.5`. Operator can override via env without touching this file or redeploying.
+
+Round 3 (after the next commit) — expected clean unless Codex finds something new.
 
 ### Net outcome
 
