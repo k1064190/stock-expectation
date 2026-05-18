@@ -423,7 +423,8 @@ Specifically:
    `bin/stock-cli price-batch {ticker_csv} --market US --days 10`
 2. Check existing state: `bin/stock-cli predict list --status OPEN --market US`
 3. Check track record: `bin/stock-cli track-record --days 30 --market US`
-4. Generate 2-3 predictions, logging each with
+4. Generate 5-6 predictions (matches the daily-briefing SKILL.md spec
+   of 5-6 picks per market / 10-12 total per ALL run), logging each with
    `bin/stock-cli predict create ... --source LIVE`
 
 Your recent track record (for calibration):
@@ -490,8 +491,9 @@ Specifically:
    `bin/stock-cli price SMH --market US --days 10`
 3. Check existing state: `bin/stock-cli predict list --status OPEN --market KR`
 4. Check track record: `bin/stock-cli track-record --days 30 --market KR`
-5. Generate 2-3 Korean predictions, logging each with
-   `bin/stock-cli predict create ... --source LIVE`
+5. Generate 5-6 Korean predictions (matches the daily-briefing SKILL.md
+   spec of 5-6 picks per market / 10-12 total per ALL run), logging each
+   with `bin/stock-cli predict create ... --source LIVE`
 
 Your recent track record (for calibration):
 {track_record}
