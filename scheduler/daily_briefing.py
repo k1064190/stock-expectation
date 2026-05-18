@@ -1,15 +1,16 @@
 """Daily briefing generator.
 
 Three modes of operation:
-  --mode claude-code (default): Invokes `claude -p` CLI. Uses Claude Code
-      subscription, no API key needed. Claude uses `bin/stock-cli` via Bash
-      to fetch data and log predictions.
-  --mode codex-cli: Invokes `codex exec` CLI. Uses ChatGPT Plus credit, no
-      API key needed. Same prompt as claude-code; Codex reads .claude/skills/
-      markdown files as context and runs bash commands the same way. Useful
-      when Anthropic's headless subscription quota is exhausted (see
-      docs/stage-9/codex-cli-mode.md for the 2026-05-18 incident that
-      motivated this mode).
+  --mode codex-cli (default): Invokes `codex exec` CLI. Uses ChatGPT Plus
+      credit, no API key needed. Codex reads .claude/skills/ markdown
+      files as context and runs `bin/stock-cli` via Bash to fetch data
+      and log predictions. Switched to default on 2026-05-18 after the
+      Anthropic headless subscription quota started silently throttling
+      claude-code cron runs (see docs/stage-9/codex-cli-mode.md).
+  --mode claude-code: Invokes `claude -p` CLI. Uses Claude Code
+      subscription, no API key needed. Same prompt path as codex-cli.
+      Subject to Anthropic headless-subscription throttling as of
+      2026-05; kept as a fallback for when codex-cli has its own issues.
   --mode api: Calls Anthropic API directly. Requires ANTHROPIC_API_KEY.
       Data is pre-fetched by this script and injected into the prompt.
       Predictions are returned as JSON, parsed, and logged by this script.
