@@ -32,6 +32,7 @@
 - **codex** (gpt-5.5/high): `+1e-12` 절대 허용오차가 큰 n에서 스케일 부정확 가능 지적 → **상대 허용오차** `observed*(1+1e-9)`로 교체(대칭 동점 유지 + 스케일 무관). Codex의 "much more likely 포함" 표현은 과장이나, 상대 허용오차가 더 견고하므로 수용.
 - gemini-subagent는 이번 stage에서 생략(두 리뷰가 동일 지점에 수렴, 견고히 수정 완료).
 - 수정 후 28개 테스트 통과, 실데이터 verdict 불변(valuation/cycle/mean_reversion=dead).
+- **codex PR 리뷰(#27, P2)**: `comb(n,i)*float`가 n≳1100에서 OverflowError → `_binomial_two_sided_p`를 `lgamma` 로그공간 합산으로 재작성(대형 n 안정). large-n 회귀 테스트 추가.
 
 ## Retrospective
 - 저장값 의미를 안 바꾸고 필드 추가만으로 S1을 호환성 있게 확장 — 기존 4개 consumer 무수정.

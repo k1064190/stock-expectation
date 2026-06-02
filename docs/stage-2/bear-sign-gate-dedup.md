@@ -31,6 +31,7 @@
 - **code-reviewer-pro (Critical)**: 마이그레이션 dedup 키(7필드)가 live 가드(6필드)와 불일치 → 마이그레이션을 6필드로 정렬(entry_price 제외). 이미 7필드로 실행했던 DB는 백업에서 복원 후 6필드로 재실행. **(Warning)** 원자성 → BEGIN/rollback 추가.
 - **codex (gpt-5.5/high)**: (1) SELECT-후-INSERT 가드 비원자적(레이스) → 부분 UNIQUE 인덱스 백스톱 추가. (2) `shutil.copy2`가 WAL 누락 가능 → `Connection.backup()`로 교체.
 - 모든 지적 수정 후 35개(models+migrate) 및 전체 293 통과.
+- **codex PR 리뷰(#27)**: (P1) 마이그레이션 6키 전체-상태 dedup이 합법적 closed→reopened를 삭제 → **2단계 dedup**(OPEN은 6키, resolved는 정확-중복만)으로 분리, DB 복원 후 재실행(920→779). (P3) 부분 UNIQUE 인덱스가 미정리 OPEN 중복 DB에서 연결 brick → `_create_schema`가 OPEN 중복 self-heal 후 인덱스 생성. 회귀 테스트 추가, 전체 296 통과.
 
 ## Retrospective
 - 키 불일치를 리뷰가 잡아준 게 핵심 — 3곳(가드/마이그레이션/인덱스)이 단일 키로 수렴해야 dedup이 일관됨.

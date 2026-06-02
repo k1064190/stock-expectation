@@ -306,6 +306,16 @@ def _seed_signal(db_conn, signal, n_wins, n_losses):
         i += 1
 
 
+def test_binomial_handles_large_n_without_overflow():
+    """Exact binomial stays finite for large n (no comb()->float overflow)."""
+    from metrics import _binomial_two_sided_p
+
+    # n=1100 overflowed the old comb(n,i)*float implementation.
+    assert _binomial_two_sided_p(550, 1100) == pytest.approx(1.0, abs=0.05)
+    # A strong skew at large n is highly significant.
+    assert _binomial_two_sided_p(700, 1100) < 0.001
+
+
 def test_signal_verdict_dead(db_conn):
     """A signal that loses far more than a coin flip is flagged 'dead'."""
     _seed_signal(db_conn, "valuation", n_wins=0, n_losses=12)

@@ -141,13 +141,27 @@ CREATE_INDEX_STMTS = (
     "CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(ticker)",
     "CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_predictions_group ON predictions(analysis_group_id)",
-    # Partial UNIQUE index = atomic backstop for the same-day duplicate guard in
-    # insert_prediction (the SELECT-then-INSERT check is not race-safe under
-    # concurrent writers). Scoped to OPEN rows so a fresh prediction is allowed
-    # once the prior same-key one closes.
+)
+
+# Partial UNIQUE index = atomic backstop for the same-day duplicate guard in
+# insert_prediction (the SELECT-then-INSERT check is not race-safe under
+# concurrent writers). Scoped to OPEN rows so a fresh prediction is allowed once
+# the prior same-key one closes. Created separately so we can self-heal if a
+# pre-existing database still carries OPEN duplicates (see _create_schema).
+OPEN_DEDUP_INDEX_STMT = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_open_dedup "
     "ON predictions(ticker, market, direction, timeframe, source, date(created_at)) "
-    "WHERE status = 'OPEN'",
+    "WHERE status = 'OPEN'"
+)
+
+# Collapse pre-existing OPEN duplicates (keep the earliest) so the UNIQUE index
+# can be created on a database that predates the dedup guard. Same key as the
+# index and the insert guard.
+_DEDUP_OPEN_ROWS_STMT = (
+    "DELETE FROM predictions WHERE status = 'OPEN' AND rowid NOT IN ("
+    "  SELECT MIN(rowid) FROM predictions WHERE status = 'OPEN'"
+    "  GROUP BY ticker, market, direction, timeframe, source, date(created_at)"
+    ")"
 )
 
 
@@ -159,10 +173,20 @@ def _create_schema(conn: sqlite3.Connection) -> None:
     atomicity guarantee of the migration's ``with conn:`` block. By
     issuing each statement individually we stay inside whatever
     transaction the caller opened.
+
+    The partial UNIQUE dedup index is created last and self-heals: if a legacy
+    database still holds OPEN duplicates, creating the index would raise and
+    brick every connection, so we collapse those duplicates (keeping the
+    earliest) and retry once rather than failing to open the database.
     """
     conn.execute(CREATE_TABLE_STMT)
     for stmt in CREATE_INDEX_STMTS:
         conn.execute(stmt)
+    try:
+        conn.execute(OPEN_DEDUP_INDEX_STMT)
+    except sqlite3.IntegrityError:
+        conn.execute(_DEDUP_OPEN_ROWS_STMT)
+        conn.execute(OPEN_DEDUP_INDEX_STMT)
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:

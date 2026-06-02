@@ -21,6 +21,7 @@ CREATE TABLE predictions (
     source TEXT NOT NULL,
     entry_price REAL NOT NULL,
     status TEXT NOT NULL,
+    outcome_date TEXT,
     outcome_return REAL
 )
 """
@@ -45,12 +46,24 @@ def _insert(
     created="2026-05-18T00:00:00+00:00",
     source="LIVE",
     entry=100.0,
+    outcome_date="2026-05-25T00:00:00+00:00",
 ):
     conn.execute(
         "INSERT INTO predictions (id, created_at, ticker, market, direction, "
-        "timeframe, source, entry_price, status, outcome_return) "
-        "VALUES (?, ?, ?, 'US', ?, ?, ?, ?, ?, ?)",
-        (id_, created, ticker, direction, timeframe, source, entry, status, ret),
+        "timeframe, source, entry_price, status, outcome_date, outcome_return) "
+        "VALUES (?, ?, ?, 'US', ?, ?, ?, ?, ?, ?, ?)",
+        (
+            id_,
+            created,
+            ticker,
+            direction,
+            timeframe,
+            source,
+            entry,
+            status,
+            outcome_date,
+            ret,
+        ),
     )
 
 
@@ -89,38 +102,69 @@ def test_bull_return_unchanged():
     )
 
 
-def test_duplicates_removed_keeping_earliest():
+def test_open_duplicates_removed_by_6_field_key():
+    """OPEN spam collapses on the 6-field key (entry_price excluded), matching
+    the live insert guard; a different timeframe is kept."""
     conn = _conn()
-    # Three identical-key rows (same ticker/dir/tf/source/day/entry).
-    _insert(conn, "d1", "QQQ", "BULL", "1W", 1.0)
-    _insert(conn, "d2", "QQQ", "BULL", "1W", 1.0)
-    _insert(conn, "d3", "QQQ", "BULL", "1W", 1.0)
+    # Three OPEN rows, same 6-key, even at drifted entry prices.
+    _insert(conn, "d1", "QQQ", "BULL", "1W", None, status="OPEN", entry=100.0)
+    _insert(conn, "d2", "QQQ", "BULL", "1W", None, status="OPEN", entry=101.0)
+    _insert(conn, "d3", "QQQ", "BULL", "1W", None, status="OPEN", entry=102.0)
     # Different timeframe — NOT a duplicate.
-    _insert(conn, "k1", "QQQ", "BULL", "1M", 1.0)
+    _insert(conn, "k1", "QQQ", "BULL", "1M", None, status="OPEN")
     conn.commit()
 
     result = apply_migration(conn, "2026-06-02T00:00:00+00:00")
 
     assert result["duplicates_removed"] == 2
     remaining = {r[0] for r in conn.execute("SELECT id FROM predictions").fetchall()}
-    assert "d1" in remaining  # earliest kept
-    assert "k1" in remaining  # different timeframe kept
-    assert len(remaining) == 2
+    assert remaining == {"d1", "k1"}  # earliest OPEN + different timeframe
 
 
-def test_duplicate_key_excludes_entry_price():
-    """Same logical key but different entry_price is still a duplicate (the key
-    matches the live insert guard, which excludes entry_price)."""
+def test_resolved_exact_duplicates_removed():
+    """Identical resolved rows (same entry + outcome) are re-run spam and
+    collapse to the earliest."""
     conn = _conn()
-    _insert(conn, "e1", "TSLA", "BULL", "1W", 1.0, entry=200.0)
-    _insert(conn, "e2", "TSLA", "BULL", "1W", 1.0, entry=205.0)  # drifted entry
+    _insert(conn, "r1", "AMD", "BULL", "1W", 5.0, status="HIT", entry=100.0)
+    _insert(conn, "r2", "AMD", "BULL", "1W", 5.0, status="HIT", entry=100.0)
+    _insert(conn, "r3", "AMD", "BULL", "1W", 5.0, status="HIT", entry=100.0)
     conn.commit()
 
     result = apply_migration(conn, "2026-06-02T00:00:00+00:00")
 
-    assert result["duplicates_removed"] == 1
+    assert result["duplicates_removed"] == 2
     remaining = {r[0] for r in conn.execute("SELECT id FROM predictions").fetchall()}
-    assert remaining == {"e1"}
+    assert remaining == {"r1"}
+
+
+def test_closed_then_reopened_is_preserved():
+    """A legitimate closed row + a later OPEN row on the same day/key are both
+    kept (the insert guard allows reopening after close)."""
+    conn = _conn()
+    _insert(conn, "c1", "MU", "BULL", "1W", 5.0, status="HIT", entry=100.0)
+    _insert(conn, "c2", "MU", "BULL", "1W", None, status="OPEN", entry=104.0)
+    conn.commit()
+
+    result = apply_migration(conn, "2026-06-02T00:00:00+00:00")
+
+    assert result["duplicates_removed"] == 0
+    remaining = {r[0] for r in conn.execute("SELECT id FROM predictions").fetchall()}
+    assert remaining == {"c1", "c2"}
+
+
+def test_distinct_resolved_predictions_preserved():
+    """Two resolved rows with the same 6-key but different entry/outcome are
+    distinct predictions, not exact duplicates — both kept."""
+    conn = _conn()
+    _insert(conn, "p1", "TSLA", "BULL", "1W", 5.0, status="HIT", entry=200.0)
+    _insert(conn, "p2", "TSLA", "BULL", "1W", -3.0, status="MISS", entry=205.0)
+    conn.commit()
+
+    result = apply_migration(conn, "2026-06-02T00:00:00+00:00")
+
+    assert result["duplicates_removed"] == 0
+    remaining = {r[0] for r in conn.execute("SELECT id FROM predictions").fetchall()}
+    assert remaining == {"p1", "p2"}
 
 
 def test_migration_is_not_rerunnable():

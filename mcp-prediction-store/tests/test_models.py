@@ -330,6 +330,38 @@ def test_duplicate_different_timeframe_is_allowed(db_conn):
     assert len(list_predictions(db_conn, ticker="AMD")) == 2
 
 
+def test_create_schema_self_heals_legacy_open_duplicates():
+    """A legacy DB with OPEN duplicates is cleaned, not bricked, on connect."""
+    import models
+
+    raw = sqlite3.connect(":memory:")
+    raw.execute(models.CREATE_TABLE_STMT)
+    # Two OPEN rows with the same dedup key (simulates a pre-guard database).
+    for i in (1, 2):
+        raw.execute(
+            "INSERT INTO predictions (id, created_at, ticker, market, direction, "
+            "confidence, timeframe, reasoning, entry_price, signals_used, source, "
+            "status) VALUES (?, ?, 'AMD', 'US', 'BULL', 0.6, '1W', 'x', 100.0, "
+            "'[]', 'LIVE', 'OPEN')",
+            (f"id{i}", f"2026-05-18T0{i}:00:00+00:00"),
+        )
+    raw.commit()
+
+    # Should NOT raise despite the duplicate OPEN rows.
+    models._create_schema(raw)
+
+    remaining = raw.execute(
+        "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
+    ).fetchone()[0]
+    assert remaining == 1  # collapsed to the earliest
+    idx = raw.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_predictions_open_dedup'"
+    ).fetchone()
+    assert idx is not None
+    raw.close()
+
+
 def test_open_dedup_unique_index_exists(db_conn):
     """The partial UNIQUE index backstops the same-day duplicate guard."""
     row = db_conn.execute(

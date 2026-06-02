@@ -72,20 +72,36 @@ def apply_migration(conn: sqlite3.Connection, applied_at: str) -> dict:
     # unsafe to retry).
     try:
         conn.execute("BEGIN")
-        # 1. Drop same-day duplicates, keeping the earliest row per logical key.
-        #    The key MUST match the live insert guard in models.insert_prediction
-        #    (ticker, market, direction, timeframe, source, created date) — and
-        #    deliberately excludes entry_price so re-runs at a drifted price are
-        #    still treated as the same call.
+        # 1a. Collapse OPEN duplicates, keeping the earliest, on the live-guard
+        #     key (ticker, market, direction, timeframe, source, created date).
+        #     entry_price is excluded so re-runs at a drifted price still count
+        #     as the same OPEN call — matching insert_prediction and the partial
+        #     UNIQUE index.
         cur = conn.execute(
             """DELETE FROM predictions
-               WHERE rowid NOT IN (
-                   SELECT MIN(rowid) FROM predictions
+               WHERE status = 'OPEN' AND rowid NOT IN (
+                   SELECT MIN(rowid) FROM predictions WHERE status = 'OPEN'
                    GROUP BY ticker, market, direction, timeframe, source,
                             date(created_at)
                )"""
         )
-        duplicates_removed = cur.rowcount
+        open_removed = cur.rowcount
+
+        # 1b. Collapse only EXACT-duplicate *resolved* rows (same key + entry +
+        #     status + outcome). This removes re-run spam while preserving a
+        #     legitimate closed-then-reopened sequence the insert guard allows
+        #     (those differ in entry/outcome, so they are not exact duplicates).
+        cur = conn.execute(
+            """DELETE FROM predictions
+               WHERE status != 'OPEN' AND rowid NOT IN (
+                   SELECT MIN(rowid) FROM predictions WHERE status != 'OPEN'
+                   GROUP BY ticker, market, direction, timeframe, source,
+                            date(created_at), entry_price, status,
+                            outcome_date, outcome_return
+               )"""
+        )
+        resolved_removed = cur.rowcount
+        duplicates_removed = open_removed + resolved_removed
 
         # 2. Flip the sign of every BEAR outcome_return (raw price change ->
         #    position return).

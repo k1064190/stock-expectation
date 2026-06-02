@@ -6,7 +6,7 @@ from the prediction database.
 
 import sqlite3
 from dataclasses import dataclass
-from math import comb
+from math import exp, lgamma, log
 from typing import Optional
 
 
@@ -81,14 +81,17 @@ class SignalPerformance:
 def _binomial_two_sided_p(k: int, n: int, p: float = 0.5) -> float:
     """Exact two-sided binomial p-value for k successes in n trials.
 
-    Sums the probability of all outcomes no more likely than the observed
-    count under Binomial(n, p). Dependency-free (uses ``math.comb``); n in our
-    track record is at most a few hundred, so the O(n) loop is cheap.
+    Sums the probability of all outcomes no more likely than the observed count
+    under Binomial(n, p) (the minimum-likelihood method). Computed in log space
+    via ``math.lgamma`` so it stays stable as the track record grows: a direct
+    ``comb(n, i) * p**i * ...`` overflows when converting the huge combination
+    to float (e.g. n ~ 1100). Each individual pmf is <= 1, so summing the
+    exponentials never overflows; negligible tail terms underflow harmlessly.
 
     Args:
         k: Observed number of successes (HITs).
         n: Number of trials (HIT + MISS).
-        p: Null success probability. Defaults to 0.5 (coin flip).
+        p: Null success probability in (0, 1). Defaults to 0.5 (coin flip).
 
     Returns:
         Two-sided p-value in [0.0, 1.0]; 1.0 when n == 0 or k is out of the
@@ -96,13 +99,23 @@ def _binomial_two_sided_p(k: int, n: int, p: float = 0.5) -> float:
     """
     if n == 0 or k < 0 or k > n:
         return 1.0
-    probs = [comb(n, i) * (p**i) * ((1 - p) ** (n - i)) for i in range(n + 1)]
-    observed = probs[k]
-    # Sum every outcome no more likely than the observed one (minimum-likelihood
-    # method). A *relative* tolerance includes symmetric ties (e.g. the mirror
-    # outcome under p=0.5) without an absolute floor that would misbehave when
-    # all probabilities are tiny (large n) — a concern flagged in review.
-    return min(1.0, sum(pr for pr in probs if pr <= observed * (1 + 1e-9)))
+
+    log_n_fact = lgamma(n + 1)
+    log_p = log(p)
+    log_q = log(1 - p)
+
+    def _log_pmf(i: int) -> float:
+        return (
+            log_n_fact - lgamma(i + 1) - lgamma(n - i + 1) + i * log_p + (n - i) * log_q
+        )
+
+    # Include every outcome no more likely than the observed one. The small
+    # additive slack in log space (~ a relative factor of 1+1e-9) keeps
+    # symmetric ties (e.g. the mirror outcome under p=0.5) in the sum.
+    observed_log = _log_pmf(k)
+    threshold = observed_log + 1e-9
+    total = sum(exp(lp) for i in range(n + 1) if (lp := _log_pmf(i)) <= threshold)
+    return min(1.0, total)
 
 
 def _signal_verdict(wins: int, total: int, alpha: float = 0.05) -> tuple[float, str]:
