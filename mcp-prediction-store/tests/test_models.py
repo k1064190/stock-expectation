@@ -349,6 +349,7 @@ def test_create_schema_self_heals_legacy_open_duplicates():
 
     # Should NOT raise despite the duplicate OPEN rows.
     models._create_schema(raw)
+    models._ensure_open_dedup_index(raw)
 
     remaining = raw.execute(
         "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
@@ -360,6 +361,50 @@ def test_create_schema_self_heals_legacy_open_duplicates():
     ).fetchone()
     assert idx is not None
     raw.close()
+
+
+def test_legacy_migration_with_open_dupes_does_not_brick():
+    """A legacy DB (no analysis_group_id) holding OPEN duplicates migrates and
+    self-heals via get_connection instead of failing the UNIQUE copy."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = Path(f.name)
+    try:
+        legacy = sqlite3.connect(str(db_path))
+        # Legacy schema: no analysis_group_id column, no dedup index.
+        legacy.execute(
+            "CREATE TABLE predictions ("
+            "id TEXT PRIMARY KEY, created_at TEXT, ticker TEXT, market TEXT, "
+            "direction TEXT, confidence REAL, timeframe TEXT, reasoning TEXT, "
+            "entry_price REAL, signals_used TEXT, source TEXT, target_price REAL, "
+            "stop_price REAL, status TEXT, outcome_price REAL, outcome_date TEXT, "
+            "outcome_return REAL)"
+        )
+        for i in (1, 2):
+            legacy.execute(
+                "INSERT INTO predictions (id, created_at, ticker, market, "
+                "direction, confidence, timeframe, reasoning, entry_price, "
+                "signals_used, source, status) VALUES (?, ?, 'AMD', 'US', 'BULL', "
+                "0.6, '1W', 'x', 100.0, '[]', 'LIVE', 'OPEN')",
+                (f"id{i}", f"2026-05-18T0{i}:00:00+00:00"),
+            )
+        legacy.commit()
+        legacy.close()
+
+        # Should migrate (add analysis_group_id) AND dedup the OPEN rows.
+        conn = get_connection(db_path)
+        try:
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
+                ).fetchone()[0]
+                == 1
+            )
+        finally:
+            conn.close()
+    finally:
+        db_path.unlink(missing_ok=True)
+        Path(str(db_path) + "-wal").unlink(missing_ok=True)
+        Path(str(db_path) + "-shm").unlink(missing_ok=True)
 
 
 def test_open_dedup_unique_index_exists(db_conn):

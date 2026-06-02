@@ -166,7 +166,7 @@ _DEDUP_OPEN_ROWS_STMT = (
 
 
 def _create_schema(conn: sqlite3.Connection) -> None:
-    """Run the table + index DDL via ``execute`` (not ``executescript``).
+    """Create the table + the non-unique indexes via ``execute``.
 
     Why not ``executescript``: it implicitly commits the surrounding
     transaction per Python's sqlite3 contract, which would defeat the
@@ -174,14 +174,25 @@ def _create_schema(conn: sqlite3.Connection) -> None:
     issuing each statement individually we stay inside whatever
     transaction the caller opened.
 
-    The partial UNIQUE dedup index is created last and self-heals: if a legacy
-    database still holds OPEN duplicates, creating the index would raise and
-    brick every connection, so we collapse those duplicates (keeping the
-    earliest) and retry once rather than failing to open the database.
+    The partial UNIQUE dedup index is intentionally NOT created here — it is
+    created by ``_ensure_open_dedup_index`` *after* any legacy-row copy, because
+    building it on an empty table and then bulk-inserting legacy rows with OPEN
+    duplicates would fail the UNIQUE constraint and brick the connection.
     """
     conn.execute(CREATE_TABLE_STMT)
     for stmt in CREATE_INDEX_STMTS:
         conn.execute(stmt)
+
+
+def _ensure_open_dedup_index(conn: sqlite3.Connection) -> None:
+    """Create the partial UNIQUE dedup index, self-healing if needed.
+
+    Must run only once all rows are present (i.e. after the legacy migration
+    copies rows back). If a database predating the dedup guard still holds OPEN
+    duplicates, the UNIQUE index creation raises, so we collapse those
+    duplicates (keeping the earliest) and retry once rather than failing to open
+    the database.
+    """
     try:
         conn.execute(OPEN_DEDUP_INDEX_STMT)
     except sqlite3.IntegrityError:
@@ -213,6 +224,9 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # ``no such column`` on a legacy DB if we created indexes first.
     _migrate_schema_if_needed(conn)
     _create_schema(conn)
+    # Build the UNIQUE dedup index last — after any legacy rows have been
+    # copied back by the migration — and self-heal pre-existing OPEN dupes.
+    _ensure_open_dedup_index(conn)
     return conn
 
 

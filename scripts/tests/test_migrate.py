@@ -137,6 +137,41 @@ def test_resolved_exact_duplicates_removed():
     assert remaining == {"r1"}
 
 
+def test_resolved_spam_differing_only_by_outcome_date_collapses():
+    """Re-run spam that was closed separately differs only by outcome_date;
+    it must still collapse (outcome_date is excluded from the resolved key)."""
+    conn = _conn()
+    _insert(
+        conn,
+        "s1",
+        "AMD",
+        "BULL",
+        "1W",
+        5.0,
+        status="HIT",
+        entry=100.0,
+        outcome_date="2026-05-25T01:00:00+00:00",
+    )
+    _insert(
+        conn,
+        "s2",
+        "AMD",
+        "BULL",
+        "1W",
+        5.0,
+        status="HIT",
+        entry=100.0,
+        outcome_date="2026-05-25T02:30:00+00:00",  # closed at a different time
+    )
+    conn.commit()
+
+    result = apply_migration(conn, "2026-06-02T00:00:00+00:00")
+
+    assert result["duplicates_removed"] == 1
+    remaining = {r[0] for r in conn.execute("SELECT id FROM predictions").fetchall()}
+    assert remaining == {"s1"}
+
+
 def test_closed_then_reopened_is_preserved():
     """A legitimate closed row + a later OPEN row on the same day/key are both
     kept (the insert guard allows reopening after close)."""

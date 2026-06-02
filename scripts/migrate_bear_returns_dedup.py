@@ -87,17 +87,20 @@ def apply_migration(conn: sqlite3.Connection, applied_at: str) -> dict:
         )
         open_removed = cur.rowcount
 
-        # 1b. Collapse only EXACT-duplicate *resolved* rows (same key + entry +
-        #     status + outcome). This removes re-run spam while preserving a
-        #     legitimate closed-then-reopened sequence the insert guard allows
-        #     (those differ in entry/outcome, so they are not exact duplicates).
+        # 1b. Collapse EXACT-duplicate *resolved* rows (same key + entry +
+        #     status + return). outcome_date is deliberately EXCLUDED: each
+        #     duplicate OPEN row was closed by a separate update call that
+        #     stamps its own resolution timestamp, so identical re-run spam
+        #     differs only by outcome_date — grouping on it would leave the
+        #     spam in place. Distinct legitimate predictions differ in entry or
+        #     return, so they are preserved.
         cur = conn.execute(
             """DELETE FROM predictions
                WHERE status != 'OPEN' AND rowid NOT IN (
                    SELECT MIN(rowid) FROM predictions WHERE status != 'OPEN'
                    GROUP BY ticker, market, direction, timeframe, source,
                             date(created_at), entry_price, status,
-                            outcome_date, outcome_return
+                            outcome_return
                )"""
         )
         resolved_removed = cur.rowcount
