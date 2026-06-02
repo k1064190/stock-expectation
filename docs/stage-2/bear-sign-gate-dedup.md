@@ -31,7 +31,7 @@
 - **code-reviewer-pro (Critical)**: 마이그레이션 dedup 키(7필드)가 live 가드(6필드)와 불일치 → 마이그레이션을 6필드로 정렬(entry_price 제외). 이미 7필드로 실행했던 DB는 백업에서 복원 후 6필드로 재실행. **(Warning)** 원자성 → BEGIN/rollback 추가.
 - **codex (gpt-5.5/high)**: (1) SELECT-후-INSERT 가드 비원자적(레이스) → 부분 UNIQUE 인덱스 백스톱 추가. (2) `shutil.copy2`가 WAL 누락 가능 → `Connection.backup()`로 교체.
 - 모든 지적 수정 후 35개(models+migrate) 및 전체 293 통과.
-- **codex PR 리뷰(#27)**: (P1) 마이그레이션 6키 전체-상태 dedup이 합법적 closed→reopened를 삭제 → **2단계 dedup**(OPEN은 6키, resolved는 정확-중복만)으로 분리, DB 복원 후 재실행(920→779). (P3) 부분 UNIQUE 인덱스가 미정리 OPEN 중복 DB에서 연결 brick → self-heal. **Round 2**: (P1') 레거시 스키마 마이그레이션이 빈 테이블에 인덱스 생성 후 OPEN 중복 행 INSERT→UNIQUE 실패로 brick → 인덱스 생성을 `_ensure_open_dedup_index`로 분리해 레거시 복사 **이후** 실행. (P2a) resolved dedup 키에서 `outcome_date` 제외(중복이 해소 시각만 달라 누락되던 spam 제거). (P2b) API-mode `log_predictions`가 LIVE BEAR를 명시적 skip(조용한 누락 방지). 재실행 920→770. 전체 297 통과.
+- **codex PR 리뷰(#27)**: (P1) 마이그레이션 6키 전체-상태 dedup이 합법적 closed→reopened를 삭제 → **2단계 dedup**(OPEN은 6키, resolved는 정확-중복만)으로 분리, DB 복원 후 재실행(920→779). (P3) 부분 UNIQUE 인덱스가 미정리 OPEN 중복 DB에서 연결 brick → self-heal. **Round 2**: (P1') 레거시 스키마 마이그레이션이 빈 테이블에 인덱스 생성 후 OPEN 중복 행 INSERT→UNIQUE 실패로 brick → 인덱스 생성을 `_ensure_open_dedup_index`로 분리해 레거시 복사 **이후** 실행. (P2a) resolved dedup 키에서 `outcome_date` 제외(중복이 해소 시각만 달라 누락되던 spam 제거). (P2b) API-mode `log_predictions`가 LIVE BEAR를 명시적 skip(조용한 누락 방지). 재실행 920→770. **Round 3**: (P2) self-heal 경로의 DELETE가 연 트랜잭션을 미커밋 → read-only 첫 호출자가 닫으면 롤백 → 인덱스 생성 뒤 `conn.commit()` 추가 + 영속성 테스트. 전체 297 통과. (codex 3라운드 cap 도달, 클린)
 
 ## Retrospective
 - 키 불일치를 리뷰가 잡아준 게 핵심 — 3곳(가드/마이그레이션/인덱스)이 단일 키로 수렴해야 dedup이 일관됨.

@@ -391,6 +391,12 @@ def test_legacy_migration_with_open_dupes_does_not_brick():
         legacy.close()
 
         # Should migrate (add analysis_group_id) AND dedup the OPEN rows.
+        # Simulate a read-only first caller (no writes/commit of its own) to
+        # confirm the self-heal cleanup + index are committed, not rolled back.
+        conn = get_connection(db_path)
+        conn.close()
+
+        # Reopen: the dedup and the UNIQUE index must have persisted.
         conn = get_connection(db_path)
         try:
             assert (
@@ -398,6 +404,13 @@ def test_legacy_migration_with_open_dupes_does_not_brick():
                     "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
                 ).fetchone()[0]
                 == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='index' "
+                    "AND name='idx_predictions_open_dedup'"
+                ).fetchone()
+                is not None
             )
         finally:
             conn.close()

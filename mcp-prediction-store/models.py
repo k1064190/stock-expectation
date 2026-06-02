@@ -198,6 +198,10 @@ def _ensure_open_dedup_index(conn: sqlite3.Connection) -> None:
     except sqlite3.IntegrityError:
         conn.execute(_DEDUP_OPEN_ROWS_STMT)
         conn.execute(OPEN_DEDUP_INDEX_STMT)
+        # The DELETE opened an implicit transaction; commit it so the cleanup
+        # and index survive even when the first caller is read-only (a
+        # read-only connection would otherwise roll both back on close).
+        conn.commit()
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
