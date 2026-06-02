@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 1 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="Language"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-node.past .label {
+        color: var(--accent-muted);
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span class="lang-current">EN</span>
+        &nbsp;|&nbsp;
+        <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="Stage timeline">
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">Stage 0</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">Stage 1</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node future" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">Stage 2</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage1-heading">
+        <h2 id="stage1-heading">Stage 1</h2>
+        <p class="stage-summary">
+          Implemented Tier 1 improvements targeting three measured core
+          deficiencies: signal significance testing (S1), risk gate hardening
+          (S2), and confidence recalibration (S3).
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-tier1">
+            <h3 id="card-tier1">Tier 1 Signal Gate Recalibration</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                Three measured core deficiencies demanded direct fixes:
+                valuation/cycle/mean_reversion signal types sitting at 0%
+                win-rate with no pruning mechanism (S1); 39% LIVE low-quality
+                predictions and BEAR over-generation at 6% (S2); confidence
+                locked near 0.60 as a constant carrying no information (S3).
+                Sources: Vibe-Trading (MIT) signal IC/classification and
+                recalibration philosophy; AutoHedge risk-first gate approach.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  S1: Added per-signal binomial p-value against the 50% null
+                  hypothesis plus a verdict (alive/weak/dead). Real data
+                  correctly identified valuation/cycle/mean_reversion as dead
+                  (p=0.001); remaining signals flagged weak.
+                </li>
+                <li>
+                  S2: Added risk/edge gates to <code>/expect</code> and
+                  daily-briefing prompts (reward:risk &lt; 1.5 blocks
+                  registration); raised the BEAR bar (&ge;3 signals + macro
+                  confirmation + RR &ge; 2.0; LIVE demoted to NEUTRAL).
+                </li>
+                <li>
+                  S3: Fit a monotone recalibration map (isotonic/PAVA) to the
+                  calibration curve and applied it. Real data corrected
+                  over-confidence from 0.626 to 0.50.
+                  <code>recalibration_map</code> exposed in CLI calibration
+                  output.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                <code>_binomial_two_sided_p</code> uses
+                <code>math.comb</code> with no added dependencies.
+                <code>_signal_verdict</code> feeds into
+                <code>get_signal_performance</code>, which now returns
+                <code>p_value</code> and <code>verdict</code> as defaulted
+                fields — fully backward-compatible with existing consumers.
+                <code>_isotonic_nondecreasing</code> (PAVA) drives
+                <code>build_recalibration_map</code> and
+                <code>apply_recalibration</code> (linear interpolation; empty
+                map falls back to identity).
+                <code>find_worst_signals</code> strengthened to filter on
+                <code>verdict == "dead"</code>. TDD: 9 new tests; full
+                not-network suite at 287 passing.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>mcp-prediction-store/metrics.py:55</code> &nbsp;
+                <code>mcp-prediction-store/tests/test_metrics.py</code> &nbsp;
+                <code>scheduler/weekly_calibration.py:99</code> &nbsp;
+                <code>stock_cli.py:836</code> &nbsp;
+                <code>.claude/skills/expect/SKILL.md</code> &nbsp;
+                <code>.claude/skills/daily-briefing/SKILL.md</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  S1 was extended compatibly by adding fields without touching
+                  stored-value semantics. Exact binomial arithmetic via
+                  <code>math.comb</code> avoided expanding core dependencies (no
+                  scipy). S2 is a prompt change and therefore not auto-testable
+                  — the store-layer BEAR hard gate in Stage 2 serves as the real
+                  defense line, making the two complementary.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; Stage 1 &mdash; Tier 1 Signal Gate Recalibration
+    </footer>
+  </body>
+</html>

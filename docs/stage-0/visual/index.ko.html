@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>0단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.7;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="언어"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a>
+        &nbsp;|&nbsp;
+        <span class="lang-current">한국어</span>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="단계 타임라인">
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">0단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node future" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">1단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node future" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">2단계</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage0-heading">
+        <h2 id="stage0-heading">0단계</h2>
+        <p class="stage-summary">
+          승률이 73%에서 51%로 악화된 후, 이식 가능한 개선 패턴을 발굴하기 위해
+          외부 오픈소스 트레이딩 레포 3종을 벤치마킹했습니다.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-external-repo-ko">
+            <h3 id="card-external-repo-ko">External Repo Benchmark</h3>
+
+            <div class="card-section">
+              <div class="card-label">왜</div>
+              <p>
+                예측 품질이 한 달 반 만에 승률 73%→51%로 악화됐습니다. 외부
+                오픈소스 트레이딩 시스템 3종을 clone·심층 분석해 이식 가능한
+                개선 패턴을 찾기 위해 수행했습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">무엇을</div>
+              <ul>
+                <li>
+                  <code>research/external/</code>(gitignore)에 3개 레포 clone:
+                  Vibe-Trading(HKUDS), AutoHedge(Swarm Corp),
+                  FinceptTerminal(Fincept).
+                </li>
+                <li>
+                  서브에이전트 3개 병렬 분석 →
+                  <code
+                    >reports/external-analysis/{vibe-trading,autohedge,finceptterminal}.md</code
+                  >
+                  레포별 보고서 작성.
+                </li>
+                <li>
+                  통합 합성
+                  <code>reports/external-analysis/SYNTHESIS.md</code> — 측정된
+                  결함과 매핑한 개선안 S1~S13 정리.
+                </li>
+                <li>
+                  리뷰 게이트 결과: Tier 1(S1+S2+S3)만 1단계에서 구현, 나머지는
+                  이후 단계로 연기.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">어떻게</div>
+              <p>
+                라이선스 먼저 확인: Vibe-Trading = MIT (코드 차용 가능),
+                AutoHedge = MIT (아이디어 위주), FinceptTerminal = AGPL/상용
+                (아이디어만, 코드 복사 금지). 적용성 기준은 Python CLI + Claude
+                스킬 + SQLite 트랙레코드 스택에 실제로 들어맞는 것으로 한정. 웹
+                UI·선물/크립토 엔진·C++/Qt·ML 플랫폼은 제외했습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">코드 위치</div>
+              <p>
+                <code>research/external/*</code> (gitignored) &nbsp;
+                <code>reports/external-analysis/*.md</code> &nbsp;
+                <code>.gitignore</code> (research/external 추가)
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">회고</div>
+              <p>
+                <em>
+                  WebFetch 정찰 → clone → 병렬 서브에이전트 보고서 → 합성 흐름이
+                  효율적이었습니다. 측정된 결함(BEAR 6%, 0% 신호, confidence
+                  상수)이 후보 우선순위를 명확히 정렬해줬습니다. 연기 항목은
+                  SYNTHESIS.md에 보존되어 다음 단계 재진입이 쉽습니다.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; 0단계 &mdash; External Repo Benchmark
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 0 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
+        padding: 0 1rem 4rem;
+      }
+
+      /* ── Accent palette ── */
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      /* ── Header ── */
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="Language"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      /* ── Timeline strip ── */
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+
+      /* Current stage: accent filled */
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      /* Earlier stages: muted fill */
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      /* Later stages: hollow outline */
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem; /* align with circles */
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Card grid ── */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      /* ── Footer ── */
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+        .timeline {
+          gap: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span class="lang-current">EN</span>
+        &nbsp;|&nbsp;
+        <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <!-- Timeline -->
+    <div class="timeline" role="list" aria-label="Stage timeline">
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">Stage 0</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node future" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">Stage 1</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node future" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">Stage 2</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage0-heading">
+        <h2 id="stage0-heading">Stage 0</h2>
+        <p class="stage-summary">
+          Benchmarked three external open-source trading repositories to
+          identify transplantable improvement patterns after win-rate degraded
+          from 73% to 51%.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-external-repo">
+            <h3 id="card-external-repo">External Repo Benchmark</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                Prediction quality deteriorated from 73% to 51% win-rate over
+                six weeks. Three external open-source trading systems were
+                cloned and analyzed in depth to surface transplantable
+                improvement patterns.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  Cloned three repositories into
+                  <code>research/external/</code> (gitignored): Vibe-Trading
+                  (HKUDS), AutoHedge (Swarm Corp), FinceptTerminal (Fincept).
+                </li>
+                <li>
+                  Three parallel sub-agent analyses produced per-repo reports at
+                  <code
+                    >reports/external-analysis/{vibe-trading,autohedge,finceptterminal}.md</code
+                  >.
+                </li>
+                <li>
+                  Consolidated synthesis at
+                  <code>reports/external-analysis/SYNTHESIS.md</code> —
+                  improvements S1–S13 mapped against measured deficiencies.
+                </li>
+                <li>
+                  Review gate outcome: only Tier 1 (S1 + S2 + S3) scheduled for
+                  Stage 1; remainder deferred.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                License verification first: Vibe-Trading = MIT (code reuse
+                permitted), AutoHedge = MIT (ideas only, architecture differs),
+                FinceptTerminal = AGPL/commercial (ideas only, no code copying
+                allowed). Adoption criteria required direct fit with Python CLI
+                + Claude skills + SQLite track-record stack. Web UI,
+                futures/crypto engines, C++/Qt, and ML platforms were excluded.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>research/external/*</code> (gitignored) &nbsp;
+                <code>reports/external-analysis/*.md</code> &nbsp;
+                <code>.gitignore</code> (research/external added)
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  WebFetch reconnaissance → clone → parallel sub-agent reports →
+                  synthesis was an efficient flow. Concretely measured
+                  deficiencies (BEAR 6%, 0%-signal types, constant confidence)
+                  gave clear priority ordering for candidates. Deferred items
+                  are preserved in SYNTHESIS.md for easy re-entry in future
+                  stages.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; Stage 0 &mdash; External Repo Benchmark
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 2 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="Language"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-node.past .label {
+        color: var(--accent-muted);
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span class="lang-current">EN</span>
+        &nbsp;|&nbsp;
+        <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="Stage timeline">
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">Stage 0</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">Stage 1</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">Stage 2</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage2-heading">
+        <h2 id="stage2-heading">Stage 2</h2>
+        <p class="stage-summary">
+          Fixed three structural bugs uncovered by a full 920-row audit: BEAR
+          sign corruption in outcome returns, store-level duplicate insertion,
+          and a one-time backfill migration to clean historical data.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-bear-dedup">
+            <h3 id="card-bear-dedup">Bear Sign Gate Dedup</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                A full audit of 920 rows surfaced structural bugs and data
+                corruption: an
+                <code>outcome_return</code> sign bug (BEAR HITs recorded as
+                negative, MISSes as positive) poisoned every return metric; LIVE
+                BEAR predictions continued to be generated despite a 0%
+                win-rate; up to 18 duplicate rows per ticker per day; and
+                <code>analysis_group_id</code> remained unused.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  2.1 BEAR sign: <code>outcome_return</code> redefined as
+                  position return (BEAR = &minus;price_change). BULL and NEUTRAL
+                  unchanged.
+                </li>
+                <li>
+                  2.2 Store gate: <code>insert_prediction</code> now rejects
+                  LIVE + BEAR combinations and rejects duplicate rows sharing
+                  the same 6-key tuple. A partial UNIQUE index serves as the
+                  concurrency backstop.
+                </li>
+                <li>
+                  2.3 group_id: daily-briefing prompt updated with per-ticker
+                  <code>--analysis-group-id</code> guidance.
+                </li>
+                <li>
+                  2.4 Backfill: one-shot migration reverses historical BEAR
+                  signs and removes same-6-key duplicates. Runs after a verified
+                  backup.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                <code>evaluate_prediction</code>:
+                <code>signed = -pct_change if BEAR else pct_change</code>.
+                Duplicate key = (ticker, market, direction, timeframe, source,
+                date(created_at)) — identical across the live guard, migration,
+                and UNIQUE index; <code>entry_price</code> deliberately
+                excluded. Migration uses an atomic <code>BEGIN</code>/rollback
+                transaction, a <code>_migrations</code> marker to block re-runs,
+                and <code>SQLite Connection.backup()</code> for a WAL-consistent
+                backup before execution. TDD: full not-network suite at 293
+                passing. Real DB: 920 → 732 rows (188 duplicates removed), 38
+                BEAR sign corrections applied.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>scheduler/outcome_tracker.py:140</code> &nbsp;
+                <code>mcp-prediction-store/models.py</code> &nbsp;
+                <code>scripts/migrate_bear_returns_dedup.py</code> &nbsp;
+                <code>scripts/tests/test_migrate.py</code> &nbsp;
+                <code>.claude/skills/daily-briefing/SKILL.md</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  The key mismatch was caught during review — all three
+                  enforcement points (live guard, migration, UNIQUE index) had
+                  to converge on a single key definition for deduplication to be
+                  consistent. The backfill is irreversible, so the safe sequence
+                  was: backup, verify restore, then apply. The BEAR LIVE store
+                  gate and the prompt BEAR bar form a layered defense.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; Stage 2 &mdash; BEAR Sign Gate Dedup
+    </footer>
+  </body>
+</html>
