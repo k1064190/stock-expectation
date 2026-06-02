@@ -142,7 +142,12 @@ def evaluate_prediction(
         return None, 0.0
 
     pct_change = (current_price - entry) / entry
-    outcome_return = round(pct_change * 100, 2)
+    # outcome_return is the POSITION return, not the raw price change: a price
+    # drop is a gain to a BEAR position, so its sign is flipped. BULL/NEUTRAL
+    # keep the raw price change. (NEUTRAL is a stay-flat bet; raw change is the
+    # natural measure of how far it drifted.)
+    signed_change = -pct_change if pred.direction == "BEAR" else pct_change
+    outcome_return = round(signed_change * 100, 2)
 
     # --- Check MISS first (conservative: MISS takes priority) ---
     if pred.direction == "BULL":

@@ -80,7 +80,9 @@ class Prediction:
         status: Current prediction status.
         outcome_price: Final price when prediction closed.
         outcome_date: When the prediction was resolved.
-        outcome_return: Percentage return from entry to outcome.
+        outcome_return: Position return (%) from entry to outcome. Sign is
+            relative to the predicted direction: for BEAR a price drop is a
+            positive return. BULL/NEUTRAL equal the raw price change.
         analysis_group_id: Optional UUID shared by predictions that come
             from the same multi-horizon analysis (e.g. the 4 horizons emitted
             by a single ``/expect MU`` run). Legacy predictions have None.
@@ -139,6 +141,13 @@ CREATE_INDEX_STMTS = (
     "CREATE INDEX IF NOT EXISTS idx_predictions_ticker ON predictions(ticker)",
     "CREATE INDEX IF NOT EXISTS idx_predictions_created ON predictions(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_predictions_group ON predictions(analysis_group_id)",
+    # Partial UNIQUE index = atomic backstop for the same-day duplicate guard in
+    # insert_prediction (the SELECT-then-INSERT check is not race-safe under
+    # concurrent writers). Scoped to OPEN rows so a fresh prediction is allowed
+    # once the prior same-key one closes.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_open_dedup "
+    "ON predictions(ticker, market, direction, timeframe, source, date(created_at)) "
+    "WHERE status = 'OPEN'",
 )
 
 
@@ -288,13 +297,55 @@ def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
     """Insert a new prediction into the database.
 
+    Two guards run before insertion:
+
+    1. LIVE BEAR predictions are hard-rejected. The track record shows a ~0%
+       hit rate for automated BEAR calls, so the scheduler must not log them.
+       Manual (INTERACTIVE) BEAR is still allowed as a deliberate override.
+    2. Same-day duplicates are rejected: a second OPEN row matching an existing
+       one on (ticker, market, direction, timeframe, source, created date)
+       indicates a re-run logging the same call twice. Different timeframes
+       (normal multi-horizon rows) and re-predictions after the prior one
+       closed are both allowed.
+
     Args:
         conn: SQLite connection.
         pred: Prediction to insert.
 
     Returns:
         The inserted Prediction.
+
+    Raises:
+        ValueError: If the prediction is a LIVE BEAR call or a same-day
+            duplicate of an existing OPEN prediction.
     """
+    if pred.source == "LIVE" and pred.direction == "BEAR":
+        raise ValueError(
+            "LIVE BEAR predictions are gated (measured win rate ~0%); "
+            "use direction NEUTRAL or source INTERACTIVE."
+        )
+
+    dupe = conn.execute(
+        """SELECT 1 FROM predictions
+           WHERE ticker = ? AND market = ? AND direction = ? AND timeframe = ?
+             AND source = ? AND status = 'OPEN'
+             AND date(created_at) = date(?)
+           LIMIT 1""",
+        (
+            pred.ticker,
+            pred.market,
+            pred.direction,
+            pred.timeframe,
+            pred.source,
+            pred.created_at,
+        ),
+    ).fetchone()
+    if dupe is not None:
+        raise ValueError(
+            f"duplicate same-day prediction: an OPEN {pred.direction} "
+            f"{pred.timeframe} {pred.ticker} ({pred.source}) already exists today"
+        )
+
     conn.execute(
         """INSERT INTO predictions
            (id, created_at, ticker, market, direction, confidence, timeframe,

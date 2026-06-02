@@ -102,6 +102,8 @@ def test_list_predictions_with_status_filter(db_conn):
         timeframe="1W",
         reasoning="test",
         entry_price=400.0,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred1)
     insert_prediction(db_conn, pred2)
@@ -234,6 +236,8 @@ def test_analysis_group_id_roundtrip(db_conn):
         reasoning="cycle",
         entry_price=426.56,
         analysis_group_id=group_id,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred_short)
     insert_prediction(db_conn, pred_cycle)
@@ -273,6 +277,78 @@ def test_timeframe_6m_accepted(db_conn):
     assert fetched.timeframe == "6M"
 
 
+# ---------------------------------------------------------------------------
+# Stage 2: store-layer LIVE BEAR gate + same-day duplicate guard
+# ---------------------------------------------------------------------------
+
+
+def _pred(ticker="NVDA", direction="BULL", timeframe="1W", source="LIVE"):
+    return Prediction(
+        ticker=ticker,
+        market="US",
+        direction=direction,
+        confidence=0.6,
+        timeframe=timeframe,
+        reasoning="test",
+        entry_price=100.0,
+        source=source,
+    )
+
+
+def test_live_bear_is_rejected(db_conn):
+    """LIVE BEAR predictions are hard-gated (measured win rate ~0%)."""
+    with pytest.raises(ValueError, match="BEAR"):
+        insert_prediction(db_conn, _pred(direction="BEAR", source="LIVE"))
+
+
+def test_interactive_bear_is_allowed(db_conn):
+    """INTERACTIVE BEAR (manual override) is still permitted."""
+    pred = _pred(direction="BEAR", source="INTERACTIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_live_bull_is_allowed(db_conn):
+    """The gate only blocks BEAR — LIVE BULL is unaffected."""
+    pred = _pred(direction="BULL", source="LIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_duplicate_same_day_open_is_rejected(db_conn):
+    """A second OPEN row with the same (ticker, market, direction, timeframe,
+    source, created date) is a same-day duplicate and is rejected."""
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+    with pytest.raises(ValueError, match="duplicate"):
+        insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+
+
+def test_duplicate_different_timeframe_is_allowed(db_conn):
+    """Same ticker, different timeframe is a normal multi-horizon row."""
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1M"))
+    assert len(list_predictions(db_conn, ticker="AMD")) == 2
+
+
+def test_open_dedup_unique_index_exists(db_conn):
+    """The partial UNIQUE index backstops the same-day duplicate guard."""
+    row = db_conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_predictions_open_dedup'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_duplicate_allowed_after_prior_closed(db_conn):
+    """Once the prior prediction is closed, a fresh same-key one is allowed."""
+    first = _pred(ticker="AMD", timeframe="1W")
+    insert_prediction(db_conn, first)
+    update_prediction_outcome(db_conn, first.id, "HIT", 110.0, 10.0)
+    second = _pred(ticker="AMD", timeframe="1W")
+    insert_prediction(db_conn, second)
+    assert get_prediction(db_conn, second.id) is not None
+
+
 def test_timeframe_1y_accepted(db_conn):
     """Schema accepts the newly added 1Y timeframe."""
     pred = Prediction(
@@ -283,6 +359,8 @@ def test_timeframe_1y_accepted(db_conn):
         timeframe="1Y",
         reasoning="cycle peak risk",
         entry_price=120.0,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred)
     fetched = get_prediction(db_conn, pred.id)

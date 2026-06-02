@@ -188,14 +188,21 @@ Section 3 (시장 환경 분석) 결과 + 섹터 lifecycle + narrative themes �
 
 BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).
 
+**종목별 `analysis_group_id` 부여**: 종목마다 UUID를 한 번 생성하고, 그 종목에서 등록하는
+모든 예측 행에 동일한 `--analysis-group-id`로 전달한다(`/expect`와 동일 패턴). 그래야 한 분석에서
+나온 행들을 묶어 추적/중복 식별이 가능하다. 종목이 바뀌면 새 UUID를 생성한다.
+
 ```bash
+GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")
+
 bin/stock-cli predict create \
   --ticker 005930 --market KR --direction BULL \
   --confidence 0.62 --timeframe 1M \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
-  --source LIVE
+  --source LIVE \
+  --analysis-group-id "$GROUP_ID"
 ```
 
 **예측 품질 규칙:**
