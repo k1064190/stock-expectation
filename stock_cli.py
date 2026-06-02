@@ -72,6 +72,8 @@ from metrics import (
     get_track_record,
     get_calibration_report,
     get_signal_performance,
+    build_recalibration_map,
+    apply_recalibration,
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
@@ -839,6 +841,7 @@ def cmd_calibration(args) -> int:
     try:
         buckets = get_calibration_report(conn, timeframe=args.timeframe)
         signals = get_signal_performance(conn, min_count=args.min_signal_count)
+        recal_map = build_recalibration_map(conn, timeframe=args.timeframe)
         _print_json(
             {
                 "timeframe": args.timeframe or "ALL",
@@ -847,9 +850,16 @@ def cmd_calibration(args) -> int:
                         "range": b.confidence_range,
                         "predicted": b.predicted_confidence,
                         "actual": b.actual_accuracy,
+                        "recalibrated": round(
+                            apply_recalibration(b.predicted_confidence, recal_map), 3
+                        ),
                         "count": b.count,
                     }
                     for b in buckets
+                ],
+                "recalibration_map": [
+                    {"predicted": round(p, 3), "recalibrated": round(a, 3)}
+                    for p, a in recal_map
                 ],
                 "signal_performance": [
                     {
@@ -857,6 +867,8 @@ def cmd_calibration(args) -> int:
                         "total": s.total,
                         "wins": s.wins,
                         "win_rate": s.win_rate,
+                        "p_value": s.p_value,
+                        "verdict": s.verdict,
                     }
                     for s in signals
                 ],

@@ -6,6 +6,7 @@ from the prediction database.
 
 import sqlite3
 from dataclasses import dataclass
+from math import comb
 from typing import Optional
 
 
@@ -60,12 +61,72 @@ class SignalPerformance:
         total: Number of closed predictions using this signal.
         wins: Number of HIT predictions using this signal.
         win_rate: Wins / total.
+        p_value: Two-sided exact-binomial p-value of the win count against a
+            50% coin-flip null. Low p_value = the signal's hit rate is unlikely
+            to be chance.
+        verdict: Significance verdict against the 50% null:
+            "alive" (significantly > 50%), "dead" (significantly < 50% —
+            an anti-signal to prune or invert), or "weak" (not statistically
+            distinguishable from a coin flip).
     """
 
     signal: str
     total: int
     wins: int
     win_rate: float
+    p_value: float = 1.0
+    verdict: str = "weak"
+
+
+def _binomial_two_sided_p(k: int, n: int, p: float = 0.5) -> float:
+    """Exact two-sided binomial p-value for k successes in n trials.
+
+    Sums the probability of all outcomes no more likely than the observed
+    count under Binomial(n, p). Dependency-free (uses ``math.comb``); n in our
+    track record is at most a few hundred, so the O(n) loop is cheap.
+
+    Args:
+        k: Observed number of successes (HITs).
+        n: Number of trials (HIT + MISS).
+        p: Null success probability. Defaults to 0.5 (coin flip).
+
+    Returns:
+        Two-sided p-value in [0.0, 1.0]; 1.0 when n == 0 or k is out of the
+        valid [0, n] range (an impossible count carries no evidence).
+    """
+    if n == 0 or k < 0 or k > n:
+        return 1.0
+    probs = [comb(n, i) * (p**i) * ((1 - p) ** (n - i)) for i in range(n + 1)]
+    observed = probs[k]
+    # Sum every outcome no more likely than the observed one (minimum-likelihood
+    # method). A *relative* tolerance includes symmetric ties (e.g. the mirror
+    # outcome under p=0.5) without an absolute floor that would misbehave when
+    # all probabilities are tiny (large n) — a concern flagged in review.
+    return min(1.0, sum(pr for pr in probs if pr <= observed * (1 + 1e-9)))
+
+
+def _signal_verdict(wins: int, total: int, alpha: float = 0.05) -> tuple[float, str]:
+    """Classify a signal's hit rate against a 50% coin-flip null.
+
+    Adapts Vibe-Trading's ``categorise()`` (bench_runner.py:46-55) to our
+    sparse single-ticker win/loss data: instead of an IC t-stat we use an
+    exact binomial test of the HIT count against 0.5.
+
+    Args:
+        wins: HIT count for the signal.
+        total: HIT + MISS count for the signal.
+        alpha: Significance threshold. Defaults to 0.05.
+
+    Returns:
+        Tuple of (p_value, verdict) where verdict is "alive", "dead", or "weak".
+    """
+    p_value = _binomial_two_sided_p(wins, total)
+    if total == 0:
+        return p_value, "weak"
+    win_rate = wins / total
+    if p_value < alpha:
+        return p_value, "alive" if win_rate > 0.5 else "dead"
+    return p_value, "weak"
 
 
 def get_track_record(
@@ -265,14 +326,119 @@ def get_signal_performance(
     result = []
     for sig, stats in signal_stats.items():
         if stats["total"] >= min_count:
+            p_value, verdict = _signal_verdict(stats["wins"], stats["total"])
             result.append(
                 SignalPerformance(
                     signal=sig,
                     total=stats["total"],
                     wins=stats["wins"],
                     win_rate=round(stats["wins"] / stats["total"], 3),
+                    p_value=round(p_value, 4),
+                    verdict=verdict,
                 )
             )
 
     result.sort(key=lambda x: x.win_rate, reverse=True)
     return result
+
+
+def _isotonic_nondecreasing(
+    points: list[tuple[float, float, int]],
+) -> list[tuple[float, float]]:
+    """Pool-Adjacent-Violators projection onto non-decreasing y.
+
+    Args:
+        points: (x, y, weight) sorted ascending by x.
+
+    Returns:
+        (x, y_monotonic) with the same x's and weighted-averaged y enforced to
+        be non-decreasing.
+    """
+    xs = [x for x, _, _ in points]
+    # Each block: [y_avg, weight, n_points_covered].
+    blocks: list[list[float]] = []
+    for _, y, w in points:
+        blocks.append([y, float(w), 1])
+        while len(blocks) >= 2 and blocks[-2][0] > blocks[-1][0]:
+            y2, w2, n2 = blocks.pop()
+            y1, w1, n1 = blocks.pop()
+            blocks.append([(y1 * w1 + y2 * w2) / (w1 + w2), w1 + w2, n1 + n2])
+
+    out: list[tuple[float, float]] = []
+    idx = 0
+    for y_avg, _, n in blocks:
+        for _ in range(int(n)):
+            out.append((xs[idx], y_avg))
+            idx += 1
+    return out
+
+
+def build_recalibration_map(
+    conn: sqlite3.Connection,
+    source: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    buckets: int = 5,
+    min_count: int = 1,
+) -> list[tuple[float, float]]:
+    """Fit a monotonic confidence-recalibration map from the calibration curve.
+
+    Reads the calibration curve (predicted confidence vs actual accuracy per
+    bucket) and projects the actual-accuracy values onto a non-decreasing
+    function of predicted confidence (isotonic regression). The result maps a
+    raw model confidence to the empirically observed hit rate — directly
+    addressing near-constant, overconfident raw confidences.
+
+    Args:
+        conn: SQLite connection.
+        source: Optional source filter (LIVE, BACKTEST, INTERACTIVE).
+        timeframe: Optional timeframe filter (short/long horizons differ).
+        buckets: Number of calibration buckets. Defaults to 5.
+        min_count: Minimum predictions per bucket to use as an anchor.
+
+    Returns:
+        List of (predicted_confidence, recalibrated_confidence) anchor points,
+        sorted ascending and monotonic non-decreasing. Empty if no data.
+    """
+    bs = get_calibration_report(
+        conn, source=source, timeframe=timeframe, buckets=buckets
+    )
+    anchors = [
+        (b.predicted_confidence, b.actual_accuracy, b.count)
+        for b in bs
+        if b.count >= min_count
+    ]
+    anchors.sort(key=lambda t: t[0])
+    if not anchors:
+        return []
+    return _isotonic_nondecreasing(anchors)
+
+
+def apply_recalibration(
+    raw_confidence: float,
+    recal_map: list[tuple[float, float]],
+) -> float:
+    """Apply a recalibration map to a raw confidence via linear interpolation.
+
+    Args:
+        raw_confidence: The model's raw confidence in [0, 1].
+        recal_map: Output of ``build_recalibration_map``.
+
+    Returns:
+        The recalibrated confidence. Returns ``raw_confidence`` unchanged when
+        the map is empty (no calibration data yet). Inputs outside the anchor
+        range are clamped to the nearest anchor's value.
+    """
+    if not recal_map:
+        return raw_confidence
+    pts = sorted(recal_map)
+    if raw_confidence <= pts[0][0]:
+        return pts[0][1]
+    if raw_confidence >= pts[-1][0]:
+        return pts[-1][1]
+    for (p0, a0), (p1, a1) in zip(pts, pts[1:]):
+        if p0 <= raw_confidence <= p1:
+            if p1 == p0:
+                return a1
+            frac = (raw_confidence - p0) / (p1 - p0)
+            return a0 + frac * (a1 - a0)
+    return raw_confidence

@@ -101,13 +101,24 @@ def find_worst_signals(
 ) -> list[dict]:
     """Return signal entries that are notably underperforming.
 
-    ``min_predictions`` filters out small-sample noise; ``max_win_rate`` is the
-    cutoff below which we surface the signal as a problem.
+    A signal is surfaced when either condition holds:
+      - its significance ``verdict`` is "dead" (hit rate significantly below a
+        50% coin flip — a statistical anti-signal worth pruning/inverting), or
+      - the legacy heuristic: ``total >= min_predictions`` and
+        ``win_rate < max_win_rate`` (catches borderline cases the binomial
+        test rates as merely "weak" on small samples).
     """
     return [
-        {"signal": s.signal, "total": s.total, "win_rate": s.win_rate}
+        {
+            "signal": s.signal,
+            "total": s.total,
+            "win_rate": s.win_rate,
+            "p_value": s.p_value,
+            "verdict": s.verdict,
+        }
         for s in signals
-        if s.total >= min_predictions and s.win_rate < max_win_rate
+        if s.verdict == "dead"
+        or (s.total >= min_predictions and s.win_rate < max_win_rate)
     ]
 
 

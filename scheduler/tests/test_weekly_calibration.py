@@ -30,6 +30,8 @@ class _FakeSignal:
     total: int
     wins: int
     win_rate: float
+    p_value: float = 1.0
+    verdict: str = "weak"
 
 
 @dataclass
@@ -82,6 +84,23 @@ def test_worst_signals_filters_by_volume_and_threshold():
     worst = wc.find_worst_signals(signals)
     assert len(worst) == 1
     assert worst[0]["signal"] == "news"
+
+
+def test_worst_signals_flags_statistically_dead_verdict():
+    """A signal with a 'dead' verdict is surfaced even if win_rate >= cutoff."""
+    signals = [
+        # win_rate 0.45 is above the 0.40 heuristic cutoff, but the binomial
+        # verdict marks it a statistically significant anti-signal.
+        _FakeSignal(
+            "valuation", total=40, wins=18, win_rate=0.45, p_value=0.01, verdict="dead"
+        ),
+        _FakeSignal(
+            "momentum", total=40, wins=28, win_rate=0.70, p_value=0.01, verdict="alive"
+        ),
+    ]
+    worst = wc.find_worst_signals(signals)
+    assert [w["signal"] for w in worst] == ["valuation"]
+    assert worst[0]["verdict"] == "dead"
 
 
 def test_render_markdown_uses_30d_as_primary_when_present():
