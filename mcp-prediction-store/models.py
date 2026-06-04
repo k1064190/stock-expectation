@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
+from math import isfinite
 from pathlib import Path
 from typing import Optional
 
@@ -334,6 +335,79 @@ def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
             conn.execute("DROP TABLE IF EXISTS _predictions_legacy")
         except sqlite3.DatabaseError:
             pass
+
+
+_REQUIRED_PREDICTION_FIELDS = (
+    "ticker",
+    "market",
+    "direction",
+    "confidence",
+    "timeframe",
+    "reasoning",
+    "entry_price",
+)
+
+
+def validate_prediction_dict(p: dict) -> list[str]:
+    """Validate a raw prediction dict against the Prediction contract.
+
+    Returns a list of human-readable error strings (empty list = valid). Used to
+    validate LLM/JSON-sourced predictions BEFORE constructing a Prediction and
+    inserting, so a malformed row is rejected with a clear message instead of
+    surfacing as an opaque insert/CHECK error downstream — the "validate, don't
+    just request JSON" lesson from the AutoHedge review.
+
+    Args:
+        p: A prediction as a plain dict (e.g. parsed from an LLM JSON reply).
+
+    Returns:
+        List of validation error messages; empty when the dict is well-formed.
+    """
+    errors: list[str] = []
+
+    for name in _REQUIRED_PREDICTION_FIELDS:
+        if p.get(name) in (None, ""):
+            errors.append(f"missing required field: {name}")
+
+    market = p.get("market")
+    if market is not None and market not in (m.value for m in Market):
+        errors.append(f"invalid market: {market!r} (expected US/KR)")
+
+    direction = p.get("direction")
+    if direction is not None and direction not in (d.value for d in Direction):
+        errors.append(f"invalid direction: {direction!r} (expected BULL/BEAR/NEUTRAL)")
+
+    timeframe = p.get("timeframe")
+    if timeframe is not None and timeframe not in (t.value for t in Timeframe):
+        errors.append(f"invalid timeframe: {timeframe!r}")
+
+    conf = p.get("confidence")
+    if conf is not None:
+        try:
+            if not 0.0 <= float(conf) <= 1.0:
+                errors.append(f"confidence out of range [0,1]: {conf}")
+        except (TypeError, ValueError):
+            errors.append(f"confidence not numeric: {conf!r}")
+
+    def _check_positive_price(name: str, required: bool) -> None:
+        val = p.get(name)
+        if val is None:
+            return
+        try:
+            num = float(val)
+        except (TypeError, ValueError):
+            errors.append(f"{name} not numeric: {val!r}")
+            return
+        # isfinite rejects NaN/Infinity, which slip past a bare ``> 0`` check.
+        if not isfinite(num) or num <= 0:
+            suffix = "" if required else " when provided"
+            errors.append(f"{name} must be a finite number > 0{suffix}: {val}")
+
+    _check_positive_price("entry_price", required=True)
+    _check_positive_price("target_price", required=False)
+    _check_positive_price("stop_price", required=False)
+
+    return errors
 
 
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:

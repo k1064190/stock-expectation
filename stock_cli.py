@@ -70,9 +70,11 @@ from models import (
 )
 from metrics import (
     get_track_record,
+    get_track_record_ci,
     get_calibration_report,
     get_signal_performance,
     get_signal_decay,
+    permutation_test_confidence,
     build_recalibration_map,
     apply_recalibration,
 )
@@ -844,6 +846,8 @@ def cmd_calibration(args) -> int:
         signals = get_signal_performance(conn, min_count=args.min_signal_count)
         decay = get_signal_decay(conn, min_count=args.min_signal_count)
         recal_map = build_recalibration_map(conn, timeframe=args.timeframe)
+        tr_ci = get_track_record_ci(conn, days=None)
+        conf_perm = permutation_test_confidence(conn, days=None)
         _print_json(
             {
                 "timeframe": args.timeframe or "ALL",
@@ -885,6 +889,15 @@ def cmd_calibration(args) -> int:
                     }
                     for s in decay
                 ],
+                "robustness": {
+                    "n": tr_ci.n,
+                    "win_rate": tr_ci.win_rate,
+                    "win_rate_ci95": tr_ci.win_rate_ci,
+                    "brier_score": tr_ci.brier_score,
+                    "brier_ci95": tr_ci.brier_ci,
+                    "prob_better_than_coin": tr_ci.prob_better_than_coin,
+                    "confidence_permutation": conf_perm,
+                },
             }
         )
         return 0

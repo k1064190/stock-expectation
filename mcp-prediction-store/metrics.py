@@ -4,9 +4,10 @@ Computes win rates, calibration curves, signal attribution, and Brier scores
 from the prediction database.
 """
 
+import random
 import sqlite3
 from dataclasses import dataclass
-from math import exp, lgamma, log
+from math import ceil, exp, lgamma, log
 from typing import Optional
 
 
@@ -269,6 +270,187 @@ def get_track_record(
         current_streak=streak,
         brier_score=brier_score,
     )
+
+
+@dataclass
+class TrackRecordCI:
+    """Bootstrap confidence intervals around the track record.
+
+    Args:
+        n: Number of closed (HIT/MISS) predictions resampled.
+        win_rate: Point win rate.
+        win_rate_ci: (low, high) percentile CI for the win rate.
+        brier_score: Point Brier score.
+        brier_ci: (low, high) percentile CI for the Brier score.
+        prob_better_than_coin: Fraction of bootstrap resamples whose win rate
+            exceeds 0.50 — a one-line "is this distinguishable from a coin flip".
+    """
+
+    n: int
+    win_rate: Optional[float]
+    win_rate_ci: Optional[tuple[float, float]]
+    brier_score: Optional[float]
+    brier_ci: Optional[tuple[float, float]]
+    prob_better_than_coin: Optional[float]
+
+
+def _closed_filter(
+    market: Optional[str], source: Optional[str], days: Optional[int]
+) -> tuple[str, list]:
+    """Build the WHERE clause for closed (HIT/MISS) predictions."""
+    conditions = ["status IN ('HIT', 'MISS')"]
+    params: list = []
+    if market:
+        conditions.append("market = ?")
+        params.append(market)
+    if source:
+        conditions.append("source = ?")
+        params.append(source)
+    if days is not None:
+        conditions.append("outcome_date >= datetime('now', ?)")
+        params.append(f"-{days} days")
+    return " AND ".join(conditions), params
+
+
+def _percentile_ci(samples: list[float], alpha: float = 0.05) -> tuple[float, float]:
+    """(alpha/2, 1-alpha/2) percentile interval from a list of bootstrap stats.
+
+    Uses the standard nearest-rank index ``ceil(p*m) - 1`` (not ``int(p*m)``,
+    which truncates inward and biases the interval too narrow for small m).
+    """
+    ordered = sorted(samples)
+    m = len(ordered)
+    lo_idx = max(0, ceil((alpha / 2) * m) - 1)
+    hi_idx = min(m - 1, ceil((1 - alpha / 2) * m) - 1)
+    return ordered[lo_idx], ordered[hi_idx]
+
+
+def get_track_record_ci(
+    conn: sqlite3.Connection,
+    market: Optional[str] = None,
+    source: Optional[str] = None,
+    days: Optional[int] = 30,
+    n_resamples: int = 1000,
+    seed: int = 12345,
+    alpha: float = 0.05,
+) -> TrackRecordCI:
+    """Bootstrap CIs for win rate and Brier score (resample-with-replacement).
+
+    Adapted from Vibe-Trading's ``bootstrap_sharpe_ci`` (validation.py): resample
+    the closed-outcome series ``n_resamples`` times and take percentile
+    intervals, so the calibration report can say "win rate 0.54 [0.47, 0.61] —
+    not distinguishable from 0.50" instead of a bare point estimate.
+
+    Args:
+        conn: SQLite connection.
+        market/source/days: Optional filters (days=None → all history).
+        n_resamples: Bootstrap resample count. Defaults to 1000.
+        seed: RNG seed for reproducible intervals.
+        alpha: 1 - confidence level. Defaults to 0.05 (95% CI).
+
+    Returns:
+        TrackRecordCI; CIs are None when there are no closed predictions.
+    """
+    where, params = _closed_filter(market, source, days)
+    rows = conn.execute(
+        f"SELECT status, confidence FROM predictions WHERE {where}", params
+    ).fetchall()
+    n = len(rows)
+    if n == 0:
+        return TrackRecordCI(0, None, None, None, None, None)
+
+    outcomes = [1.0 if r["status"] == "HIT" else 0.0 for r in rows]
+    briers = [(r["confidence"] - o) ** 2 for r, o in zip(rows, outcomes)]
+    win_rate = sum(outcomes) / n
+    brier = sum(briers) / n
+
+    rng = random.Random(seed)
+    win_samples = []
+    brier_samples = []
+    better = 0
+    for _ in range(n_resamples):
+        idx = [rng.randrange(n) for _ in range(n)]
+        wr = sum(outcomes[j] for j in idx) / n
+        br = sum(briers[j] for j in idx) / n
+        win_samples.append(wr)
+        brier_samples.append(br)
+        if wr > 0.5:
+            better += 1
+
+    return TrackRecordCI(
+        n=n,
+        win_rate=round(win_rate, 4),
+        win_rate_ci=tuple(round(x, 4) for x in _percentile_ci(win_samples, alpha)),
+        brier_score=round(brier, 4),
+        brier_ci=tuple(round(x, 4) for x in _percentile_ci(brier_samples, alpha)),
+        prob_better_than_coin=round(better / n_resamples, 4),
+    )
+
+
+def permutation_test_confidence(
+    conn: sqlite3.Connection,
+    market: Optional[str] = None,
+    source: Optional[str] = None,
+    days: Optional[int] = None,
+    n_permutations: int = 1000,
+    seed: int = 12345,
+) -> dict:
+    """Permutation test: does confidence carry information about the outcome?
+
+    Statistic = mean(confidence | HIT) - mean(confidence | MISS). Under the null
+    (confidence unrelated to outcome) the HIT/MISS labels are exchangeable, so we
+    shuffle them ``n_permutations`` times and measure how often the permuted
+    statistic is at least as extreme as the observed one. A low p-value means
+    higher-confidence calls really do hit more — the model's conviction is
+    informative. (Win rate itself is invariant to label shuffling, so this tests
+    the confidence signal, not the hit rate, which the binomial test covers.)
+
+    Args:
+        conn: SQLite connection.
+        market/source/days: Optional filters (days=None → all history).
+        n_permutations: Shuffle count. Defaults to 1000.
+        seed: RNG seed for reproducibility.
+
+    Returns:
+        Dict with ``n``, ``observed_diff``, and a two-sided ``p_value`` (so an
+        *anti*-informative confidence — higher conviction hitting less — is
+        flagged too). When the statistic is undefined (no HIT or no MISS),
+        p_value is 1.0.
+    """
+    where, params = _closed_filter(market, source, days)
+    rows = conn.execute(
+        f"SELECT status, confidence FROM predictions WHERE {where}", params
+    ).fetchall()
+    n = len(rows)
+    confidences = [r["confidence"] for r in rows]
+    labels = [1 if r["status"] == "HIT" else 0 for r in rows]
+    n_hit = sum(labels)
+    n_miss = n - n_hit
+
+    if n_hit == 0 or n_miss == 0:
+        return {"n": n, "observed_diff": 0.0, "p_value": 1.0}
+
+    def _diff(lbls: list[int]) -> float:
+        hit_sum = sum(c for c, l in zip(confidences, lbls) if l == 1)
+        miss_sum = sum(c for c, l in zip(confidences, lbls) if l == 0)
+        return hit_sum / n_hit - miss_sum / n_miss
+
+    observed = _diff(labels)
+    abs_observed = abs(observed)
+    rng = random.Random(seed)
+    shuffled = list(labels)
+    at_least = 0
+    for _ in range(n_permutations):
+        rng.shuffle(shuffled)
+        # Two-sided: count permutations at least as extreme in either direction.
+        if abs(_diff(shuffled)) >= abs_observed - 1e-12:
+            at_least += 1
+
+    return {
+        "n": n,
+        "observed_diff": round(observed, 4),
+        "p_value": round(at_least / n_permutations, 4),
+    }
 
 
 def get_calibration_report(
