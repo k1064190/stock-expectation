@@ -350,7 +350,7 @@ def get_track_record_ci(
 
     Args:
         conn: SQLite connection.
-        market/source/days: Optional filters (days=None → all history).
+        market/source/days/timeframe: Optional filters (days=None → all history).
         n_resamples: Bootstrap resample count. Defaults to 1000.
         seed: RNG seed for reproducible intervals.
         alpha: 1 - confidence level. Defaults to 0.05 (95% CI).
@@ -415,7 +415,7 @@ def permutation_test_confidence(
 
     Args:
         conn: SQLite connection.
-        market/source/days: Optional filters (days=None → all history).
+        market/source/days/timeframe: Optional filters (days=None → all history).
         n_permutations: Shuffle count. Defaults to 1000.
         seed: RNG seed for reproducibility.
 
