@@ -54,6 +54,7 @@ from models import (
     Prediction,
     get_connection,
     insert_prediction,
+    validate_prediction_dict,
 )
 from metrics import get_track_record, get_calibration_report, get_signal_performance
 from providers.us import USMarketProvider
@@ -794,6 +795,18 @@ def log_predictions(predictions: list[dict]) -> int:
 
     for p in predictions:
         try:
+            # Validate the raw JSON contract before constructing/inserting so a
+            # malformed LLM row is rejected with clear messages, not an opaque
+            # downstream error.
+            schema_errors = validate_prediction_dict(p)
+            if schema_errors:
+                logger.warning(
+                    "Skipping malformed prediction %s: %s",
+                    p.get("ticker"),
+                    "; ".join(schema_errors),
+                )
+                continue
+
             pred = Prediction(
                 ticker=str(p.get("ticker", "")).upper(),
                 market=str(p.get("market", "US")).upper(),

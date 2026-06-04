@@ -18,6 +18,7 @@ from models import (
     list_predictions,
     update_prediction_outcome,
     cancel_prediction,
+    validate_prediction_dict,
 )
 
 
@@ -697,3 +698,72 @@ def test_migration_fresh_db_is_noop():
         path.unlink(missing_ok=True)
         Path(str(path) + "-wal").unlink(missing_ok=True)
         Path(str(path) + "-shm").unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# S9: validate_prediction_dict — validate, don't just request, the JSON contract
+# ---------------------------------------------------------------------------
+
+
+def _valid_pred_dict():
+    return {
+        "ticker": "NVDA",
+        "market": "US",
+        "direction": "BULL",
+        "confidence": 0.7,
+        "timeframe": "1W",
+        "reasoning": "RSI 62, MA20 stack",
+        "entry_price": 130.5,
+        "target_price": 138.0,
+        "stop_price": 125.0,
+    }
+
+
+def test_validate_prediction_dict_accepts_valid():
+    assert validate_prediction_dict(_valid_pred_dict()) == []
+
+
+def test_validate_prediction_dict_missing_required():
+    p = _valid_pred_dict()
+    del p["entry_price"]
+    errors = validate_prediction_dict(p)
+    assert any("entry_price" in e for e in errors)
+
+
+def test_validate_prediction_dict_bad_enum():
+    p = _valid_pred_dict()
+    p["direction"] = "UP"
+    p["market"] = "JP"
+    p["timeframe"] = "5Y"
+    errors = validate_prediction_dict(p)
+    assert any("direction" in e for e in errors)
+    assert any("market" in e for e in errors)
+    assert any("timeframe" in e for e in errors)
+
+
+def test_validate_prediction_dict_confidence_range():
+    p = _valid_pred_dict()
+    p["confidence"] = 1.5
+    assert any("confidence" in e for e in validate_prediction_dict(p))
+
+
+def test_validate_prediction_dict_nonpositive_entry():
+    p = _valid_pred_dict()
+    p["entry_price"] = 0
+    assert any("entry_price" in e for e in validate_prediction_dict(p))
+
+
+def test_validate_prediction_dict_optional_prices_may_be_omitted():
+    p = _valid_pred_dict()
+    del p["target_price"]
+    del p["stop_price"]
+    assert validate_prediction_dict(p) == []
+
+
+def test_validate_prediction_dict_rejects_nan_inf_prices():
+    p = _valid_pred_dict()
+    p["entry_price"] = float("nan")
+    assert any("entry_price" in e for e in validate_prediction_dict(p))
+    p2 = _valid_pred_dict()
+    p2["target_price"] = float("inf")
+    assert any("target_price" in e for e in validate_prediction_dict(p2))

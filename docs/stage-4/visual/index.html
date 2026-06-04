@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Expectation — Stage 4</title>
+    <style>
+      /* ── Reset ─────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* ── Variables ──────────────────────────────────────────────── */
+      :root {
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --border: #e2e2de;
+        --accent: #2d6a6a; /* deep teal */
+        --accent-muted: #5a9e9e;
+        --node-muted: #a8b8b8;
+        --text: #1a1a1a;
+        --muted: #6b7280;
+        --code-bg: #f0f4f4;
+        --radius: 10px;
+        --max-w: 900px;
+      }
+
+      /* ── Base ───────────────────────────────────────────────────── */
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+        font-size: 15px;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Layout wrapper ─────────────────────────────────────────── */
+      .container {
+        max-width: var(--max-w);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ── Header ─────────────────────────────────────────────────── */
+      header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 0;
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .header-titles h1 {
+        font-size: 1.45rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--accent);
+      }
+
+      .header-titles p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="Language"] .lang-current {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] .lang-sep {
+        color: var(--border);
+        margin: 0 6px;
+      }
+
+      /* ── Timeline ───────────────────────────────────────────────── */
+      .timeline-section {
+        padding: 36px 0 28px;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .tl-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        min-width: 60px;
+      }
+
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 16px;
+        margin-bottom: 20px; /* aligns with node vertical center */
+      }
+
+      .tl-node-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tl-node {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 2px solid var(--node-muted);
+        background: var(--node-muted);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .tl-node.current {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(45, 106, 106, 0.18);
+      }
+
+      .tl-label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .tl-label.current {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* ── Stage heading ──────────────────────────────────────────── */
+      .stage-heading {
+        padding: 0 0 32px;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+
+      .stage-heading p {
+        color: var(--muted);
+        font-size: 0.92rem;
+        max-width: 680px;
+      }
+
+      /* ── Card grid ──────────────────────────────────────────────── */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        padding-bottom: 56px;
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      article {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 18px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid var(--accent);
+      }
+
+      .card-section {
+        margin-bottom: 16px;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 5px;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.88rem;
+        color: #374151;
+        line-height: 1.6;
+      }
+
+      .card-section ul {
+        padding-left: 18px;
+      }
+
+      .card-section ul li {
+        margin-bottom: 4px;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.8em;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--accent);
+        word-break: break-all;
+      }
+
+      .code-list {
+        list-style: none;
+        padding-left: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .code-list li code {
+        display: inline-block;
+      }
+
+      em {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      /* ── Footer ─────────────────────────────────────────────────── */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 16px 0;
+        text-align: center;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <div class="header-inner">
+          <div class="header-titles">
+            <h1>Stock Expectation</h1>
+            <p>Staged plan progress</p>
+          </div>
+          <nav aria-label="Language">
+            <span class="lang-current">EN</span>
+            <span class="lang-sep">|</span>
+            <a href="index.ko.html">한국어</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="container">
+        <!-- Timeline -->
+        <section class="timeline-section" aria-label="Stage timeline">
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">0</div>
+                <div class="tl-label">Stage 0</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">1</div>
+                <div class="tl-label">Stage 1</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">2</div>
+                <div class="tl-label">Stage 2</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">3</div>
+                <div class="tl-label">Stage 3</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node current">4</div>
+                <div class="tl-label current">Stage 4</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Stage heading -->
+        <section class="stage-heading">
+          <h2>Stage 4</h2>
+          <p>
+            Rewrote the <code>/expect</code> skill with a deterministic scoring
+            rubric, explainability chain, and outcome telemetry; then hardened
+            the prediction store with bootstrap confidence intervals,
+            permutation testing, and JSON schema validation.
+          </p>
+        </section>
+
+        <!-- Card grid -->
+        <div class="card-grid">
+          <!-- Card 1: expect-rewrite -->
+          <article aria-labelledby="card1-title">
+            <h3 id="card1-title">/Expect Skill Rewrite</h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
+              <p>
+                The pre-Stage-4 <code>/expect</code> produced four-horizon
+                directional predictions but lacked: deterministic point-table
+                scoring (LLM emitted qualitative "bullishness"), quantitative
+                news/sentiment input, a single headline label (Buy/Sell
+                decision), a transmission chain, and outcome telemetry. Doctor
+                Cho's requirement: combine algorithmic and news analysis to emit
+                a buy/sell signal while preserving the calibration loop.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  <strong>Algorithmic point table</strong>
+                  (<code>ALGO_SCORE</code>, max +8.0, floor -5.0): trend,
+                  momentum, 1-month return, volume, cycle, earnings-event
+                  penalty.
+                </li>
+                <li>
+                  <strong>News point table</strong> (<code>NEWS_SCORE</code>,
+                  max +3.0, floor -2.0): Alpha Vantage sentiment, headline
+                  volume, negative-keyword scan, KR disclosure flag. Hard caps
+                  clamp rather than stack.
+                </li>
+                <li>
+                  <strong>Composite + decision label</strong>: BUY ≥ 8.0 / WATCH
+                  6.0..7.9 / HOLD 3.0..5.9 / AVOID 0..2.9 / SELL &lt; 0.
+                  Contiguous half-open ranges — every score lands in exactly one
+                  bucket.
+                </li>
+                <li>
+                  <strong>Transmission chain</strong>: 3 facts per pick (TECH /
+                  NEWS / RISK), each quoting a specific number or named field —
+                  no bare adjectives.
+                </li>
+                <li>
+                  <strong>Outcome telemetry sidecar</strong> at
+                  <code>state/last-outcome-expect.json</code>: every component
+                  score, transmission chain, and logged horizons. Parsed by
+                  Stage 6's weekly aggregator.
+                </li>
+                <li>
+                  <strong
+                    >Quality gate (Step 11) + bias checklist (Step 12)</strong
+                  >: sign agreement, target separation, fresh-data,
+                  recency/confirmation/anchoring/overconfidence checks.
+                </li>
+                <li>
+                  <strong>Multi-horizon predictions preserved</strong>:
+                  4-horizon (1W/1M/6M/1Y) logging to
+                  <code>predictions.db</code> with shared
+                  <code>analysis_group_id</code>. RULE C1 preserved.
+                </li>
+                <li>
+                  <strong>Output verbosity scaling</strong>:
+                  <code>/expect ALL</code> emits 3-line per-stock summaries;
+                  full blocks for single/batch modes or RULE-C1/hard-cap picks.
+                </li>
+                <li>
+                  <strong>Skill composition as gates</strong>:
+                  market-top-detector / ftd-detector / theme-detector called
+                  only when COMPOSITE ≥ 8.0, with recursion-guard note.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <p>
+                Borrowed three patterns from external skill collections:
+                point-table scoring (staskh), transmission chain (roman-rr),
+                outcome sidecar (ScientiaCapital). Math reconciliation: the
+                gemini review caught that the initial draft misstated max scores
+                (algo "max 10" but components summed to 8; news "max 5" but
+                summed to 3; composite max stated as 15 but actually 11).
+                Thresholds were fixed to match real component sums and rewritten
+                in <code>if/elif</code> style so every input lands in exactly
+                one row.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Code Locations</div>
+              <ul class="code-list">
+                <li><code>.claude/skills/expect/SKILL.md</code></li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Review Loop</div>
+              <p>
+                gemini-subagent (Pro) — single-round review caught six real
+                issues: wrong max-score statements (MUST FIX), bucket overlap in
+                trend and return thresholds (MUST FIX), decimal-gap thresholds
+                leaving scores like 5.5 undefined (MUST FIX), ALL-mode verbosity
+                explosion (SHOULD FIX), LLM math reliability for Step 11 checks
+                (CONSIDER, deferred to Stage 6), and a recursion-guard risk
+                (CONSIDER, added a guard note). code-reviewer-pro pass skipped —
+                this is prose content, not code.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <p>
+                <em>
+                  The gemini review caught math errors baked into both the plan
+                  and the SKILL.md draft. Without it, Doctor Cho would have seen
+                  "BUY composite 11.5/15" displays that did not add up. Carry
+                  forward: when designing a scoring rubric, write the
+                  maximum-positive sum and the absolute floor as a separate
+                  verification line before publishing thresholds.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <!-- Card 2: tier3-bootstrap-permutation-validation -->
+          <article aria-labelledby="card2-title">
+            <h3 id="card2-title">
+              Tier 3 — Bootstrap CI / Permutation Test / JSON Schema Validation
+            </h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
+              <p>
+                Following Tier 1 and 2, three statistical and robustness gaps
+                remained. A point-estimate win rate cannot answer "is this
+                distinguishable from a coin flip?" — addressed by bootstrap CI
+                (S7). Whether confidence scores carry real information cannot be
+                seen from a binomial test — addressed by permutation testing
+                (S8). LLM/JSON predictions were requested but never validated —
+                addressed by schema validation (S9). Draws from Vibe-Trading
+                (MIT) <code>validation.py</code> and AutoHedge (validate, don't
+                just request JSON).
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  <strong>S7</strong> — <code>get_track_record_ci</code>:
+                  win-rate and Brier-score bootstrap 95% CI with
+                  <code>prob_better_than_coin</code>. Fixed seed for
+                  reproducibility. Live result: win rate 0.498, CI95 [0.44,
+                  0.56] — indistinguishable from a coin flip.
+                </li>
+                <li>
+                  <strong>S8</strong> —
+                  <code>permutation_test_confidence</code>: label-shuffle
+                  two-sided test for whether confidence scores correlate with
+                  outcomes. Live result: p = 0.004 — confidence weakly but
+                  significantly carries information.
+                </li>
+                <li>
+                  <strong>S9</strong> — <code>validate_prediction_dict</code>:
+                  required fields, enum values, range checks, and
+                  finite-positive guards. API-mode
+                  <code>log_predictions</code> calls this before constructing a
+                  <code>Prediction</code>, making malformed rows fail explicitly
+                  rather than silently.
+                </li>
+                <li>
+                  Exposed via <code>stock-cli calibration</code> robustness
+                  section and <code>weekly_calibration</code> robustness key.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <p>
+                Shared <code>_closed_filter</code> (WHERE clause) and
+                <code>_percentile_ci</code> (nearest-rank). Bootstrap and
+                permutation both use <code>random.Random(seed)</code>
+                for determinism. Permutation statistic: mean(confidence | HIT) −
+                mean(confidence | MISS), two-sided p-value.
+                <code>validate_prediction_dict</code> returns a list of error
+                strings. TDD: 11 new tests added, 315 total passing.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Code Locations</div>
+              <ul class="code-list">
+                <li><code>mcp-prediction-store/metrics.py</code></li>
+                <li><code>mcp-prediction-store/models.py</code></li>
+                <li><code>scheduler/daily_briefing.py</code></li>
+                <li><code>scheduler/weekly_calibration.py</code></li>
+                <li><code>stock_cli.py</code></li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Review Loop</div>
+              <p>
+                code-reviewer-pro: fixed <code>_percentile_ci</code> index to
+                the standard <code>ceil(p*m)-1</code> formula; made the
+                permutation test two-sided. codex: flagged that NaN/Infinity
+                prices passed the <code>&gt;0</code> guard — added
+                <code>math.isfinite</code> check. All 315 tests passing.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <p>
+                <em>
+                  S7 and S8 quantified what the full track record shows in live
+                  data: aggregate win rate is coin-level, but confidence is a
+                  weak informative signal. S9 replaced an implicit reliance on
+                  SQLite CHECK constraints with explicit, message-bearing
+                  validation that eliminates silent failures in API mode.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+        <!-- /.card-grid -->
+      </div>
+      <!-- /.container -->
+    </main>
+
+    <footer>
+      <div class="container">
+        Stock Expectation &mdash; Stage 4 documentation
+      </div>
+    </footer>
+  </body>
+</html>

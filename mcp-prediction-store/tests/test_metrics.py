@@ -18,9 +18,11 @@ from models import (
 )
 from metrics import (
     get_track_record,
+    get_track_record_ci,
     get_calibration_report,
     get_signal_performance,
     get_signal_decay,
+    permutation_test_confidence,
     build_recalibration_map,
     apply_recalibration,
 )
@@ -347,6 +349,93 @@ def test_signal_verdict_weak(db_conn):
 # ---------------------------------------------------------------------------
 # S3: confidence recalibration from the calibration curve
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# S7: bootstrap confidence intervals on win rate / Brier
+# ---------------------------------------------------------------------------
+
+
+def _seed_outcomes(db_conn, n_hit, n_miss, confidence=0.7):
+    i = 0
+    for _ in range(n_hit):
+        p = _make_prediction(f"H{i}", confidence=confidence)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+        i += 1
+    for _ in range(n_miss):
+        p = _make_prediction(f"M{i}", confidence=confidence)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "MISS", 95.0, -5.0)
+        i += 1
+
+
+def test_track_record_ci_brackets_point_estimate(db_conn):
+    """The bootstrap win-rate CI is a valid interval around the point estimate."""
+    _seed_outcomes(db_conn, n_hit=60, n_miss=40)
+    ci = get_track_record_ci(db_conn, days=None, n_resamples=500, seed=42)
+    assert ci.n == 100
+    assert ci.win_rate == pytest.approx(0.6, abs=0.001)
+    low, high = ci.win_rate_ci
+    assert 0.0 <= low <= ci.win_rate <= high <= 1.0
+    # 60/40 should be distinguishable from a coin flip.
+    assert ci.prob_better_than_coin > 0.9
+
+
+def test_track_record_ci_is_deterministic_with_seed(db_conn):
+    """A fixed seed yields reproducible CIs."""
+    _seed_outcomes(db_conn, n_hit=30, n_miss=30)
+    a = get_track_record_ci(db_conn, days=None, n_resamples=300, seed=7)
+    b = get_track_record_ci(db_conn, days=None, n_resamples=300, seed=7)
+    assert a.win_rate_ci == b.win_rate_ci
+    # A 50/50 record's CI must straddle 0.5 (not distinguishable from chance).
+    low, high = a.win_rate_ci
+    assert low < 0.5 < high
+
+
+def test_track_record_ci_empty(db_conn):
+    """No closed predictions → all-None CI, n=0."""
+    ci = get_track_record_ci(db_conn, days=None)
+    assert ci.n == 0
+    assert ci.win_rate_ci is None
+    assert ci.prob_better_than_coin is None
+
+
+def test_track_record_ci_timeframe_filter(db_conn):
+    """The robustness stats honor the timeframe filter (all seeds are 1W)."""
+    _seed_outcomes(db_conn, n_hit=20, n_miss=10)
+    assert get_track_record_ci(db_conn, days=None, timeframe="1W").n == 30
+    assert get_track_record_ci(db_conn, days=None, timeframe="1M").n == 0
+
+
+# ---------------------------------------------------------------------------
+# S8: permutation test — does confidence carry information about outcome?
+# ---------------------------------------------------------------------------
+
+
+def test_permutation_confidence_informative(db_conn):
+    """When high-confidence calls hit and low-confidence calls miss, the
+    confidence→outcome association is significant."""
+    for i in range(20):
+        p = _make_prediction(f"HC{i}", confidence=0.8)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+    for i in range(20):
+        p = _make_prediction(f"LC{i}", confidence=0.55)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "MISS", 95.0, -5.0)
+    res = permutation_test_confidence(db_conn, days=None, n_permutations=500, seed=42)
+    assert res["n"] == 40
+    assert res["observed_diff"] > 0  # higher conf on HITs
+    assert res["p_value"] < 0.05
+
+
+def test_permutation_confidence_uninformative(db_conn):
+    """Constant confidence carries no information → not significant."""
+    _seed_outcomes(db_conn, n_hit=20, n_miss=20, confidence=0.6)
+    res = permutation_test_confidence(db_conn, days=None, n_permutations=500, seed=42)
+    assert res["observed_diff"] == pytest.approx(0.0, abs=1e-9)
+    assert res["p_value"] >= 0.05
 
 
 # ---------------------------------------------------------------------------

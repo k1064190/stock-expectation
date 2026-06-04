@@ -49,9 +49,11 @@ except ImportError:
 
 from metrics import (
     get_track_record,
+    get_track_record_ci,
     get_calibration_report,
     get_signal_performance,
     get_signal_decay,
+    permutation_test_confidence,
 )
 from models import get_connection
 
@@ -161,6 +163,10 @@ def compute_window(conn, days: int) -> dict:
     # their signal mix; a future Stage-6.1 PR can raise this once volumes grow.
     signals = get_signal_performance(conn, min_count=3)
     decay = get_signal_decay(conn, min_count=6)
+    # Match the windowed track_record above so the report doesn't pair a
+    # windowed point estimate with all-history uncertainty.
+    tr_ci = get_track_record_ci(conn, days=days)
+    conf_perm = permutation_test_confidence(conn, days=days)
     return {
         "days": days,
         "track_record": asdict(track),
@@ -169,6 +175,14 @@ def compute_window(conn, days: int) -> dict:
         "overconfident_buckets": find_overconfident_buckets(buckets),
         "worst_signals": find_worst_signals(signals),
         "decaying_signals": find_decaying_signals(decay),
+        "robustness": {
+            "n": tr_ci.n,
+            "win_rate": tr_ci.win_rate,
+            "win_rate_ci95": tr_ci.win_rate_ci,
+            "brier_ci95": tr_ci.brier_ci,
+            "prob_better_than_coin": tr_ci.prob_better_than_coin,
+            "confidence_permutation": conf_perm,
+        },
     }
 
 

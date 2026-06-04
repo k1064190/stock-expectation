@@ -47,6 +47,16 @@ class _FakeDecay:
 
 
 @dataclass
+class _FakeTrackCI:
+    n: int
+    win_rate: float | None
+    win_rate_ci: tuple | None
+    brier_score: float | None
+    brier_ci: tuple | None
+    prob_better_than_coin: float | None
+
+
+@dataclass
 class _FakeTrack:
     total: int
     wins: int
@@ -219,11 +229,15 @@ def test_compute_window_uses_metrics_helpers():
     fake_buckets = [_FakeBucket("0.60-0.70", 0.65, 0.50, 5)]
     fake_signals = [_FakeSignal("technical", 10, 6, 0.60)]
 
+    fake_ci = _FakeTrackCI(0, None, None, None, None, None)
+    fake_perm = {"n": 0, "observed_diff": 0.0, "p_value": 1.0}
     with (
         patch("weekly_calibration.get_track_record", return_value=fake_track),
         patch("weekly_calibration.get_calibration_report", return_value=fake_buckets),
         patch("weekly_calibration.get_signal_performance", return_value=fake_signals),
         patch("weekly_calibration.get_signal_decay", return_value=[]),
+        patch("weekly_calibration.get_track_record_ci", return_value=fake_ci),
+        patch("weekly_calibration.permutation_test_confidence", return_value=fake_perm),
     ):
         window = wc.compute_window(conn=None, days=30)
 
