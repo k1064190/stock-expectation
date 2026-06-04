@@ -846,8 +846,10 @@ def cmd_calibration(args) -> int:
         signals = get_signal_performance(conn, min_count=args.min_signal_count)
         decay = get_signal_decay(conn, min_count=args.min_signal_count)
         recal_map = build_recalibration_map(conn, timeframe=args.timeframe)
-        tr_ci = get_track_record_ci(conn, days=None)
-        conf_perm = permutation_test_confidence(conn, days=None)
+        tr_ci = get_track_record_ci(conn, days=None, timeframe=args.timeframe)
+        conf_perm = permutation_test_confidence(
+            conn, days=None, timeframe=args.timeframe
+        )
         _print_json(
             {
                 "timeframe": args.timeframe or "ALL",

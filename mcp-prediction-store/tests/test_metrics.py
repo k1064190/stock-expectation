@@ -401,6 +401,13 @@ def test_track_record_ci_empty(db_conn):
     assert ci.prob_better_than_coin is None
 
 
+def test_track_record_ci_timeframe_filter(db_conn):
+    """The robustness stats honor the timeframe filter (all seeds are 1W)."""
+    _seed_outcomes(db_conn, n_hit=20, n_miss=10)
+    assert get_track_record_ci(db_conn, days=None, timeframe="1W").n == 30
+    assert get_track_record_ci(db_conn, days=None, timeframe="1M").n == 0
+
+
 # ---------------------------------------------------------------------------
 # S8: permutation test — does confidence carry information about outcome?
 # ---------------------------------------------------------------------------

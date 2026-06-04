@@ -163,8 +163,10 @@ def compute_window(conn, days: int) -> dict:
     # their signal mix; a future Stage-6.1 PR can raise this once volumes grow.
     signals = get_signal_performance(conn, min_count=3)
     decay = get_signal_decay(conn, min_count=6)
-    tr_ci = get_track_record_ci(conn, days=None)
-    conf_perm = permutation_test_confidence(conn, days=None)
+    # Match the windowed track_record above so the report doesn't pair a
+    # windowed point estimate with all-history uncertainty.
+    tr_ci = get_track_record_ci(conn, days=days)
+    conf_perm = permutation_test_confidence(conn, days=days)
     return {
         "days": days,
         "track_record": asdict(track),

@@ -34,6 +34,7 @@ Tier 1/2에 이어 통계적 정직성과 입력 견고성을 마무리:
 - **code-reviewer-pro**: (Critical) `_percentile_ci` 인덱스 `int(p*m)`가 내측 편향 → 표준 nearest-rank `ceil(p*m)-1`로 수정. (Warning) 순열검정이 단측이라 anti-informative confidence를 못 잡음 → **양측**(abs)으로 변경 + docstring.
 - **codex (gpt-5.5/high)**: `NaN`/`Infinity` 가격이 `>0` 검사를 통과(`nan<=0`=False) → `math.isfinite` 가드 추가, entry/target/stop 공통 헬퍼로 통일. 회귀 테스트 추가.
 - 수정 후 전체 315 통과. 실데이터 conf_p 0.004(양측).
+- **codex PR 리뷰(#29)**: (P2×3) weekly robustness가 windowed track_record와 안 맞게 days=None → `days=days`; 순열 p가 정확히 0 가능 → `(k+1)/(n+1)` 보정; CLI/함수가 `--timeframe` 무시 → `_closed_filter`+두 함수에 timeframe 파라미터 추가, CLI에서 전달. 전체 316 통과.
 
 ## Retrospective
 - S7/S8가 실데이터에서 "현재 전체 트랙레코드는 동전 수준이나 confidence는 약한 신호 보유"라는 정직한 그림을 정량화 — 향후 calibration 루프의 핵심 지표.

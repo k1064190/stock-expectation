@@ -295,7 +295,10 @@ class TrackRecordCI:
 
 
 def _closed_filter(
-    market: Optional[str], source: Optional[str], days: Optional[int]
+    market: Optional[str],
+    source: Optional[str],
+    days: Optional[int],
+    timeframe: Optional[str] = None,
 ) -> tuple[str, list]:
     """Build the WHERE clause for closed (HIT/MISS) predictions."""
     conditions = ["status IN ('HIT', 'MISS')"]
@@ -306,6 +309,9 @@ def _closed_filter(
     if source:
         conditions.append("source = ?")
         params.append(source)
+    if timeframe:
+        conditions.append("timeframe = ?")
+        params.append(timeframe)
     if days is not None:
         conditions.append("outcome_date >= datetime('now', ?)")
         params.append(f"-{days} days")
@@ -330,6 +336,7 @@ def get_track_record_ci(
     market: Optional[str] = None,
     source: Optional[str] = None,
     days: Optional[int] = 30,
+    timeframe: Optional[str] = None,
     n_resamples: int = 1000,
     seed: int = 12345,
     alpha: float = 0.05,
@@ -351,7 +358,7 @@ def get_track_record_ci(
     Returns:
         TrackRecordCI; CIs are None when there are no closed predictions.
     """
-    where, params = _closed_filter(market, source, days)
+    where, params = _closed_filter(market, source, days, timeframe)
     rows = conn.execute(
         f"SELECT status, confidence FROM predictions WHERE {where}", params
     ).fetchall()
@@ -392,6 +399,7 @@ def permutation_test_confidence(
     market: Optional[str] = None,
     source: Optional[str] = None,
     days: Optional[int] = None,
+    timeframe: Optional[str] = None,
     n_permutations: int = 1000,
     seed: int = 12345,
 ) -> dict:
@@ -417,7 +425,7 @@ def permutation_test_confidence(
         flagged too). When the statistic is undefined (no HIT or no MISS),
         p_value is 1.0.
     """
-    where, params = _closed_filter(market, source, days)
+    where, params = _closed_filter(market, source, days, timeframe)
     rows = conn.execute(
         f"SELECT status, confidence FROM predictions WHERE {where}", params
     ).fetchall()
@@ -446,10 +454,13 @@ def permutation_test_confidence(
         if abs(_diff(shuffled)) >= abs_observed - 1e-12:
             at_least += 1
 
+    # (k+1)/(N+1) includes the observed arrangement, so a finite Monte-Carlo
+    # permutation test never reports an impossible exact-zero p-value.
+    p_value = (at_least + 1) / (n_permutations + 1)
     return {
         "n": n,
         "observed_diff": round(observed, 4),
-        "p_value": round(at_least / n_permutations, 4),
+        "p_value": round(p_value, 4),
     }
 
 
