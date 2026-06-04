@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.7;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="언어"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-node.past .label {
+        color: var(--accent-muted);
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a>
+        &nbsp;|&nbsp;
+        <span class="lang-current">한국어</span>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="단계 타임라인">
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">0단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">1단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">2단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">3</div>
+        <span class="label">3단계</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage3-heading">
+        <h2 id="stage3-heading">3단계</h2>
+        <p class="stage-summary">
+          Stage 1에서 연기한 Tier 2 측정 개선을 구현했습니다: OOS 신호 decay
+          탐지, 단계형 적대적 디베이트 프롬프트 아키텍처(Bull/Bear/Judge), PyKRX
+          대량 엔드포인트 장애 대응을 위한 KR universe 정적 fallback — 그리고
+          스킬 카탈로그를 59개 이상에서 31개 활성 스킬로 정리했습니다.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-tier2-oos-ko">
+            <h3 id="card-tier2-oos-ko">Tier2 Oos Staged Debate</h3>
+
+            <div class="card-section">
+              <div class="card-label">왜</div>
+              <p>
+                Stage 1에서 연기한 Tier 2 구현. 측정 결함의 다음 층위를
+                공략했습니다: 정적 전체-기간 승률은 최근 쇠퇴를 숨김 → OOS 분할
+                필요(S5); 단일패스 프롬프트 + 한쪽 관점 편향 → 단계형 + 적대적
+                디베이트(S4/S6). 출처: Vibe-Trading(MIT) strict 팩터 게이트
+                (train/test 분할), AutoHedge(Director&rarr;Quant&rarr;Risk),
+                FinceptTerminal(Bull/Bear/Judge — 아이디어만).
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">무엇을</div>
+              <ul>
+                <li>
+                  S5 (코드): <code>get_signal_decay</code> — closed 예측을
+                  <code>outcome_date</code>로 train/test 분할, 각 구간을 50%
+                  귀무가설로 채점 후 <code>confirmed_alive</code> /
+                  <code>train_only</code> / <code>reversed</code> /
+                  <code>insufficient_oos</code> / <code>noise</code> 라벨.
+                  실데이터에서 <code>news</code>가 train_only(쇠퇴)로 식별. CLI
+                  <code>calibration</code>에 <code>signal_decay</code>,
+                  <code>weekly_calibration</code>에
+                  <code>decaying_signals</code> 노출.
+                </li>
+                <li>
+                  S4 (프롬프트): <code>/expect</code> Step 5b에 단계 역할 명시 —
+                  Quant(결정론적 ALGO/NEWS) &rarr; Director/Judge(LLM_CONTEXT
+                  디베이트) &rarr; Risk(Step 9 C2/C3 게이트).
+                </li>
+                <li>
+                  S6 (프롬프트): <code>LLM_CONTEXT_SCORE</code>를 Director
+                  thesis(선커밋) &rarr; Bull &rarr; Bear &rarr; Judge 산출물로
+                  재정의. 새 override 채널 없음, &minus;5..+3 범위·composite
+                  불변. <code>stock-research</code>에도 경량 Bull/Bear/Judge
+                  단계(3b) 추가.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">어떻게</div>
+              <p>
+                <code>SignalDecay</code> 데이터클래스 +
+                <code>get_signal_decay(min_count, oos_fraction=0.3)</code> +
+                <code>_decay_label</code>. S1의
+                <code>_signal_verdict</code> 재사용. 인덱스 기반 시간순
+                분할(<code>i &gt;= split_idx</code>) — 동일 날짜 군집 시 train이
+                비는 경계 문제를 방지.
+                <code>find_decaying_signals</code>(weekly_calibration)가
+                <code>train_only</code>·<code>reversed</code>만 surface. S4/S6은
+                결정론적 점수 표를 건드리지 않고 narrative 채널(Step 5b)의 추론
+                품질만 강화. TDD: S5 신규 테스트 6개, 전체 not-network 303 통과.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">코드 위치</div>
+              <p>
+                <code>mcp-prediction-store/metrics.py</code> &nbsp;
+                <code>mcp-prediction-store/tests/test_metrics.py</code> &nbsp;
+                <code>scheduler/weekly_calibration.py</code> &nbsp;
+                <code>scheduler/tests/test_weekly_calibration.py</code> &nbsp;
+                <code>stock_cli.py</code> &nbsp;
+                <code>.claude/skills/expect/SKILL.md</code> &nbsp;
+                <code>.claude/skills/stock-research/SKILL.md</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <ul>
+                <li>
+                  code-reviewer-pro (Critical): 같은 <code>outcome_date</code>
+                  군집 시 날짜기반 경계가 train을 비워 동작 신호도 noise 오분류
+                  → 인덱스 기반 분할로 변경. 회귀 테스트 추가.
+                </li>
+                <li>
+                  codex (gpt-5.5/high): (1) test 표본 0인데
+                  <code>train_only</code>로 false decay 보고(실데이터
+                  <code>fundamental</code>) → <code>insufficient_oos</code>
+                  가드 추가. (2) 동률 날짜 정렬 비결정성 →
+                  <code>ORDER BY outcome_date, created_at, id</code>로 안정화.
+                </li>
+                <li>
+                  수정 후 실데이터 라벨 정상화(<code>news</code>만 train_only,
+                  최근 표본 없는 신호는 <code>insufficient_oos</code>). 전체 303
+                  통과.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">회고</div>
+              <p>
+                <em>
+                  S5는 S1의 <code>_signal_verdict</code>를 재사용해 작게 확장 —
+                  train/test 분할만 추가. S4/S6를 새 override 없이 기존
+                  LLM_CONTEXT 채널 강화로 구현해 결정론적 composite 설계를
+                  보존(surgical). 프롬프트 변경(S4/S6)은 자동 테스트 불가 —
+                  디자인 일관성에 의존.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <article aria-labelledby="card-skill-cleanup-ko">
+            <h3 id="card-skill-cleanup-ko">Skill Cleanup</h3>
+
+            <div class="card-section">
+              <div class="card-label">왜</div>
+              <p>
+                59개 이상의 임포트된 스킬이 Claude Code의 트리거 라우터를
+                오염시켰습니다. <code>scenario-analyzer</code>는 일본어 전용
+                스킬임에도 한국어 키워드("시나리오")에 반응했습니다. Stage 4에서
+                <code>/expect</code>가 중앙 추천 엔진이 되면서 배당 세무, 통계적
+                차익거래, edge-pipeline 연구 티켓 등 전문화된 전략 스킬은 자산이
+                아닌 노이즈가 됐습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">무엇을</div>
+              <ul>
+                <li>
+                  완전 삭제 (11개): 어떤 파이프라인·스케줄러·다른 스킬에서도
+                  호출된 적 없는 순수 사문 코드.
+                  <code>downtrend-duration-analyzer</code>,
+                  <code>scenario-analyzer</code>,
+                  <code>stanley-druckenmiller-investment</code>,
+                  <code>exposure-coach</code> 등. 고아가 된
+                  <code>.claude/agents/</code>·<code>.claude/commands/</code>
+                  scaffolding도 함께 제거.
+                </li>
+                <li>
+                  아카이브 (19개) → <code>.claude/skills/_archived/</code>: 선행
+                  언더스코어가 Claude Code의 스킬 탐색 스캔에서 해당 디렉터리를
+                  제외. 그룹: edge-pipeline(7), kanchi-dividend(3), 전문
+                  전략(5), news 스텝 중복(3), US 13F(1).
+                </li>
+                <li>
+                  활성 스킬 31개로 정리.
+                  <code>CLAUDE.md</code>·<code>README.md</code>에 새 티어 분류와
+                  4개 정리 후 멀티스킬 워크플로우 반영.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">어떻게</div>
+              <p>
+                아카이브는 <code>git mv</code>(blame 보존), 삭제는
+                <code>git rm -r</code>. 신규
+                <code>.claude/skills/_archived/README.md</code>에 정책과 복구
+                절차 문서화. 검증: 테스트 152개 통과(파일시스템 변경만이므로
+                회귀 없음); 활성 스킬 수 31개 확인; 활성 스킬·스케줄러 스크립트
+                전체 grep 결과 삭제·아카이브된 이름에 대한 라이브 참조 없음.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">코드 위치</div>
+              <p>
+                <code>.claude/skills/_archived/README.md</code> &nbsp;
+                <code>CLAUDE.md</code> &nbsp;
+                <code>README.md:21-31</code> &nbsp;
+                <code>README.md:450-470</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <p>
+                이 단계는 디렉터리 레이아웃 정리이므로 공식 code-reviewer +
+                gemini-subagent 이중 리뷰 생략. 핵심 위험(삭제된 스킬에 대한
+                묵시적 의존) 은 green 테스트 스위트와 활성 스킬·스케줄러
+                스크립트 전체 grep으로 검증 — 라이브 참조 없음 확인.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">회고</div>
+              <p>
+                <em>
+                  삭제/아카이브 분리 기준이 명쾌하게 작동했습니다.
+                  <code>_archived/</code> 언더스코어 접두사 컨벤션이 활성 트리거
+                  풀을 오염시키지 않으면서 전체 스킬 내용을 보존합니다. 앞으로:
+                  스킬 정리 시 <code>.claude/agents/</code>·
+                  <code>.claude/commands/</code>의 고아 scaffolding도 함께
+                  확인할 것 — 스킬 전용 grep에서 놓치기 쉬운 파일들.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <article aria-labelledby="card-kr-universe-ko">
+            <h3 id="card-kr-universe-ko">Kr Universe Fallback</h3>
+
+            <div class="card-section">
+              <div class="card-label">왜</div>
+              <p>
+                Stage A(PR #12)에서 동적 candidate discovery를 도입했지만,
+                2026-05-13 production cron 실행 결과 PyKRX의 bulk-by-ticker
+                엔드포인트가 KRX upstream 응답 포맷 변경으로 모두 장애 상태임을
+                확인했습니다. <code>get_market_cap_by_ticker</code>,
+                <code>get_market_fundamental_by_ticker</code>,
+                <code>get_market_ohlcv_by_ticker</code>,
+                <code>get_market_ticker_list</code> 모두 동일 KeyError (PyKRX
+                1.2.4·1.2.8 공통). Universe 열거가 불가능해 anchors-only
+                fallback이 발동, 5/13 catalyst 종목(307950 +55%, 066570 +34%,
+                005380 +30%)이 프롬프트에 올라오지 못했습니다. 추가로 PR #12
+                머지 후 Copilot 자동 리뷰·codex <code>@codex review</code>에서
+                즉시 적용 가능한 surgical fix 7건이 도착했습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">무엇을</div>
+              <ul>
+                <li>
+                  신규 파일 <code>data/kr_universe.csv</code> — 166개 curated
+                  ticker (KOSPI 110 + KOSDAQ 36 + ETF 20). 5/13 catalyst 5종목
+                  전원 포함.
+                </li>
+                <li>
+                  <code>scheduler/candidate_discovery.py</code>:
+                  <code>_load_static_universe()</code>(CSV → ticker 리스트),
+                  <code>_load_static_universe_names()</code>(ticker → name 매핑,
+                  <code>_fill_names</code>의 first-tier fallback),
+                  <code>enumerate_kr_universe()</code> 재작성(PyKRX 시도 → 실패
+                  시 CSV fallback → 둘 다 실패 시 <code>[]</code>
+                  반환으로 anchors-only 안전망 유지).
+                </li>
+                <li>
+                  Codex/Copilot 리뷰 fix 7건 적용: subsequence 기반 테마 dedup
+                  (C1), PyKRX import를 <code>try</code> 블록 내부로 이동(C2),
+                  헤드라인별 n-gram dedup(C3), confidence floor 0.60으로 상향
+                  (C4), dead 변수 제거, docstring 수정, fixture 명세 보강.
+                </li>
+                <li>
+                  회귀 테스트 4건 신규 추가: CSV fallback, 양쪽 실패 시 안전망,
+                  별개 테마 동시 생존, 반복 n-gram 카운트 정확성.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">어떻게</div>
+              <p>
+                CSV 컬럼 3개(<code>ticker, name, market_segment</code>).
+                <code>market_segment</code>는 Stage 3 코드에서 미사용이지만 향후
+                KOSPI/KOSDAQ/ETF 필터를 CSV 재발행 없이 활용 가능하도록 의도적
+                보존(YAGNI vs 확장성 trade-off). CSV 모드에서 cap/value는
+                <code>None</code> — stale 값보다 정직. 순위는
+                <code>score_and_filter</code>(<code
+                  >get_price_history_batch</code
+                >
+                + <code>|return_5d|</code>/<code>vol_ratio</code> 임계값)가
+                담당하므로 CSV ticker 순서 무관. stale ticker(상장폐지·합병
+                등)는 score 필터가 자동 skip하고 INFO 레벨로 로그 — 운영자가
+                cron 로그에서 바로 식별 가능. 테스트는
+                <code>monkeypatch.setattr</code>으로
+                <code>STATIC_UNIVERSE_PATH</code>를 교체해 양쪽 실패 시나리오를
+                정확히 검증.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">코드 위치</div>
+              <p>
+                <code>data/kr_universe.csv</code> &nbsp;
+                <code>scheduler/candidate_discovery.py:96-227</code> &nbsp;
+                <code>scheduler/candidate_discovery.py:434-475</code> &nbsp;
+                <code>scheduler/theme_clusterer.py:275-355</code> &nbsp;
+                <code>scheduler/daily_briefing.py:123</code> &nbsp;
+                <code>scheduler/daily_briefing.py:376,444</code> &nbsp;
+                <code>scheduler/tests/test_candidate_discovery.py:153-203</code>
+                &nbsp;
+                <code>scheduler/tests/test_theme_clusterer.py:130-180</code>
+                &nbsp;
+                <code>docs/stage-2/theme-clusterer.md:107-113</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <ul>
+                <li>
+                  code-reviewer-pro: Critical 없음. 적용:
+                  <code>score_and_filter</code>에 stale ticker 로깅;
+                  <code>_is_subseq</code> docstring에 예시 4개 추가;
+                  <code>_fill_names</code> two-pass 인라인 주석;
+                  <code>market_segment</code> 설계 의도 문서화.
+                </li>
+                <li>
+                  gemini: 블로커 없음. 적용:
+                  <code>_load_static_universe_names</code>
+                  docstring 수정("lazy" → 매 호출 disk read). Codex C1/C3/C4/C2
+                  모두 senior-level defensive coding으로 평가.
+                </li>
+                <li>
+                  codex review: P1 finding(<code>models.py</code> migration +
+                  CHECK constraint)은 본 staged diff 범위 외 —
+                  <code>models.py</code>
+                  미포함. 별도 prediction-store PR으로 처리 권장.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">회고</div>
+              <p>
+                <em>
+                  CSV maintenance debt: 166개 중 3개 ticker(010620, 003410,
+                  091990)가 데이터 없음 — 상장폐지·합병 추정. score 필터가 자동
+                  skip하지만 cron마다 +5-15s retry overhead 발생. Stage 4에서
+                  정리 예정. PyKRX upstream 패치가 나오면 live path가 자동으로
+                  재활성화 — CSV 코드 경로는 사라지지 않고 영구 안전망으로 유지.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; 3단계 &mdash; Tier 2 OOS / 스킬 정리 / KR
+      Universe Fallback
+    </footer>
+  </body>
+</html>
