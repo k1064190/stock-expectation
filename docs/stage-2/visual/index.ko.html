@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.7;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="언어"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-node.past .label {
+        color: var(--accent-muted);
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a>
+        &nbsp;|&nbsp;
+        <span class="lang-current">한국어</span>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="단계 타임라인">
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">0단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">1단계</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">2단계</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage2-heading">
+        <h2 id="stage2-heading">2단계</h2>
+        <p class="stage-summary">
+          920건 전수 분석에서 드러난 구조적 버그 3종(BEAR 부호 오염·store 중복
+          삽입·백필 마이그레이션)을 수정했습니다.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-bear-dedup-ko">
+            <h3 id="card-bear-dedup-ko">Bear Sign Gate Dedup</h3>
+
+            <div class="card-section">
+              <div class="card-label">왜</div>
+              <p>
+                920건 전수 분석에서 구조적 버그·데이터 오염이 드러났습니다:
+                <code>outcome_return</code> 부호 버그(BEAR HIT 음수, MISS 양수)
+                → 모든 수익률 지표 오염; LIVE BEAR 승률 0%인데 계속 생성; 같은
+                종목 하루 18행 중복; <code>analysis_group_id</code> 미사용.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">무엇을</div>
+              <ul>
+                <li>
+                  2.1 BEAR 부호: <code>outcome_return</code>을 포지션 수익률로
+                  재정의 (BEAR = &minus;price_change). BULL/NEUTRAL 불변.
+                </li>
+                <li>
+                  2.2 store 게이트: <code>insert_prediction</code>이 LIVE + BEAR
+                  거부, 같은 6키 OPEN 중복 거부. 부분 UNIQUE 인덱스로 동시성
+                  백스톱.
+                </li>
+                <li>
+                  2.3 group_id: daily-briefing 프롬프트에 종목별
+                  <code>--analysis-group-id</code> 지침 추가.
+                </li>
+                <li>
+                  2.4 백필: 1회성 마이그레이션으로 과거 BEAR 부호 반전 +
+                  동일-6키 중복 제거. 백업 후 실행.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">어떻게</div>
+              <p>
+                <code>evaluate_prediction</code>:
+                <code>signed = -pct_change if BEAR else pct_change</code>. 중복
+                키 = (ticker, market, direction, timeframe, source,
+                date(created_at)) — live 가드·마이그레이션·UNIQUE 인덱스 3곳
+                모두 동일 키(<code>entry_price</code> 제외). 마이그레이션:
+                원자적 <code>BEGIN</code>/rollback 트랜잭션,
+                <code>_migrations</code> 마커로 재실행 차단,
+                <code>SQLite Connection.backup()</code>로 WAL 포함 일관 백업.
+                TDD 전체 not-network 293 통과. 실DB: 920→732행(중복 188개 제거),
+                BEAR 부호 반전 38건.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">코드 위치</div>
+              <p>
+                <code>scheduler/outcome_tracker.py:140</code> &nbsp;
+                <code>mcp-prediction-store/models.py</code> &nbsp;
+                <code>scripts/migrate_bear_returns_dedup.py</code> &nbsp;
+                <code>scripts/tests/test_migrate.py</code> &nbsp;
+                <code>.claude/skills/daily-briefing/SKILL.md</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">회고</div>
+              <p>
+                <em>
+                  키 불일치를 리뷰가 잡아준 게 핵심이었습니다 — live
+                  가드·마이그레이션·UNIQUE 인덱스 3곳이 단일 키로 수렴해야 dedup
+                  일관성이 보장됩니다. 백필이 비가역이라 백업→복원→재실행으로
+                  안전하게 키 변경을 반영했습니다. BEAR LIVE 게이트와 프롬프트
+                  BEAR 바가 이중 방어선을 형성합니다.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; 2단계 &mdash; BEAR Sign Gate Dedup
+    </footer>
+  </body>
+</html>

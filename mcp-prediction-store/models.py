@@ -80,7 +80,9 @@ class Prediction:
         status: Current prediction status.
         outcome_price: Final price when prediction closed.
         outcome_date: When the prediction was resolved.
-        outcome_return: Percentage return from entry to outcome.
+        outcome_return: Position return (%) from entry to outcome. Sign is
+            relative to the predicted direction: for BEAR a price drop is a
+            positive return. BULL/NEUTRAL equal the raw price change.
         analysis_group_id: Optional UUID shared by predictions that come
             from the same multi-horizon analysis (e.g. the 4 horizons emitted
             by a single ``/expect MU`` run). Legacy predictions have None.
@@ -141,19 +143,65 @@ CREATE_INDEX_STMTS = (
     "CREATE INDEX IF NOT EXISTS idx_predictions_group ON predictions(analysis_group_id)",
 )
 
+# Partial UNIQUE index = atomic backstop for the same-day duplicate guard in
+# insert_prediction (the SELECT-then-INSERT check is not race-safe under
+# concurrent writers). Scoped to OPEN rows so a fresh prediction is allowed once
+# the prior same-key one closes. Created separately so we can self-heal if a
+# pre-existing database still carries OPEN duplicates (see _create_schema).
+OPEN_DEDUP_INDEX_STMT = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_open_dedup "
+    "ON predictions(ticker, market, direction, timeframe, source, date(created_at)) "
+    "WHERE status = 'OPEN'"
+)
+
+# Collapse pre-existing OPEN duplicates (keep the earliest) so the UNIQUE index
+# can be created on a database that predates the dedup guard. Same key as the
+# index and the insert guard.
+_DEDUP_OPEN_ROWS_STMT = (
+    "DELETE FROM predictions WHERE status = 'OPEN' AND rowid NOT IN ("
+    "  SELECT MIN(rowid) FROM predictions WHERE status = 'OPEN'"
+    "  GROUP BY ticker, market, direction, timeframe, source, date(created_at)"
+    ")"
+)
+
 
 def _create_schema(conn: sqlite3.Connection) -> None:
-    """Run the table + index DDL via ``execute`` (not ``executescript``).
+    """Create the table + the non-unique indexes via ``execute``.
 
     Why not ``executescript``: it implicitly commits the surrounding
     transaction per Python's sqlite3 contract, which would defeat the
     atomicity guarantee of the migration's ``with conn:`` block. By
     issuing each statement individually we stay inside whatever
     transaction the caller opened.
+
+    The partial UNIQUE dedup index is intentionally NOT created here — it is
+    created by ``_ensure_open_dedup_index`` *after* any legacy-row copy, because
+    building it on an empty table and then bulk-inserting legacy rows with OPEN
+    duplicates would fail the UNIQUE constraint and brick the connection.
     """
     conn.execute(CREATE_TABLE_STMT)
     for stmt in CREATE_INDEX_STMTS:
         conn.execute(stmt)
+
+
+def _ensure_open_dedup_index(conn: sqlite3.Connection) -> None:
+    """Create the partial UNIQUE dedup index, self-healing if needed.
+
+    Must run only once all rows are present (i.e. after the legacy migration
+    copies rows back). If a database predating the dedup guard still holds OPEN
+    duplicates, the UNIQUE index creation raises, so we collapse those
+    duplicates (keeping the earliest) and retry once rather than failing to open
+    the database.
+    """
+    try:
+        conn.execute(OPEN_DEDUP_INDEX_STMT)
+    except sqlite3.IntegrityError:
+        conn.execute(_DEDUP_OPEN_ROWS_STMT)
+        conn.execute(OPEN_DEDUP_INDEX_STMT)
+        # The DELETE opened an implicit transaction; commit it so the cleanup
+        # and index survive even when the first caller is read-only (a
+        # read-only connection would otherwise roll both back on close).
+        conn.commit()
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -180,6 +228,9 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # ``no such column`` on a legacy DB if we created indexes first.
     _migrate_schema_if_needed(conn)
     _create_schema(conn)
+    # Build the UNIQUE dedup index last — after any legacy rows have been
+    # copied back by the migration — and self-heal pre-existing OPEN dupes.
+    _ensure_open_dedup_index(conn)
     return conn
 
 
@@ -288,13 +339,55 @@ def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
     """Insert a new prediction into the database.
 
+    Two guards run before insertion:
+
+    1. LIVE BEAR predictions are hard-rejected. The track record shows a ~0%
+       hit rate for automated BEAR calls, so the scheduler must not log them.
+       Manual (INTERACTIVE) BEAR is still allowed as a deliberate override.
+    2. Same-day duplicates are rejected: a second OPEN row matching an existing
+       one on (ticker, market, direction, timeframe, source, created date)
+       indicates a re-run logging the same call twice. Different timeframes
+       (normal multi-horizon rows) and re-predictions after the prior one
+       closed are both allowed.
+
     Args:
         conn: SQLite connection.
         pred: Prediction to insert.
 
     Returns:
         The inserted Prediction.
+
+    Raises:
+        ValueError: If the prediction is a LIVE BEAR call or a same-day
+            duplicate of an existing OPEN prediction.
     """
+    if pred.source == "LIVE" and pred.direction == "BEAR":
+        raise ValueError(
+            "LIVE BEAR predictions are gated (measured win rate ~0%); "
+            "use direction NEUTRAL or source INTERACTIVE."
+        )
+
+    dupe = conn.execute(
+        """SELECT 1 FROM predictions
+           WHERE ticker = ? AND market = ? AND direction = ? AND timeframe = ?
+             AND source = ? AND status = 'OPEN'
+             AND date(created_at) = date(?)
+           LIMIT 1""",
+        (
+            pred.ticker,
+            pred.market,
+            pred.direction,
+            pred.timeframe,
+            pred.source,
+            pred.created_at,
+        ),
+    ).fetchone()
+    if dupe is not None:
+        raise ValueError(
+            f"duplicate same-day prediction: an OPEN {pred.direction} "
+            f"{pred.timeframe} {pred.ticker} ({pred.source}) already exists today"
+        )
+
     conn.execute(
         """INSERT INTO predictions
            (id, created_at, ticker, market, direction, confidence, timeframe,

@@ -102,6 +102,8 @@ def test_list_predictions_with_status_filter(db_conn):
         timeframe="1W",
         reasoning="test",
         entry_price=400.0,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred1)
     insert_prediction(db_conn, pred2)
@@ -234,6 +236,8 @@ def test_analysis_group_id_roundtrip(db_conn):
         reasoning="cycle",
         entry_price=426.56,
         analysis_group_id=group_id,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred_short)
     insert_prediction(db_conn, pred_cycle)
@@ -273,6 +277,168 @@ def test_timeframe_6m_accepted(db_conn):
     assert fetched.timeframe == "6M"
 
 
+# ---------------------------------------------------------------------------
+# Stage 2: store-layer LIVE BEAR gate + same-day duplicate guard
+# ---------------------------------------------------------------------------
+
+
+def _pred(ticker="NVDA", direction="BULL", timeframe="1W", source="LIVE"):
+    return Prediction(
+        ticker=ticker,
+        market="US",
+        direction=direction,
+        confidence=0.6,
+        timeframe=timeframe,
+        reasoning="test",
+        entry_price=100.0,
+        source=source,
+    )
+
+
+def test_live_bear_is_rejected(db_conn):
+    """LIVE BEAR predictions are hard-gated (measured win rate ~0%)."""
+    with pytest.raises(ValueError, match="BEAR"):
+        insert_prediction(db_conn, _pred(direction="BEAR", source="LIVE"))
+
+
+def test_interactive_bear_is_allowed(db_conn):
+    """INTERACTIVE BEAR (manual override) is still permitted."""
+    pred = _pred(direction="BEAR", source="INTERACTIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_live_bull_is_allowed(db_conn):
+    """The gate only blocks BEAR — LIVE BULL is unaffected."""
+    pred = _pred(direction="BULL", source="LIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_duplicate_same_day_open_is_rejected(db_conn):
+    """A second OPEN row with the same (ticker, market, direction, timeframe,
+    source, created date) is a same-day duplicate and is rejected."""
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+    with pytest.raises(ValueError, match="duplicate"):
+        insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+
+
+def test_duplicate_different_timeframe_is_allowed(db_conn):
+    """Same ticker, different timeframe is a normal multi-horizon row."""
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1W"))
+    insert_prediction(db_conn, _pred(ticker="AMD", timeframe="1M"))
+    assert len(list_predictions(db_conn, ticker="AMD")) == 2
+
+
+def test_create_schema_self_heals_legacy_open_duplicates():
+    """A legacy DB with OPEN duplicates is cleaned, not bricked, on connect."""
+    import models
+
+    raw = sqlite3.connect(":memory:")
+    raw.execute(models.CREATE_TABLE_STMT)
+    # Two OPEN rows with the same dedup key (simulates a pre-guard database).
+    for i in (1, 2):
+        raw.execute(
+            "INSERT INTO predictions (id, created_at, ticker, market, direction, "
+            "confidence, timeframe, reasoning, entry_price, signals_used, source, "
+            "status) VALUES (?, ?, 'AMD', 'US', 'BULL', 0.6, '1W', 'x', 100.0, "
+            "'[]', 'LIVE', 'OPEN')",
+            (f"id{i}", f"2026-05-18T0{i}:00:00+00:00"),
+        )
+    raw.commit()
+
+    # Should NOT raise despite the duplicate OPEN rows.
+    models._create_schema(raw)
+    models._ensure_open_dedup_index(raw)
+
+    remaining = raw.execute(
+        "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
+    ).fetchone()[0]
+    assert remaining == 1  # collapsed to the earliest
+    idx = raw.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_predictions_open_dedup'"
+    ).fetchone()
+    assert idx is not None
+    raw.close()
+
+
+def test_legacy_migration_with_open_dupes_does_not_brick():
+    """A legacy DB (no analysis_group_id) holding OPEN duplicates migrates and
+    self-heals via get_connection instead of failing the UNIQUE copy."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = Path(f.name)
+    try:
+        legacy = sqlite3.connect(str(db_path))
+        # Legacy schema: no analysis_group_id column, no dedup index.
+        legacy.execute(
+            "CREATE TABLE predictions ("
+            "id TEXT PRIMARY KEY, created_at TEXT, ticker TEXT, market TEXT, "
+            "direction TEXT, confidence REAL, timeframe TEXT, reasoning TEXT, "
+            "entry_price REAL, signals_used TEXT, source TEXT, target_price REAL, "
+            "stop_price REAL, status TEXT, outcome_price REAL, outcome_date TEXT, "
+            "outcome_return REAL)"
+        )
+        for i in (1, 2):
+            legacy.execute(
+                "INSERT INTO predictions (id, created_at, ticker, market, "
+                "direction, confidence, timeframe, reasoning, entry_price, "
+                "signals_used, source, status) VALUES (?, ?, 'AMD', 'US', 'BULL', "
+                "0.6, '1W', 'x', 100.0, '[]', 'LIVE', 'OPEN')",
+                (f"id{i}", f"2026-05-18T0{i}:00:00+00:00"),
+            )
+        legacy.commit()
+        legacy.close()
+
+        # Should migrate (add analysis_group_id) AND dedup the OPEN rows.
+        # Simulate a read-only first caller (no writes/commit of its own) to
+        # confirm the self-heal cleanup + index are committed, not rolled back.
+        conn = get_connection(db_path)
+        conn.close()
+
+        # Reopen: the dedup and the UNIQUE index must have persisted.
+        conn = get_connection(db_path)
+        try:
+            assert (
+                conn.execute(
+                    "SELECT COUNT(*) FROM predictions WHERE ticker='AMD'"
+                ).fetchone()[0]
+                == 1
+            )
+            assert (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='index' "
+                    "AND name='idx_predictions_open_dedup'"
+                ).fetchone()
+                is not None
+            )
+        finally:
+            conn.close()
+    finally:
+        db_path.unlink(missing_ok=True)
+        Path(str(db_path) + "-wal").unlink(missing_ok=True)
+        Path(str(db_path) + "-shm").unlink(missing_ok=True)
+
+
+def test_open_dedup_unique_index_exists(db_conn):
+    """The partial UNIQUE index backstops the same-day duplicate guard."""
+    row = db_conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' "
+        "AND name='idx_predictions_open_dedup'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_duplicate_allowed_after_prior_closed(db_conn):
+    """Once the prior prediction is closed, a fresh same-key one is allowed."""
+    first = _pred(ticker="AMD", timeframe="1W")
+    insert_prediction(db_conn, first)
+    update_prediction_outcome(db_conn, first.id, "HIT", 110.0, 10.0)
+    second = _pred(ticker="AMD", timeframe="1W")
+    insert_prediction(db_conn, second)
+    assert get_prediction(db_conn, second.id) is not None
+
+
 def test_timeframe_1y_accepted(db_conn):
     """Schema accepts the newly added 1Y timeframe."""
     pred = Prediction(
@@ -283,6 +449,8 @@ def test_timeframe_1y_accepted(db_conn):
         timeframe="1Y",
         reasoning="cycle peak risk",
         entry_price=120.0,
+        # INTERACTIVE: LIVE BEAR is hard-rejected by the store gate.
+        source="INTERACTIVE",
     )
     insert_prediction(db_conn, pred)
     fetched = get_prediction(db_conn, pred.id)

@@ -271,7 +271,11 @@ Direction = BULL / BEAR / NEUTRAL. Confidence ∈ [0.50, 0.85] using the 4-signa
 
 **Conflict gate (RULE C1 — Cycle vs Short):** If `cycle.direction == BEAR` and `short.direction == BULL`, cap composite confidence at 0.60 and emit "⚠️ CYCLE RISK" in the per-stock detail.
 
-Save each horizon ≥ 0.60 confidence as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock:
+**Risk/edge gate (RULE C2 — reward:risk floor):** Before saving any directional horizon, compute reward:risk from the entry/target/stop you would log: `reward = |target − entry|`, `risk = |entry − stop|`. If `reward / risk < 1.5`, the edge is too thin — **do not log a directional row**; downgrade that horizon to NEUTRAL (which is not saved). This kills low-edge predictions that dilute the track record.
+
+**BEAR edge bar (RULE C3 — higher bar for downside calls):** Our measured BEAR hit rate is ~6% vs ~61% for BULL — the system cannot reliably forecast declines. Therefore a BEAR horizon may only be logged when **all** of: (a) ≥3-signal alignment, (b) macro/cycle confirmation present (`LLM_CONTEXT_SCORE ≤ −2.0` **or** `cycle_risk_flag == True`), and (c) reward:risk ≥ 2.0. Otherwise emit NEUTRAL instead of BEAR. Note: under `--source LIVE` the prediction store **hard-rejects BEAR rows** (they error out), so for scheduler/cron runs always resolve a would-be BEAR to NEUTRAL rather than attempting to save it.
+
+Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Recalibrate confidence first:** apply the `recalibration_map` from the Step 1 calibration call to your raw confidence before saving (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6:
 
 ```bash
 GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")

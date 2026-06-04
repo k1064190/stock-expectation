@@ -16,7 +16,13 @@ from models import (
     insert_prediction,
     update_prediction_outcome,
 )
-from metrics import get_track_record, get_calibration_report, get_signal_performance
+from metrics import (
+    get_track_record,
+    get_calibration_report,
+    get_signal_performance,
+    build_recalibration_map,
+    apply_recalibration,
+)
 
 
 @pytest.fixture
@@ -278,3 +284,97 @@ def test_signal_performance_multiple_signals(db_conn):
 
     breadth = next(s for s in result if s.signal == "breadth")
     assert breadth.win_rate == pytest.approx(0.8, rel=0.01)
+
+
+# ---------------------------------------------------------------------------
+# S1: significance-tested signal verdicts (alive / weak / dead)
+# ---------------------------------------------------------------------------
+
+
+def _seed_signal(db_conn, signal, n_wins, n_losses):
+    """Insert n_wins HIT + n_losses MISS predictions all tagged with `signal`."""
+    i = 0
+    for _ in range(n_wins):
+        p = _make_prediction(f"{signal}_W{i}", signals=[signal])
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+        i += 1
+    for _ in range(n_losses):
+        p = _make_prediction(f"{signal}_L{i}", signals=[signal])
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "MISS", 95.0, -5.0)
+        i += 1
+
+
+def test_binomial_handles_large_n_without_overflow():
+    """Exact binomial stays finite for large n (no comb()->float overflow)."""
+    from metrics import _binomial_two_sided_p
+
+    # n=1100 overflowed the old comb(n,i)*float implementation.
+    assert _binomial_two_sided_p(550, 1100) == pytest.approx(1.0, abs=0.05)
+    # A strong skew at large n is highly significant.
+    assert _binomial_two_sided_p(700, 1100) < 0.001
+
+
+def test_signal_verdict_dead(db_conn):
+    """A signal that loses far more than a coin flip is flagged 'dead'."""
+    _seed_signal(db_conn, "valuation", n_wins=0, n_losses=12)
+    result = get_signal_performance(db_conn, min_count=5)
+    sig = next(s for s in result if s.signal == "valuation")
+    assert sig.verdict == "dead"
+    assert sig.p_value < 0.05
+
+
+def test_signal_verdict_alive(db_conn):
+    """A signal that wins far more than a coin flip is flagged 'alive'."""
+    _seed_signal(db_conn, "momentum", n_wins=12, n_losses=1)
+    result = get_signal_performance(db_conn, min_count=5)
+    sig = next(s for s in result if s.signal == "momentum")
+    assert sig.verdict == "alive"
+    assert sig.p_value < 0.05
+
+
+def test_signal_verdict_weak(db_conn):
+    """A near-coin-flip signal is 'weak' (not statistically distinguishable)."""
+    _seed_signal(db_conn, "cycle", n_wins=6, n_losses=5)
+    result = get_signal_performance(db_conn, min_count=5)
+    sig = next(s for s in result if s.signal == "cycle")
+    assert sig.verdict == "weak"
+    assert sig.p_value >= 0.05
+
+
+# ---------------------------------------------------------------------------
+# S3: confidence recalibration from the calibration curve
+# ---------------------------------------------------------------------------
+
+
+def test_recalibration_map_is_monotonic(db_conn):
+    """The recalibration map's actual-accuracy anchors are non-decreasing."""
+    # Bucket 0.6-0.7: overconfident (50% actual); bucket 0.8-0.9: well-calibrated.
+    for i in range(10):
+        p = _make_prediction(f"LOW{i}", confidence=0.65)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT" if i < 5 else "MISS", 100.0, 0.0)
+    for i in range(10):
+        p = _make_prediction(f"HIGH{i}", confidence=0.85)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT" if i < 8 else "MISS", 100.0, 0.0)
+
+    recal = build_recalibration_map(db_conn)
+    actuals = [actual for _, actual in recal]
+    assert actuals == sorted(actuals)
+
+
+def test_apply_recalibration_corrects_overconfidence(db_conn):
+    """Raw 0.65 confidence in an overconfident bucket maps down toward 0.5."""
+    for i in range(10):
+        p = _make_prediction(f"OC{i}", confidence=0.65)
+        insert_prediction(db_conn, p)
+        update_prediction_outcome(db_conn, p.id, "HIT" if i < 5 else "MISS", 100.0, 0.0)
+    recal = build_recalibration_map(db_conn)
+    assert apply_recalibration(0.65, recal) == pytest.approx(0.5, abs=0.05)
+
+
+def test_apply_recalibration_empty_map_is_identity():
+    """With no calibration data, recalibration returns the raw confidence."""
+    assert apply_recalibration(0.6, []) == 0.6

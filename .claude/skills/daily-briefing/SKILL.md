@@ -188,22 +188,31 @@ Section 3 (시장 환경 분석) 결과 + 섹터 lifecycle + narrative themes �
 
 BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).
 
+**종목별 `analysis_group_id` 부여**: 종목마다 UUID를 한 번 생성하고, 그 종목에서 등록하는
+모든 예측 행에 동일한 `--analysis-group-id`로 전달한다(`/expect`와 동일 패턴). 그래야 한 분석에서
+나온 행들을 묶어 추적/중복 식별이 가능하다. 종목이 바뀌면 새 UUID를 생성한다.
+
 ```bash
+GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")
+
 bin/stock-cli predict create \
   --ticker 005930 --market KR --direction BULL \
   --confidence 0.62 --timeframe 1M \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
-  --source LIVE
+  --source LIVE \
+  --analysis-group-id "$GROUP_ID"
 ```
 
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
+- **재보정 적용**: `bin/stock-cli calibration` 출력의 `recalibration_map`을 raw confidence에 적용해 등록 (예: 과신 구간 0.62 → ~0.50). 관측 정확도를 반영하기 위함.
 - 최소 2개 signal 명시 (signals_used). `llm_context` 시그널은 `LLM_CONTEXT_SCORE`가 0이 아닐 때만 포함 (주별 calibration이 이 시그널 단독 측정)
 - KR 종목 기본 timeframe 1M (유동성 낮음 고려)
 - US 종목 기본 timeframe 1W
-- Target ≥ 2 × Stop 거리 (2:1 reward/risk)
+- **리스크/엣지 게이트 (필수)**: `reward = |target − entry|`, `risk = |entry − stop|`. `reward/risk < 1.5`면 엣지가 얇으므로 **등록하지 말 것**(WATCH/HOLD로 정보만 제공). Target ≥ 2 × Stop 거리(2:1) 권장.
+- **BEAR 상향 바**: 측정된 BEAR 적중률 ~6%(BULL ~61%) — 하락 예측은 신뢰 불가. BEAR는 (a) ≥3 signal 정렬, (b) 매크로/사이클 확인(`LLM_CONTEXT ≤ −2.0` 또는 `cycle_risk_flag=True`), (c) reward:risk ≥ 2.0 **모두** 충족할 때만 등록. 미충족 시 등록 생략. **`--source LIVE`에서는 store가 BEAR 행을 하드 거부(에러)하므로 cron 실행 시 BEAR는 절대 등록 시도하지 말 것.**
 - 자동 cron이면 `--source LIVE`, 대화형이면 `--source INTERACTIVE`
 
 ### 6. 포트폴리오 액션 추천 (보유 종목 있을 때)

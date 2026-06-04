@@ -94,19 +94,26 @@ def test_bull_still_open():
 
 
 def test_bear_hit_with_target():
-    """BEAR prediction hits when price <= target."""
+    """BEAR prediction hits when price <= target.
+
+    outcome_return is the POSITION return: a 12% price drop is a +12% gain to
+    a short/bearish position.
+    """
     pred = _pred(direction="BEAR", entry=100.0, target=90.0)
     status, ret = evaluate_prediction(pred, current_price=88.0)
     assert status == "HIT"
-    assert ret == -12.0
+    assert ret == 12.0
 
 
 def test_bear_miss_with_stop():
-    """BEAR prediction misses when price >= stop."""
+    """BEAR prediction misses when price >= stop.
+
+    A 6% price rise is a -6% loss to a bearish position.
+    """
     pred = _pred(direction="BEAR", entry=100.0, stop=105.0)
     status, ret = evaluate_prediction(pred, current_price=106.0)
     assert status == "MISS"
-    assert ret == 6.0
+    assert ret == -6.0
 
 
 def test_bear_still_open():
@@ -114,6 +121,8 @@ def test_bear_still_open():
     pred = _pred(direction="BEAR", entry=100.0, target=90.0, stop=105.0)
     status, ret = evaluate_prediction(pred, current_price=97.0)
     assert status is None
+    # Price fell 3% → +3% to the bearish position.
+    assert ret == 3.0
 
 
 # --- NEUTRAL predictions ---

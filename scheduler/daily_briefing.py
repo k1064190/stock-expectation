@@ -813,6 +813,18 @@ def log_predictions(predictions: list[dict]) -> int:
                 logger.warning("Skipping invalid prediction: %s", p)
                 continue
 
+            # LIVE BEAR predictions are gated at the store (measured ~0% win
+            # rate). Skip them explicitly here so they are an intentional,
+            # visible no-op rather than an opaque insert error swallowed below.
+            if pred.direction == "BEAR":
+                logger.info(
+                    "Skipping LIVE BEAR prediction (gated): %s %s %s",
+                    pred.ticker,
+                    pred.market,
+                    pred.timeframe,
+                )
+                continue
+
             insert_prediction(conn, pred)
             logged += 1
             logger.info(

@@ -40,3 +40,6 @@ data/neo4j/
 
 # Local env (NEO4J_PASSWORD etc.)
 .env
+
+# External repos cloned for benchmarking/analysis (not part of this project)
+research/external/
