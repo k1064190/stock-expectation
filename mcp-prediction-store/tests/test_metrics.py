@@ -20,6 +20,7 @@ from metrics import (
     get_track_record,
     get_calibration_report,
     get_signal_performance,
+    get_signal_decay,
     build_recalibration_map,
     apply_recalibration,
 )
@@ -346,6 +347,111 @@ def test_signal_verdict_weak(db_conn):
 # ---------------------------------------------------------------------------
 # S3: confidence recalibration from the calibration curve
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# S5: out-of-sample (train/test) signal decay grading
+# ---------------------------------------------------------------------------
+
+_TRAIN_DATE = "2026-01-15T00:00:00+00:00"
+_TEST_DATE = "2026-05-15T00:00:00+00:00"
+
+
+def _closed_signal_row(db_conn, signal, status, outcome_date, ticker):
+    """Insert one closed prediction for `signal` with an explicit outcome_date."""
+    p = _make_prediction(ticker, signals=[signal])
+    insert_prediction(db_conn, p)
+    update_prediction_outcome(db_conn, p.id, status, 100.0, 0.0)
+    db_conn.execute(
+        "UPDATE predictions SET outcome_date = ? WHERE id = ?", (outcome_date, p.id)
+    )
+    db_conn.commit()
+
+
+def _seed_decay(db_conn, signal, train_wins, train_losses, test_wins, test_losses):
+    i = 0
+    for _ in range(train_wins):
+        _closed_signal_row(db_conn, signal, "HIT", _TRAIN_DATE, f"{signal}TR{i}")
+        i += 1
+    for _ in range(train_losses):
+        _closed_signal_row(db_conn, signal, "MISS", _TRAIN_DATE, f"{signal}TR{i}")
+        i += 1
+    for _ in range(test_wins):
+        _closed_signal_row(db_conn, signal, "HIT", _TEST_DATE, f"{signal}TE{i}")
+        i += 1
+    for _ in range(test_losses):
+        _closed_signal_row(db_conn, signal, "MISS", _TEST_DATE, f"{signal}TE{i}")
+        i += 1
+
+
+def test_signal_decay_confirmed_alive(db_conn):
+    """Alive in both train and test → confirmed_alive."""
+    _seed_decay(
+        db_conn, "momentum", train_wins=10, train_losses=0, test_wins=9, test_losses=1
+    )
+    result = get_signal_decay(db_conn, min_count=5, oos_fraction=0.5)
+    sig = next(s for s in result if s.signal == "momentum")
+    assert sig.train_verdict == "alive"
+    assert sig.test_verdict == "alive"
+    assert sig.label == "confirmed_alive"
+
+
+def test_signal_decay_train_only(db_conn):
+    """Alive historically but only a coin flip recently → train_only (decaying)."""
+    _seed_decay(
+        db_conn,
+        "fundamental",
+        train_wins=10,
+        train_losses=0,
+        test_wins=5,
+        test_losses=5,
+    )
+    result = get_signal_decay(db_conn, min_count=5, oos_fraction=0.5)
+    sig = next(s for s in result if s.signal == "fundamental")
+    assert sig.train_verdict == "alive"
+    assert sig.test_verdict == "weak"
+    assert sig.label == "train_only"
+
+
+def test_signal_decay_reversed_out_of_sample(db_conn):
+    """Worked in train but flipped to a significant loser in test → reversed."""
+    _seed_decay(
+        db_conn, "cycle", train_wins=10, train_losses=0, test_wins=0, test_losses=10
+    )
+    result = get_signal_decay(db_conn, min_count=5, oos_fraction=0.5)
+    sig = next(s for s in result if s.signal == "cycle")
+    assert sig.test_verdict == "dead"
+    assert sig.label == "reversed"
+
+
+def test_signal_decay_insufficient_oos_when_no_test_samples(db_conn):
+    """A signal with only train-window data has no OOS sample to judge → it must
+    NOT be reported as decayed (train_only); label is insufficient_oos."""
+    # All in the train window; plus filler in the test window for OTHER tickers
+    # so the global split actually leaves a recent window.
+    _seed_decay(
+        db_conn, "valuation", train_wins=10, train_losses=0, test_wins=0, test_losses=0
+    )
+    _seed_decay(
+        db_conn, "filler", train_wins=0, train_losses=0, test_wins=6, test_losses=6
+    )
+    result = get_signal_decay(db_conn, min_count=5, oos_fraction=0.5)
+    sig = next(s for s in result if s.signal == "valuation")
+    assert sig.test_total == 0
+    assert sig.label == "insufficient_oos"
+
+
+def test_signal_decay_handles_same_date_clustering(db_conn):
+    """All outcomes on the same date must still split by index, not collapse the
+    train window to empty (which would mislabel a live signal as noise)."""
+    # 20 wins all on the same date: an index split yields 10 train + 10 test,
+    # both significantly alive — a date-value split would empty the train side.
+    for i in range(20):
+        _closed_signal_row(db_conn, "breadth", "HIT", _TEST_DATE, f"breadthC{i}")
+    result = get_signal_decay(db_conn, min_count=5, oos_fraction=0.5)
+    sig = next(s for s in result if s.signal == "breadth")
+    assert sig.train_total > 0 and sig.test_total > 0  # index split, not collapsed
+    assert sig.label == "confirmed_alive"
 
 
 def test_recalibration_map_is_monotonic(db_conn):

@@ -72,6 +72,7 @@ from metrics import (
     get_track_record,
     get_calibration_report,
     get_signal_performance,
+    get_signal_decay,
     build_recalibration_map,
     apply_recalibration,
 )
@@ -841,6 +842,7 @@ def cmd_calibration(args) -> int:
     try:
         buckets = get_calibration_report(conn, timeframe=args.timeframe)
         signals = get_signal_performance(conn, min_count=args.min_signal_count)
+        decay = get_signal_decay(conn, min_count=args.min_signal_count)
         recal_map = build_recalibration_map(conn, timeframe=args.timeframe)
         _print_json(
             {
@@ -871,6 +873,17 @@ def cmd_calibration(args) -> int:
                         "verdict": s.verdict,
                     }
                     for s in signals
+                ],
+                "signal_decay": [
+                    {
+                        "signal": s.signal,
+                        "train": f"{s.train_wins}/{s.train_total}",
+                        "test": f"{s.test_wins}/{s.test_total}",
+                        "train_verdict": s.train_verdict,
+                        "test_verdict": s.test_verdict,
+                        "label": s.label,
+                    }
+                    for s in decay
                 ],
             }
         )

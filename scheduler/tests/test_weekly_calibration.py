@@ -35,6 +35,18 @@ class _FakeSignal:
 
 
 @dataclass
+class _FakeDecay:
+    signal: str
+    train_total: int
+    train_wins: int
+    test_total: int
+    test_wins: int
+    train_verdict: str
+    test_verdict: str
+    label: str
+
+
+@dataclass
 class _FakeTrack:
     total: int
     wins: int
@@ -189,6 +201,18 @@ def test_update_trend_file_replaces_same_day_entry():
         assert history[0]["track_record"]["v"] == 2
 
 
+def test_find_decaying_signals_flags_train_only_and_reversed():
+    decay = [
+        _FakeDecay("momentum", 20, 18, 20, 17, "alive", "alive", "confirmed_alive"),
+        _FakeDecay("fundamental", 20, 18, 20, 10, "alive", "weak", "train_only"),
+        _FakeDecay("cycle", 20, 18, 20, 2, "alive", "dead", "reversed"),
+        _FakeDecay("volume", 20, 10, 20, 10, "weak", "weak", "noise"),
+    ]
+    flagged = wc.find_decaying_signals(decay)
+    assert {d["signal"] for d in flagged} == {"fundamental", "cycle"}
+    assert {d["label"] for d in flagged} == {"train_only", "reversed"}
+
+
 def test_compute_window_uses_metrics_helpers():
     """compute_window delegates to the metrics module — verify wiring with mocks."""
     fake_track = _FakeTrack(10, 6, 3, 1, 0.67, 0.02, 2, 0.19)
@@ -199,6 +223,7 @@ def test_compute_window_uses_metrics_helpers():
         patch("weekly_calibration.get_track_record", return_value=fake_track),
         patch("weekly_calibration.get_calibration_report", return_value=fake_buckets),
         patch("weekly_calibration.get_signal_performance", return_value=fake_signals),
+        patch("weekly_calibration.get_signal_decay", return_value=[]),
     ):
         window = wc.compute_window(conn=None, days=30)
 

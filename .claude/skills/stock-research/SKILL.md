@@ -92,6 +92,15 @@ Score each dimension 0-100:
 - Cross-market correlations
 - Market-wide risk sentiment (check SPY/KOSPI context)
 
+### 3b. Bull / Bear / Judge synthesis (before committing a direction)
+
+Don't jump from the signal table straight to a DIRECTION. Run a short adversarial pass so the forecast isn't one-sided:
+
+1. **Thesis (commit first):** one line — your directional lean and the single biggest risk to it.
+2. **Bull case:** the 2-3 strongest *specific* reasons it goes up (cite the numbers from the signals above).
+3. **Bear case:** the 2-3 strongest *specific* reasons it goes down — genuinely adversarial. If you can't write a real one, say so.
+4. **Judge:** weigh both into the final DIRECTION / CONFIDENCE. Keep the surviving bear point in the KEY RISKS block below. If the bear case beats the thesis, change the direction — don't anchor on the opening lean.
+
 ### 4. Present the Forecast
 
 ```

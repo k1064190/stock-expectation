@@ -154,6 +154,15 @@ The deterministic ALGO_SCORE rewards stocks that are already trending (full bull
    - Earnings season binary events nearby
 4. **Cross-asset confirmation**: bonds, related sectors, SOXL vs SPY divergence
 
+**Bull / Bear / Judge — commit a thesis before scoring** (staged reasoning, adapted from AutoHedge's Director→Quant→Risk + a Fincept-style adversarial debate). The deterministic ALGO/NEWS tables are the *Quant* stage (already computed). This is the *Director/Judge* stage; the C2/C3 gates in Step 9 are the *Risk* stage. Run these four micro-steps in order and do not skip ahead:
+
+1. **Director thesis (commit first).** Before building either case, write ONE line: your directional lean (BULL / BEAR / NEUTRAL) and the single biggest risk to it, derived only from the inputs above. Committing first reduces motivated reasoning — the debate must then test this thesis, not rationalize the ALGO score.
+2. **Bull case.** The 2-3 strongest *specific* reasons price goes up (cite numbers: MA stack, return_1m, FTD status, sector stage, sentiment). No vague adjectives.
+3. **Bear case.** The 2-3 strongest *specific* reasons price goes down — genuinely adversarial, not a strawman. Pull from macro top signals, late-stage sector, FX/flow stress, event risk, valuation. If you cannot write a real bear case, say so explicitly.
+4. **Judge.** Net the two sides into `llm_context_score` using the rubric below. State which side won and why in `llm_context_reasoning`, and **carry the surviving bear point into the reasoning text** so it is preserved for the postmortem. If the bear case materially contradicts the Director thesis, the thesis loses — do not anchor on it.
+
+This debate *produces* `LLM_CONTEXT_SCORE`; it does not add a second override channel. The bounded -5.0..+3.0 range and the composite math are unchanged — a more rigorous score is the only output.
+
 **Scoring rubric** (anchors — pick the nearest):
 
 | Score | Anchor | Example |
