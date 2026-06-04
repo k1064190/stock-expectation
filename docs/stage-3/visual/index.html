@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 3 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
+        padding: 0 1rem 4rem;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aabb7;
+        --accent-outline: #2a6b7c;
+        --border: #e0dedd;
+        --card-bg: #ffffff;
+        --muted-text: #6b7280;
+        --node-size: 2.2rem;
+      }
+
+      header {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.4rem 0 1.2rem;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .header-text h1 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .header-text p {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        margin-top: 0.2rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      nav[aria-label="Language"] .lang-current {
+        color: var(--muted-text);
+        font-weight: 400;
+      }
+
+      .timeline {
+        max-width: 860px;
+        margin: 0 auto 2.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .timeline-node .circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        border: 2.5px solid var(--accent-outline);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .timeline-node.current .circle {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .timeline-node.past .circle {
+        background: var(--accent-muted);
+        color: #fff;
+        border-color: var(--accent-muted);
+      }
+
+      .timeline-node.future .circle {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-outline);
+      }
+
+      .timeline-node .label {
+        font-size: 0.72rem;
+        color: var(--muted-text);
+        font-weight: 500;
+        text-align: center;
+      }
+
+      .timeline-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-node.past .label {
+        color: var(--accent-muted);
+      }
+
+      .timeline-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin-bottom: 1.4rem;
+      }
+
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+      }
+
+      section {
+        margin-bottom: 2.8rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+        letter-spacing: -0.01em;
+      }
+
+      .stage-summary {
+        font-size: 0.92rem;
+        color: var(--muted-text);
+        margin-bottom: 1.4rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.4rem 1.6rem;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 0.5rem;
+      }
+
+      .card-section {
+        margin-bottom: 0.85rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.9rem;
+        color: #333;
+      }
+
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+
+      .card-section ul li {
+        margin-bottom: 0.25rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+        color: #2d4a54;
+        word-break: break-all;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #444;
+      }
+
+      footer {
+        max-width: 860px;
+        margin: 3rem auto 0;
+        font-size: 0.78rem;
+        color: var(--muted-text);
+        border-top: 1px solid var(--border);
+        padding-top: 1rem;
+      }
+
+      @media (max-width: 720px) {
+        .header-text h1 {
+          font-size: 1.3rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-text">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span class="lang-current">EN</span>
+        &nbsp;|&nbsp;
+        <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <div class="timeline" role="list" aria-label="Stage timeline">
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">0</div>
+        <span class="label">Stage 0</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">1</div>
+        <span class="label">Stage 1</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node past" role="listitem">
+        <div class="circle">2</div>
+        <span class="label">Stage 2</span>
+      </div>
+      <div class="timeline-connector"></div>
+      <div class="timeline-node current" role="listitem">
+        <div class="circle">3</div>
+        <span class="label">Stage 3</span>
+      </div>
+    </div>
+
+    <main>
+      <section aria-labelledby="stage3-heading">
+        <h2 id="stage3-heading">Stage 3</h2>
+        <p class="stage-summary">
+          Implemented the deferred Tier 2 measurement improvements: OOS signal
+          decay detection, a staged adversarial debate prompt architecture
+          (Bull/Bear/Judge), and a static KR universe fallback after PyKRX bulk
+          endpoints broke in production — plus a skill catalogue pruning from
+          59+ to 31 active skills.
+        </p>
+
+        <div class="card-grid">
+          <article aria-labelledby="card-tier2-oos">
+            <h3 id="card-tier2-oos">Tier2 Oos Staged Debate</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                Tier 2 work deferred from Stage 1. Three measurement weaknesses
+                remained: a static all-period win rate hides recent decay (OOS
+                split needed — S5); a single-pass prompt with one-sided bias
+                (staged roles + adversarial debate — S4/S6). Inspired by
+                Vibe-Trading (MIT) strict factor gates (train/test split),
+                AutoHedge (Director&rarr;Quant&rarr;Risk), and FinceptTerminal
+                (Bull/Bear/Judge — concept only).
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  S5 (code): <code>get_signal_decay</code> — splits closed
+                  predictions by <code>outcome_date</code> into train/test,
+                  scores each half against the 50% null hypothesis, then labels
+                  each signal as <code>confirmed_alive</code>,
+                  <code>train_only</code>, <code>reversed</code>,
+                  <code>insufficient_oos</code>, or <code>noise</code>. On real
+                  data, the <code>news</code> signal was identified as
+                  train_only (decaying). <code>signal_decay</code> surfaced in
+                  CLI <code>calibration</code>;
+                  <code>decaying_signals</code> surfaced in
+                  <code>weekly_calibration</code>.
+                </li>
+                <li>
+                  S4 (prompt): <code>/expect</code> Step 5b assigns explicit
+                  roles — Quant (deterministic ALGO/NEWS) &rarr; Director/Judge
+                  (LLM_CONTEXT debate) &rarr; Risk (Step 9 C2/C3 gates).
+                </li>
+                <li>
+                  S6 (prompt): <code>LLM_CONTEXT_SCORE</code> redefined as
+                  Director thesis (pre-commit) &rarr; Bull &rarr; Bear &rarr;
+                  Judge output. No new override channel; the &minus;5..+3 range
+                  and composite formula are unchanged. Lightweight
+                  Bull/Bear/Judge step (3b) also added to
+                  <code>stock-research</code>.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                <code>SignalDecay</code> dataclass +
+                <code>get_signal_decay(min_count, oos_fraction=0.3)</code> +
+                <code>_decay_label</code>. Reuses
+                <code>_signal_verdict</code> from S1. Index-based chronological
+                split (<code>i &gt;= split_idx</code>) avoids empty-train edge
+                cases caused by same-date clusters.
+                <code>find_decaying_signals</code> in
+                <code>weekly_calibration</code> surfaces only
+                <code>train_only</code> and <code>reversed</code> labels. S4/S6
+                touch only the narrative channel (Step 5b), leaving the
+                deterministic score table intact. TDD: 6 new S5 tests; full
+                not-network suite at 303 passing.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>mcp-prediction-store/metrics.py</code> &nbsp;
+                <code>mcp-prediction-store/tests/test_metrics.py</code> &nbsp;
+                <code>scheduler/weekly_calibration.py</code> &nbsp;
+                <code>scheduler/tests/test_weekly_calibration.py</code> &nbsp;
+                <code>stock_cli.py</code> &nbsp;
+                <code>.claude/skills/expect/SKILL.md</code> &nbsp;
+                <code>.claude/skills/stock-research/SKILL.md</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <ul>
+                <li>
+                  code-reviewer-pro (Critical): date-boundary split emptied
+                  train when predictions clustered on the same
+                  <code>outcome_date</code> &rarr; switched to index-based
+                  split. Regression test added.
+                </li>
+                <li>
+                  codex (gpt-5.5/high): (1) zero test-set samples still labelled
+                  <code>train_only</code> on real <code>fundamental</code> data
+                  &rarr; added <code>insufficient_oos</code> guard; (2) tie-date
+                  ordering non-determinism &rarr; stabilised with
+                  <code>ORDER BY outcome_date, created_at, id</code>.
+                </li>
+                <li>
+                  After fixes: real-data labels normalised (only
+                  <code>news</code> as train_only; signals with no recent
+                  samples now <code>insufficient_oos</code>). All 303 passing.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  S5 stayed small by reusing <code>_signal_verdict</code> from
+                  S1 and adding only the train/test split on top. S4/S6 were
+                  implemented without any new override channel, reinforcing only
+                  the narrative path (Step 5b), which preserves the
+                  deterministic composite design (surgical). Prompt changes in
+                  S4/S6 are not automatically testable; correctness relies on
+                  design consistency.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <article aria-labelledby="card-skill-cleanup">
+            <h3 id="card-skill-cleanup">Skill Cleanup</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                59+ imported skills polluted Claude Code's trigger router.
+                Descriptions for skills like
+                <code>scenario-analyzer</code> fired on unrelated Korean
+                keywords despite the skill being Japanese-only. With
+                <code>/expect</code> becoming the central recommender in Stage
+                4, specialised strategies (dividend tax planning, statistical
+                arbitrage, edge-pipeline research) became distractions rather
+                than assets.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  Deleted outright (11 skills): pure dead code never invoked
+                  from any pipeline, scheduler, or other skill — including
+                  <code>downtrend-duration-analyzer</code>,
+                  <code>scenario-analyzer</code>,
+                  <code>stanley-druckenmiller-investment</code>, and
+                  <code>exposure-coach</code>. Also removed orphaned
+                  <code>.claude/agents/</code> and
+                  <code>.claude/commands/</code> scaffolding.
+                </li>
+                <li>
+                  Archived (19 skills) to
+                  <code>.claude/skills/_archived/</code>: the leading underscore
+                  excludes the directory from Claude Code's skill discovery
+                  scan. Groups: edge-pipeline (7), kanchi-dividend (3),
+                  specialised strategies (5), overlap with new news step (3), US
+                  13F (1).
+                </li>
+                <li>
+                  Active set reduced to 31 skills. <code>CLAUDE.md</code> and
+                  <code>README.md</code> updated with the new tier breakdown and
+                  four post-cleanup multi-skill workflows.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                <code>git mv</code> for archives (preserves blame).
+                <code>git rm -r</code> for deletes. New
+                <code>.claude/skills/_archived/README.md</code> documents the
+                policy and revival steps. Verification: test suite green at 152
+                passing (cleanup is filesystem-only); active skill count
+                confirmed at 31; grep over active skills and scheduler scripts
+                found no live references to deleted or archived names.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>.claude/skills/_archived/README.md</code> &nbsp;
+                <code>CLAUDE.md</code> &nbsp;
+                <code>README.md:21-31</code> &nbsp;
+                <code>README.md:450-470</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <p>
+                Formal code-reviewer + dual-reviewer loop skipped for this
+                stage: the deliverable is a curated directory layout, not code
+                logic. Substantive risk (silent dependency on a deleted skill)
+                was verified by a green test suite and a grep over all active
+                skills and scheduler scripts — no live references found.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  The delete/archive split worked cleanly. The
+                  <code>_archived/</code> underscore-prefix convention preserves
+                  full skill content without polluting the active trigger pool.
+                  Carry forward: when pruning skills, also sweep
+                  <code>.claude/agents/</code> and
+                  <code>.claude/commands/</code> for orphaned scaffolding —
+                  those files are easy to miss in a skills-only grep.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <article aria-labelledby="card-kr-universe">
+            <h3 id="card-kr-universe">Kr Universe Fallback</h3>
+
+            <div class="card-section">
+              <div class="card-label">Why</div>
+              <p>
+                Stage A (PR #12) introduced dynamic candidate discovery, but a
+                2026-05-13 production cron run revealed that PyKRX's
+                bulk-by-ticker endpoints had all broken due to a KRX upstream
+                response format change. <code>get_market_cap_by_ticker</code>,
+                <code>get_market_fundamental_by_ticker</code>,
+                <code>get_market_ohlcv_by_ticker</code>, and
+                <code>get_market_ticker_list</code> all failed with the same
+                <code>KeyError</code> on PyKRX 1.2.4 and 1.2.8. Universe
+                enumeration was impossible, causing the anchors-only fallback to
+                activate and missing the 5/13 catalyst stocks (307950 +55%,
+                066570 +34%, 005380 +30%). Additionally, 7 surgical fixes from
+                Copilot and Codex reviews of PR #12 were ready to apply.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">What</div>
+              <ul>
+                <li>
+                  New file <code>data/kr_universe.csv</code> — 166 curated
+                  tickers (110 KOSPI + 36 KOSDAQ + 20 ETF), including all five
+                  5/13 catalyst tickers.
+                </li>
+                <li>
+                  <code>scheduler/candidate_discovery.py</code>:
+                  <code>_load_static_universe()</code> reads CSV to a ticker
+                  list; <code>_load_static_universe_names()</code> provides a
+                  ticker-to-name map as first-tier fallback in
+                  <code>_fill_names</code>;
+                  <code>enumerate_kr_universe()</code> rewritten to try PyKRX
+                  first, then fall back to CSV, then return
+                  <code>[]</code> (anchors-only safety net).
+                </li>
+                <li>
+                  7 Codex/Copilot review fixes applied: subsequence-based theme
+                  dedup (C1), PyKRX import moved inside <code>try</code> block
+                  (C2), per-headline n-gram dedup (C3), confidence floor raised
+                  to 0.60 (C4), dead variable removal, docstring corrections,
+                  and fixture clarification.
+                </li>
+                <li>
+                  4 new regression tests covering CSV fallback, both-fail safety
+                  net, distinct-theme survival, and repeated n-gram counting.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">How</div>
+              <p>
+                CSV has three columns (<code>ticker, name, market_segment</code
+                >); <code>market_segment</code> is unused in Stage 3 but kept
+                intentionally for future KOSPI/KOSDAQ/ETF filtering without
+                reissuing the file. <code>cap</code>/<code>value</code> fields
+                are <code>None</code> in CSV mode — honest rather than stale.
+                Ranking relies on <code>score_and_filter</code> (<code
+                  >get_price_history_batch</code
+                >
+                + <code>|return_5d|</code> / <code>vol_ratio</code> thresholds),
+                so CSV ticker order is irrelevant. Stale CSV entries are
+                automatically skipped by the score filter and logged at INFO
+                level for operator visibility. Tests use
+                <code>monkeypatch.setattr</code> on
+                <code>STATIC_UNIVERSE_PATH</code> to cover the both-fail
+                scenario precisely.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Code Locations</div>
+              <p>
+                <code>data/kr_universe.csv</code> &nbsp;
+                <code>scheduler/candidate_discovery.py:96-227</code> &nbsp;
+                <code>scheduler/candidate_discovery.py:434-475</code> &nbsp;
+                <code>scheduler/theme_clusterer.py:275-355</code> &nbsp;
+                <code>scheduler/daily_briefing.py:123</code> &nbsp;
+                <code>scheduler/daily_briefing.py:376,444</code> &nbsp;
+                <code>scheduler/tests/test_candidate_discovery.py:153-203</code>
+                &nbsp;
+                <code>scheduler/tests/test_theme_clusterer.py:130-180</code>
+                &nbsp;
+                <code>docs/stage-2/theme-clusterer.md:107-113</code>
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Review Loop</div>
+              <ul>
+                <li>
+                  code-reviewer-pro: no critical findings. Applied: stale ticker
+                  logging in <code>score_and_filter</code>;
+                  <code>_is_subseq</code> docstring with four examples;
+                  <code>_fill_names</code> two-pass inline comments;
+                  <code>market_segment</code> design rationale documented.
+                </li>
+                <li>
+                  gemini: no blockers. Applied:
+                  <code>_load_static_universe_names</code>
+                  docstring corrected (re-reads on every call, not lazy).
+                  Confirmed Codex C1/C3/C4/C2 as senior-level defensive coding.
+                </li>
+                <li>
+                  codex review: P1 finding (<code>models.py</code> migration +
+                  CHECK constraint) is out of scope for this staged diff —
+                  <code>models.py</code> was not modified here. Deferred to a
+                  separate prediction-store PR.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="card-label">Retrospective</div>
+              <p>
+                <em>
+                  CSV maintenance debt: 3 of the 166 tickers (010620, 003410,
+                  091990) returned no data — likely delisted or merged. The
+                  score filter skips them silently but they add 5-15 s of retry
+                  overhead per cron run; manual cleanup is planned for Stage 4.
+                  When PyKRX patches its upstream issue the live path will
+                  reactivate automatically; the CSV code path remains as a
+                  permanent safety net rather than being removed.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Stock Expectation &mdash; Stage 3 &mdash; Tier 2 OOS / Skill Cleanup / KR
+      Universe Fallback
+    </footer>
+  </body>
+</html>

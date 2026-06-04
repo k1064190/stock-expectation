@@ -78,6 +78,37 @@ class SignalPerformance:
     verdict: str = "weak"
 
 
+@dataclass
+class SignalDecay:
+    """Out-of-sample stability grade for an analysis signal.
+
+    Splits a signal's closed predictions by ``outcome_date`` into an earlier
+    "train" window and a recent "test" window, grades each side against the 50%
+    null, and combines them into a decay label. Adapted from Vibe-Trading's
+    strict factor gate (bench_runner_strict.py) — a signal that worked in-sample
+    but decays out-of-sample is the main thing a static all-history win rate
+    hides.
+
+    Args:
+        signal: Signal name.
+        train_total/train_wins: Closed count / HIT count in the earlier window.
+        test_total/test_wins: Closed count / HIT count in the recent window.
+        train_verdict/test_verdict: Per-window verdict (alive/weak/dead).
+        label: Combined grade — "confirmed_alive" (alive in both),
+            "train_only" (alive in train, only a coin flip recently — decaying),
+            "reversed" (significant loser out-of-sample), or "noise".
+    """
+
+    signal: str
+    train_total: int
+    train_wins: int
+    test_total: int
+    test_wins: int
+    train_verdict: str
+    test_verdict: str
+    label: str
+
+
 def _binomial_two_sided_p(k: int, n: int, p: float = 0.5) -> float:
     """Exact two-sided binomial p-value for k successes in n trials.
 
@@ -352,6 +383,106 @@ def get_signal_performance(
             )
 
     result.sort(key=lambda x: x.win_rate, reverse=True)
+    return result
+
+
+def _decay_label(
+    train_verdict: str, test_verdict: str, train_total: int, test_total: int
+) -> str:
+    """Combine train/test verdicts into an out-of-sample decay grade.
+
+    Returns "insufficient_oos" when either window is empty — without samples on
+    both sides there is no out-of-sample comparison to make, so we must not
+    claim decay (e.g. a signal with no recent predictions is not "train_only").
+    """
+    if train_total == 0 or test_total == 0:
+        return "insufficient_oos"
+    if test_verdict == "dead":
+        return "reversed"  # OOS sign-flip is the strongest negative evidence
+    if train_verdict == "alive" and test_verdict == "alive":
+        return "confirmed_alive"
+    if train_verdict == "alive":
+        return "train_only"  # worked historically, only a coin flip recently
+    return "noise"
+
+
+def get_signal_decay(
+    conn: sqlite3.Connection,
+    min_count: int = 10,
+    oos_fraction: float = 0.3,
+) -> list[SignalDecay]:
+    """Grade each signal's out-of-sample stability via a train/test split.
+
+    Closed predictions are ordered by ``outcome_date`` and split at the
+    ``1 - oos_fraction`` count boundary into an earlier (train) and a recent
+    (test) window. Each signal is graded against the 50% null on each side and
+    assigned a decay label (see ``SignalDecay``). This exposes signals whose
+    edge decayed recently — exactly what a static all-history win rate hides.
+
+    Args:
+        conn: SQLite connection.
+        min_count: Minimum total closed predictions per signal to report.
+        oos_fraction: Fraction of (time-ordered) closed predictions placed in
+            the recent test window. Defaults to 0.3.
+
+    Returns:
+        List of SignalDecay sorted by signal name.
+    """
+    import json
+
+    rows = conn.execute(
+        "SELECT signals_used, status, outcome_date FROM predictions "
+        "WHERE status IN ('HIT', 'MISS') AND outcome_date IS NOT NULL "
+        # created_at + id are stable tie-breakers so the index split is
+        # deterministic when several predictions resolve on the same date.
+        "ORDER BY outcome_date ASC, created_at ASC, id ASC"
+    ).fetchall()
+    if not rows:
+        return []
+
+    # Split by row INDEX, not by date value: rows are already time-ordered, and
+    # an index split guarantees the train/test count ratio even when many
+    # predictions share the same outcome_date (a date-value boundary would push
+    # every same-day row to one side and could empty the train window).
+    n = len(rows)
+    split_idx = min(max(int(n * (1 - oos_fraction)), 0), n - 1)
+
+    stats: dict[str, dict[str, int]] = {}
+    for i, r in enumerate(rows):
+        is_test = i >= split_idx
+        win = 1 if r["status"] == "HIT" else 0
+        for sig in json.loads(r["signals_used"]):
+            d = stats.setdefault(
+                sig, {"train_t": 0, "train_w": 0, "test_t": 0, "test_w": 0}
+            )
+            if is_test:
+                d["test_t"] += 1
+                d["test_w"] += win
+            else:
+                d["train_t"] += 1
+                d["train_w"] += win
+
+    result = []
+    for sig, d in stats.items():
+        if d["train_t"] + d["test_t"] < min_count:
+            continue
+        _, train_verdict = _signal_verdict(d["train_w"], d["train_t"])
+        _, test_verdict = _signal_verdict(d["test_w"], d["test_t"])
+        result.append(
+            SignalDecay(
+                signal=sig,
+                train_total=d["train_t"],
+                train_wins=d["train_w"],
+                test_total=d["test_t"],
+                test_wins=d["test_w"],
+                train_verdict=train_verdict,
+                test_verdict=test_verdict,
+                label=_decay_label(
+                    train_verdict, test_verdict, d["train_t"], d["test_t"]
+                ),
+            )
+        )
+    result.sort(key=lambda s: s.signal)
     return result
 
 

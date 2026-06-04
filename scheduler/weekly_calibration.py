@@ -51,6 +51,7 @@ from metrics import (
     get_track_record,
     get_calibration_report,
     get_signal_performance,
+    get_signal_decay,
 )
 from models import get_connection
 
@@ -122,6 +123,25 @@ def find_worst_signals(
     ]
 
 
+def find_decaying_signals(decay) -> list[dict]:
+    """Surface signals whose edge did not hold out-of-sample.
+
+    Flags ``train_only`` (worked historically, now a coin flip) and
+    ``reversed`` (now a significant loser) — the OOS grades that a static
+    all-history win rate would miss.
+    """
+    return [
+        {
+            "signal": s.signal,
+            "train": f"{s.train_wins}/{s.train_total}",
+            "test": f"{s.test_wins}/{s.test_total}",
+            "label": s.label,
+        }
+        for s in decay
+        if s.label in ("train_only", "reversed")
+    ]
+
+
 def compute_window(conn, days: int) -> dict:
     """Compute calibration data for a single look-back window.
 
@@ -140,6 +160,7 @@ def compute_window(conn, days: int) -> dict:
     # Use a low ``min_count`` so the early-life-of-system reports surface
     # their signal mix; a future Stage-6.1 PR can raise this once volumes grow.
     signals = get_signal_performance(conn, min_count=3)
+    decay = get_signal_decay(conn, min_count=6)
     return {
         "days": days,
         "track_record": asdict(track),
@@ -147,6 +168,7 @@ def compute_window(conn, days: int) -> dict:
         "signals": [asdict(s) for s in signals],
         "overconfident_buckets": find_overconfident_buckets(buckets),
         "worst_signals": find_worst_signals(signals),
+        "decaying_signals": find_decaying_signals(decay),
     }
 
 
