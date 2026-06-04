@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stock Expectation — 4단계</title>
+    <style>
+      /* ── Reset ─────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* ── Variables ──────────────────────────────────────────────── */
+      :root {
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --border: #e2e2de;
+        --accent: #2d6a6a;
+        --accent-muted: #5a9e9e;
+        --node-muted: #a8b8b8;
+        --text: #1a1a1a;
+        --muted: #6b7280;
+        --code-bg: #f0f4f4;
+        --radius: 10px;
+        --max-w: 900px;
+      }
+
+      /* ── Base ───────────────────────────────────────────────────── */
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.7;
+        font-size: 15px;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Layout wrapper ─────────────────────────────────────────── */
+      .container {
+        max-width: var(--max-w);
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ── Header ─────────────────────────────────────────────────── */
+      header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 0;
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .header-titles h1 {
+        font-size: 1.45rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--accent);
+      }
+
+      .header-titles p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      nav[aria-label="언어"] .lang-current {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] .lang-sep {
+        color: var(--border);
+        margin: 0 6px;
+      }
+
+      /* ── Timeline ───────────────────────────────────────────────── */
+      .timeline-section {
+        padding: 36px 0 28px;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .tl-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex: 1;
+        min-width: 60px;
+      }
+
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 16px;
+        margin-bottom: 20px;
+      }
+
+      .tl-node-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tl-node {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 2px solid var(--node-muted);
+        background: var(--node-muted);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .tl-node.current {
+        border-color: var(--accent);
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(45, 106, 106, 0.18);
+      }
+
+      .tl-label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .tl-label.current {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* ── Stage heading ──────────────────────────────────────────── */
+      .stage-heading {
+        padding: 0 0 32px;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+
+      .stage-heading p {
+        color: var(--muted);
+        font-size: 0.92rem;
+        max-width: 680px;
+      }
+
+      /* ── Card grid ──────────────────────────────────────────────── */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        padding-bottom: 56px;
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      article {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+      }
+
+      article h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 18px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid var(--accent);
+      }
+
+      .card-section {
+        margin-bottom: 16px;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 5px;
+      }
+
+      .card-section p,
+      .card-section ul {
+        font-size: 0.88rem;
+        color: #374151;
+        line-height: 1.65;
+      }
+
+      .card-section ul {
+        padding-left: 18px;
+      }
+
+      .card-section ul li {
+        margin-bottom: 4px;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.8em;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--accent);
+        word-break: break-all;
+      }
+
+      .code-list {
+        list-style: none;
+        padding-left: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .code-list li code {
+        display: inline-block;
+      }
+
+      em {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      /* ── Footer ─────────────────────────────────────────────────── */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 16px 0;
+        text-align: center;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <div class="header-inner">
+          <div class="header-titles">
+            <h1>Stock Expectation</h1>
+            <p>단계별 진행 상황</p>
+          </div>
+          <nav aria-label="언어">
+            <a href="index.html">EN</a>
+            <span class="lang-sep">|</span>
+            <span class="lang-current">한국어</span>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="container">
+        <!-- Timeline -->
+        <section class="timeline-section" aria-label="단계 타임라인">
+          <div class="timeline">
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">0</div>
+                <div class="tl-label">0단계</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">1</div>
+                <div class="tl-label">1단계</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">2</div>
+                <div class="tl-label">2단계</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node">3</div>
+                <div class="tl-label">3단계</div>
+              </div>
+            </div>
+            <div class="tl-connector"></div>
+            <div class="tl-item">
+              <div class="tl-node-wrap">
+                <div class="tl-node current">4</div>
+                <div class="tl-label current">4단계</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Stage heading -->
+        <section class="stage-heading">
+          <h2>4단계</h2>
+          <p>
+            <code>/expect</code> 스킬을 결정론적 점수 체계, 설명력 체인, 결과
+            텔레메트리로 전면 재작성하고, 부트스트랩 신뢰구간, 순열검정, JSON
+            스키마 검증으로 예측 저장소를 강화했습니다.
+          </p>
+        </section>
+
+        <!-- Card grid -->
+        <div class="card-grid">
+          <!-- Card 1: expect-rewrite -->
+          <article aria-labelledby="card1-title">
+            <h3 id="card1-title">/Expect 스킬 재작성</h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
+              <p>
+                4단계 이전 <code>/expect</code>는 4개 호라이즌 방향 예측을
+                생성했지만, 결정론적 점수표(LLM이 정성적 "강세" 텍스트를 출력),
+                정량적 뉴스/감성 입력, 단일 헤드라인 레이블(매수/매도 결정),
+                전달 체인, 결과 텔레메트리가 모두 없었습니다. 조교수님의 요청:
+                알고리즘 분석과 뉴스 분석을 결합해 매수/매도 신호를 내보내되,
+                캘리브레이션 루프(다중 호라이즌 예측을
+                <code>predictions.db</code>에 기록)를 유지.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  <strong>알고리즘 점수표</strong> (<code>ALGO_SCORE</code>,
+                  최대 +8.0, 하한 -5.0): 추세, 모멘텀, 1개월 수익률, 거래량,
+                  사이클, 실적발표 이벤트 패널티.
+                </li>
+                <li>
+                  <strong>뉴스 점수표</strong> (<code>NEWS_SCORE</code>, 최대
+                  +3.0, 하한 -2.0): Alpha Vantage 감성, 헤드라인 수, 부정 키워드
+                  스캔, KR 공시 플래그. 하드캡으로 누적 대신 클램프.
+                </li>
+                <li>
+                  <strong>복합 점수 + 결정 레이블</strong>: BUY ≥ 8.0 / WATCH
+                  6.0..7.9 / HOLD 3.0..5.9 / AVOID 0..2.9 / SELL &lt; 0. 반열린
+                  연속 구간으로 모든 점수가 정확히 하나의 버킷에 귀속.
+                </li>
+                <li>
+                  <strong>전달 체인</strong>: 종목당 3개 사실 (TECH / NEWS /
+                  RISK), 각각 구체적 숫자 또는 필드명 인용 — 단순 형용사 금지.
+                </li>
+                <li>
+                  <strong>결과 텔레메트리 사이드카</strong>
+                  (<code>state/last-outcome-expect.json</code>): 모든 컴포넌트
+                  점수, 전달 체인, 기록된 호라이즌 목록. 6단계 주간 집계기가
+                  파싱.
+                </li>
+                <li>
+                  <strong
+                    >품질 게이트(Step 11) + 편향 체크리스트(Step 12)</strong
+                  >: 부호 일치, 목표가 간격, 데이터 신선도,
+                  최신성/확증/앵커링/과신 점검.
+                </li>
+                <li>
+                  <strong>다중 호라이즌 예측 유지</strong>: 4호라이즌
+                  (1W/1M/6M/1Y) <code>predictions.db</code> 기록, 공유
+                  <code>analysis_group_id</code>. RULE C1 그대로 보존.
+                </li>
+                <li>
+                  <strong>출력 상세도 스케일링</strong>:
+                  <code>/expect ALL</code>은 종목당 3줄 요약, 단일/배치 모드
+                  또는 RULE-C1/하드캡 종목에는 전체 블록 출력.
+                </li>
+                <li>
+                  <strong>스킬 합성 게이트</strong>: market-top-detector /
+                  ftd-detector / theme-detector는 COMPOSITE ≥ 8.0일 때만 호출,
+                  재귀 가드 주석 추가.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <p>
+                외부 스킬 컬렉션에서 세 가지 패턴 차용: 점수표 스코어링(staskh),
+                전달 체인(roman-rr), 결과 사이드카(ScientiaCapital). 수학 검증:
+                gemini 리뷰에서 초안의 최대 점수 오기재를 포착 (알고 "최대
+                10"이나 컴포넌트 합산은 8; 뉴스 "최대 5"이나 합산은 3; 복합 최대
+                "15"이나 실제 11). 임계값을 실제 합산치에 맞게 수정하고
+                <code>if/elif</code> 방식으로 재작성해 모든 입력이 하나의 행에
+                귀속되도록.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li><code>.claude/skills/expect/SKILL.md</code></li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Review Loop</div>
+              <p>
+                gemini-subagent (Pro) — 단일 라운드 리뷰에서 실질적 문제 6건
+                발견: 최대 점수 오기재(MUST FIX), 추세·수익률 임계값 버킷
+                중복(MUST FIX), 소수점 간격으로 5.5 등이 미정의(MUST FIX), ALL
+                모드 출력 폭발(SHOULD FIX), Step 11 LLM 수학 신뢰성(CONSIDER,
+                6단계로 이연), 재귀 리스크(CONSIDER, 가드 주석 추가). 코드가
+                아닌 산문이므로 code-reviewer-pro 패스 생략.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <p>
+                <em>
+                  gemini 리뷰가 계획과 SKILL.md 초안 양쪽에 내재된 수학 오류를
+                  잡아냈습니다. 이 과정 없이 넘어갔다면 "BUY composite 11.5/15"
+                  같은 맞지 않는 출력을 조교수님이 직접 보셨을 것입니다. 앞으로
+                  유지할 교훈: 스코어링 루브릭 설계 시, 임계값을 공표하기 전에
+                  최대 양수 합산과 절대 하한을 별도 검증 줄로 명시적으로 작성할
+                  것.
+                </em>
+              </p>
+            </div>
+          </article>
+
+          <!-- Card 2: tier3-bootstrap-permutation-validation -->
+          <article aria-labelledby="card2-title">
+            <h3 id="card2-title">
+              Tier 3 — 부트스트랩 CI / 순열검정 / JSON 스키마 검증
+            </h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
+              <p>
+                Tier 1/2에 이어 세 가지 통계적·견고성 공백이 남아 있었습니다.
+                점추정 승률만으로는 "동전과 구분되는가"를 알 수 없음 →
+                부트스트랩 CI (S7). confidence가 실제 정보를 담는가는
+                이항검정으로 볼 수 없음 → 순열검정 (S8). LLM/JSON 예측을 요청만
+                하고 검증하지 않음 → 스키마 검증 (S9). 출처: Vibe-Trading (MIT)
+                <code>validation.py</code>, AutoHedge (validate, don't just
+                request JSON).
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  <strong>S7</strong> — <code>get_track_record_ci</code>:
+                  승률·Brier 점수 부트스트랩 95% CI +
+                  <code>prob_better_than_coin</code>. 시드 고정으로 재현 가능.
+                  실데이터: 승률 0.498, CI95 [0.44, 0.56] → 동전과 구분 불가.
+                </li>
+                <li>
+                  <strong>S8</strong> —
+                  <code>permutation_test_confidence</code>: 라벨 셔플
+                  양측검정으로 confidence가 결과와 연관되는지 검증. 실데이터: p
+                  = 0.004 → confidence는 약하지만 유의미하게 정보 보유.
+                </li>
+                <li>
+                  <strong>S9</strong> — <code>validate_prediction_dict</code>:
+                  필수 필드, enum 값, 범위, 유한 양수 검증. API 모드
+                  <code>log_predictions</code>가 <code>Prediction</code> 생성
+                  전에 호출해 malformed 행을 조용히 넘기지 않고 명확히 skip.
+                </li>
+                <li>
+                  <code>stock-cli calibration</code> robustness 섹션 및
+                  <code>weekly_calibration</code> robustness 키로 노출.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <p>
+                공유 <code>_closed_filter</code> (WHERE 절)와
+                <code>_percentile_ci</code> (nearest-rank) 사용. 부트스트랩·순열
+                모두 <code>random.Random(seed)</code>로 결정론적 실행. 순열 통계
+                = mean(confidence | HIT) − mean(confidence | MISS), 양측 p값.
+                <code>validate_prediction_dict</code>는 오류 문자열 리스트 반환.
+                TDD: 신규 11개 테스트 추가, 전체 315개 통과.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li><code>mcp-prediction-store/metrics.py</code></li>
+                <li><code>mcp-prediction-store/models.py</code></li>
+                <li><code>scheduler/daily_briefing.py</code></li>
+                <li><code>scheduler/weekly_calibration.py</code></li>
+                <li><code>stock_cli.py</code></li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">Review Loop</div>
+              <p>
+                code-reviewer-pro: <code>_percentile_ci</code> 인덱스를 표준
+                <code>ceil(p*m)-1</code> 공식으로 수정; 순열검정 양측으로 변경.
+                codex: NaN/Infinity 가격이 <code>&gt;0</code> 검사를 통과하는
+                문제 → <code>math.isfinite</code> 가드 추가. 전체 315개 통과.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <p>
+                <em>
+                  S7/S8가 실데이터에서 "전체 트랙레코드는 동전 수준이나
+                  confidence는 약한 신호 보유"를 정량화했습니다. S9는 SQLite
+                  CHECK 제약에 의존하는 암묵적 검증을 명시적·메시지화된 검증으로
+                  대체해 API 모드에서의 조용한 실패를 제거했습니다.
+                </em>
+              </p>
+            </div>
+          </article>
+        </div>
+        <!-- /.card-grid -->
+      </div>
+      <!-- /.container -->
+    </main>
+
+    <footer>
+      <div class="container">Stock Expectation &mdash; 4단계 문서</div>
+    </footer>
+  </body>
+</html>
