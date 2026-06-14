@@ -79,8 +79,8 @@ US 주식과 한국 주식의 방향(상승/하락/횡보)을 예측하고, 그 
             │                      │
 ┌───────────┴──────────┐  ┌────────┴────────────────────┐
 │  daily_briefing.py   │  │  outcome_tracker.py          │
-│  (cron, 07:00/21:00) │  │  (cron, 매일 00:00)          │
-│  claude -p 호출      │  │  가격 조회 → HIT/MISS 판정   │
+│  (cron, 07/21/00시)  │  │  (cron, 매일 06:00)          │
+│  codex exec 호출     │  │  가격 조회 → HIT/MISS 판정   │
 │  → bin/stock-cli     │  │                              │
 │  → Telegram 전송     │  │  weekly_calibration.py       │
 │                      │  │  (cron, 일요일 22:00)        │
@@ -366,7 +366,7 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 > 내 예측 적중률 보여줘
 ```
 
-Claude는 스킬 파일을 읽고 필요한 `bin/stock-cli` 명령을 Bash로 실행한다.
+Codex는 스킬 파일을 읽고 필요한 `bin/stock-cli` 명령을 Bash로 실행한다.
 
 ### 자동화 (cron)
 
@@ -400,22 +400,24 @@ crontab scheduler/crontab.example
 
 | 시각 (KST) | 작업 | 설명 |
 |------------|------|------|
-| 07:00 매일 | `daily_briefing.py --market KR` | 한국 시장 브리핑 (장 시작 전) |
-| 21:00 매일 | `daily_briefing.py --market US` | US 시장 브리핑 (프리마켓 전) |
-| 00:00 매일 | `outcome_tracker.py` | 오픈 예측 결과 판정 |
+| 07:00 월-금 | `daily_briefing.py --market KR --mode codex-cli` | 한국 시장 브리핑 (장 시작 전) |
+| 21:00 월-금 | `daily_briefing.py --market US --mode codex-cli` | US 시장 브리핑 (프리마켓 전) |
+| 00:00 화-토 | `daily_briefing.py --market US --mode codex-cli` | US 장중 브리핑 |
+| 06:00 매일 | `outcome_tracker.py` | 오픈 예측 결과 판정 |
+| 07:30 매일 | `toss_auth_check.py` | Toss 세션 만료 알림 |
 | 22:00 일요일 | `weekly_calibration.py` | 주간 캘리브레이션 + 트렌드 저장 |
 
 ### 자동화 모드 비교
 
-| | Claude Code 모드 (기본) | Anthropic API 모드 |
-|--|----------------------|-------------------|
-| 실행 방식 | `claude -p` CLI 호출 | `anthropic.Anthropic()` API 호출 |
-| 데이터 조회 | Claude가 `bin/stock-cli` via Bash | 스크립트가 provider 직접 호출 |
-| 예측 저장 | Claude가 `bin/stock-cli predict create` | 스크립트가 JSON 파싱 후 저장 |
-| 추가 비용 | 없음 (Claude Code 구독 포함) | ~$5-15/월 (Sonnet) |
-| 필요 환경변수 | 없음 | `ANTHROPIC_API_KEY` |
-| 필요 의존성 | 기본 (`uv sync`) | `uv sync --extra api` |
-| 장점 | 비용 없음, 스킬 파일 그대로 사용 | claude CLI 없는 서버에서 가능 |
+| | Codex CLI 모드 (기본) | Claude Code 모드 | Anthropic API 모드 |
+|--|----------------------|------------------|-------------------|
+| 실행 방식 | `codex exec` CLI 호출 | `claude -p` CLI 호출 | `anthropic.Anthropic()` API 호출 |
+| 데이터 조회 | Codex가 `bin/stock-cli` via Bash | Claude가 `bin/stock-cli` via Bash | 스크립트가 provider 직접 호출 |
+| 예측 저장 | Codex가 `bin/stock-cli predict create` | Claude가 `bin/stock-cli predict create` | 스크립트가 JSON 파싱 후 저장 |
+| 추가 비용 | ChatGPT/Codex CLI credit | Claude Code 구독 | ~$5-15/월 (Sonnet) |
+| 필요 환경변수 | 없음 (`CODEX_MODEL` 선택) | 없음 | `ANTHROPIC_API_KEY` |
+| 필요 의존성 | 기본 (`uv sync`) | 기본 (`uv sync`) | `uv sync --extra api` |
+| 장점 | 스킬 파일 그대로 사용, cron 기본 경로 | Codex 장애 시 fallback | CLI 없는 서버에서 가능 |
 
 ## 프로젝트 구조
 
@@ -496,7 +498,7 @@ stock-expectation/
 │   └── tests/
 │
 ├── scheduler/                         # 자동화 스크립트
-│   ├── daily_briefing.py              #   일일 브리핑 (claude-code / api 모드)
+│   ├── daily_briefing.py              #   일일 브리핑 (codex-cli / claude-code / api 모드)
 │   ├── outcome_tracker.py             #   HIT/MISS/EXPIRED 판정
 │   ├── weekly_calibration.py          #   Stage 6 주간 캘리브레이션 (cron 일 22:00)
 │   ├── telegram_sender.py             #   Telegram 전송 모듈
@@ -590,7 +592,7 @@ Telegram 연동은 **두 가지 모드**로 작동한다.
 `scheduler/daily_briefing.py`가 cron에 의해 실행되면, 결과를 `scheduler/telegram_sender.py`를 통해 Telegram 채팅방으로 자동 전송한다.
 
 ```
-cron (07:00 KST) → daily_briefing.py → claude -p → 분석 생성
+cron (07:00 KST) → daily_briefing.py → codex exec → 분석 생성
                                                     → telegram_sender.py → Telegram 채팅방
 ```
 

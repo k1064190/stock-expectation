@@ -6,10 +6,12 @@ Installed on **2026-05-11 by Claude Code session**. Documents the active schedul
 
 | Schedule | Job | Mode | Purpose |
 |---|---|---|---|
-| Mon-Fri 07:00 | `scheduler/daily_briefing.py --market KR` | claude-code | KR market briefing (before 09:00 open) |
-| Mon-Fri 21:00 | `scheduler/daily_briefing.py --market US` | claude-code | US market briefing (US pre-market opens 22:00 KST) |
-| Daily 00:00 | `scheduler/outcome_tracker.py` | pure-Python | Judge previous day's HIT/MISS/EXPIRED |
+| Mon-Fri 07:00 | `scheduler/daily_briefing.py --market KR` | codex-cli | KR market briefing (before 09:00 open) |
+| Mon-Fri 21:00 | `scheduler/daily_briefing.py --market US` | codex-cli | US market briefing (US pre-market opens 22:00 KST) |
+| Tue-Sat 00:00 | `scheduler/daily_briefing.py --market US` | codex-cli | US mid-session briefing |
+| Daily 06:00 | `scheduler/outcome_tracker.py` | pure-Python | Judge previous day's HIT/MISS/EXPIRED |
 | Sunday 22:00 | `scheduler/weekly_calibration.py` | pure-Python | Weekly calibration report + 12-week trend |
+| Daily 07:30 | `scheduler/toss_auth_check.py` | pure-Python | Toss session expiry alert |
 
 System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=Asia/Seoul` defensively so a host migration to a different TZ won't silently shift the schedule.
 
@@ -17,18 +19,20 @@ System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=As
 
 - **KR briefing weekdays 07:00:** KOSPI/KOSDAQ regular hours start 09:00 KST. 2-hour buffer for skim + position adjustment.
 - **US briefing weekdays 21:00:** US pre-market starts 22:00 KST (= 09:00 ET pre-market). Regular hours 23:30 KST onwards.
-- **Outcome tracker daily 00:00 (incl. weekends):** Runs every day so Friday closes are judged Saturday morning rather than waiting to Monday. Weekend runs are cheap (KR/US markets closed → most predictions stay open).
+- **US mid-session briefing Tue-Sat 00:00:** Captures the US regular session after the open while mapping Mon-Fri US trading days to Tue-Sat KST.
+- **Outcome tracker daily 06:00 (incl. weekends):** Runs after the US close so Friday closes are judged Saturday morning rather than waiting to Monday. Weekend runs are cheap (KR/US markets closed → most predictions stay open).
 - **Weekly calibration Sunday 22:00:** End-of-week reflection time before next week's trading. Pure Python read from `predictions.db`, writes report + trend JSON. No LLM cost.
+- **Toss auth check daily 07:30:** Sends an alert if the Toss session has expired before trading workflows need it.
 
-## Mode choice — claude-code (not API)
+## Mode choice — codex-cli (not API)
 
-The daily briefings run via `claude -p` (Claude Code CLI in headless mode), **not** the Anthropic API. Reason:
+The daily briefings run via `codex exec` (Codex CLI in non-interactive mode), **not** the Anthropic API. Reason:
 
 - `ANTHROPIC_API_KEY` is NOT set in `.env` on this host.
-- `claude` CLI v2.1.138 is installed at `/home/cwh/.local/bin/claude` and authenticated (the install was verified with a `claude -p "ping"` smoke test on 2026-05-11).
-- Cost: $0 (Claude Code subscription covers the headless usage).
+- `codex` CLI is expected on the cron `PATH` through the nvm-managed Node bin directory declared in `scheduler/crontab.example`.
+- Cost routes through ChatGPT/Codex CLI credit instead of Anthropic API usage.
 
-To switch to API mode later: set `ANTHROPIC_API_KEY` in `.env`, run `uv sync --extra api`, then edit the crontab via `crontab -e` and replace `--mode claude-code` with `--mode api` on the two daily_briefing lines.
+To switch to API mode later: set `ANTHROPIC_API_KEY` in `.env`, run `uv sync --extra api`, then edit the crontab via `crontab -e` and replace `--mode codex-cli` with `--mode api` on the daily_briefing lines.
 
 ## Logs
 
@@ -69,29 +73,36 @@ To disable Telegram per-job, comment the `TELEGRAM_BOT_TOKEN` line in `.env` (th
 # ============================================================
 
 SHELL=/bin/bash
-PATH=/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+PATH=/home/cwh/.local/share/nvm/v22.20.0/bin:/home/cwh/.local/bin:/usr/local/bin:/usr/bin:/bin
+CRON_TZ=Asia/Seoul
 TZ=Asia/Seoul
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
 # KR market briefing — weekdays 07:00 KST (before KR market opens 09:00)
-0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
 # US market briefing — weekdays 21:00 KST (US pre-market opens 22:00 KST)
-0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
-# Outcome tracker — every day 00:00 KST (judges previous day's closes)
-0 0 * * * cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
+# US market mid-session briefing — 00:00 KST Tue-Sat
+0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+
+# Outcome tracker — every day 06:00 KST (judges previous day's closes)
+0 6 * * * cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1
 
 # Weekly calibration aggregator — Sunday 22:00 KST
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
+
+# Toss session auth check — daily 07:30 KST
+30 7 * * * cd $PROJECT && uv run python scheduler/toss_auth_check.py >> $LOG_DIR/toss_auth_check.log 2>&1
 ```
 
 ## How the cron environment differs from your shell
 
 Cron starts each job in a near-empty environment:
 
-- `PATH` is forced via crontab to include `/home/cwh/.local/bin` (so `uv` resolves)
+- `PATH` is forced via crontab to include the nvm Node bin directory for `codex` plus `/home/cwh/.local/bin` for `uv`
 - `TZ=Asia/Seoul` ensures time-related Python code is consistent
 - Working dir is set per-job via `cd $PROJECT`
 - `python-dotenv` (already imported at every scheduler entry point) loads `.env` from `$PROJECT` so API keys are present without explicit `export` lines
@@ -130,9 +141,8 @@ crontab /path/to/new-crontab.txt
 # Remove all (DANGER — disables all jobs)
 crontab -r
 
-# Re-install the version in this repo (if you ever update scheduler/crontab.example
-# with KST-correct times — currently it's UTC-based and would shift schedules)
-crontab scheduler/crontab.example   # NOT recommended until that file is fixed
+# Re-install the version in this repo
+crontab scheduler/crontab.example
 ```
 
 ## Smoke-test record (this session)
@@ -149,13 +159,13 @@ Other jobs (briefings, weekly calibration) are not smoke-tested but will fire on
 
 1. **PyKRX `test_kr_fundamentals_fixed` failure** (HANDOFF §11.E) is unrelated to cron and does not affect any of these jobs.
 2. **No log rotation** — files grow indefinitely. Add `logrotate` if `~/logs/stock-expectation/` exceeds a few hundred MB.
-3. **No retry-on-failure** at the cron level — if `outcome_tracker.py` happens to fail mid-run, the next day's 00:00 run will pick up the same `OPEN` predictions and re-evaluate. Idempotent by design.
-4. **`scheduler/crontab.example` in the repo is UTC-based** and would mis-schedule on a KST host like this one. The actively-installed crontab (snapshotted above) supersedes it. Cleanup item: align the example to KST or add an explicit `CRON_TZ=UTC` line in the example.
-5. **Claude Code subscription is required** for daily briefings. If you revoke `claude` CLI auth (e.g. `claude /logout`), both briefing jobs will fail silently until re-auth or switching to `--mode api`.
+3. **No retry-on-failure** at the cron level — if `outcome_tracker.py` happens to fail mid-run, the next day's 06:00 run will pick up the same `OPEN` predictions and re-evaluate. Idempotent by design.
+4. **No retry-on-failure for daily briefings** — if a Codex CLI invocation fails, the failure is logged and Telegram gets the existing failure notice, but cron itself waits for the next scheduled run.
+5. **Codex CLI auth is required** for daily briefings. If Codex CLI auth expires or the configured model is unavailable, briefing jobs will fail until re-auth, setting `CODEX_MODEL`, or switching to `--mode api`.
 
 ## Cleanup / rollback
 
-Disable all four jobs:
+Disable all jobs:
 
 ```bash
 crontab -r          # removes installed crontab entirely
