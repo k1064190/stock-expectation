@@ -158,6 +158,7 @@ def test_cli_create_recalibrate_persists_raw(db, db_path, monkeypatch):
         target_price=None,
         stop_price=None,
         analysis_group_id=None,
+        components=None,
         recalibrate=True,
     )
     rc = stock_cli.cmd_predict_create(args)
@@ -167,6 +168,41 @@ def test_cli_create_recalibrate_persists_raw(db, db_path, monkeypatch):
     ).fetchone()
     assert row["raw_confidence"] == 0.72
     assert row["confidence"] < 0.72  # recalibrated downward
+
+
+def _create_args(**over):
+    """A predict-create args namespace with valid defaults, overridable."""
+    base = dict(
+        ticker="aapl",
+        market="US",
+        direction="BULL",
+        confidence=0.65,
+        timeframe="1W",
+        entry_price=100.0,
+        reasoning="t",
+        signals="",
+        source="INTERACTIVE",
+        target_price=None,
+        stop_price=None,
+        analysis_group_id=None,
+        components=None,
+        recalibrate=False,
+    )
+    base.update(over)
+    return types.SimpleNamespace(**base)
+
+
+def test_cli_rejects_malformed_components():
+    # Bad JSON is rejected before any DB access (returns 1, no insert).
+    assert stock_cli.cmd_predict_create(_create_args(components="not-json")) == 1
+
+
+def test_cli_rejects_non_object_components():
+    assert stock_cli.cmd_predict_create(_create_args(components="[1,2,3]")) == 1
+
+
+def test_cli_rejects_nan_components():
+    assert stock_cli.cmd_predict_create(_create_args(components='{"news": NaN}')) == 1
 
 
 # One below the module threshold, expressed via the constant so the test tracks

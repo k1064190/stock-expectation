@@ -77,6 +77,7 @@ from metrics import (
     permutation_test_confidence,
     build_recalibration_map,
     apply_recalibration,
+    get_component_contribution,
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
@@ -839,6 +840,23 @@ def cmd_predict_create(args) -> int:
 
         signals = [s.strip() for s in args.signals.split(",")] if args.signals else []
 
+        components = None
+        if args.components:
+            try:
+                # Reject NaN/Infinity — they are not valid JSON and would later
+                # serialize back out as non-standard tokens and skew the
+                # numeric positive/negative split.
+                def _no_nan(_tok):
+                    raise ValueError(f"non-finite number in --components: {_tok}")
+
+                components = json.loads(args.components, parse_constant=_no_nan)
+            except (json.JSONDecodeError, ValueError) as exc:
+                _print_json({"error": f"--components is not valid JSON: {exc}"})
+                return 1
+            if not isinstance(components, dict):
+                _print_json({"error": "--components must be a JSON object"})
+                return 1
+
         conn = get_connection()
         try:
             raw_confidence = args.confidence
@@ -865,6 +883,7 @@ def cmd_predict_create(args) -> int:
                 target_price=args.target_price,
                 stop_price=args.stop_price,
                 analysis_group_id=args.analysis_group_id,
+                components=components,
             )
 
             insert_prediction(conn, pred)
@@ -960,6 +979,19 @@ def cmd_track_record(args) -> int:
             }
         )
         return 0
+    finally:
+        conn.close()
+
+
+def cmd_component_contribution(args) -> int:
+    """Show win-rate by each stored per-pillar component (algo/news/llm/gates)."""
+    conn = get_connection()
+    try:
+        _print_json(get_component_contribution(conn, min_count=args.min_count))
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
     finally:
         conn.close()
 
@@ -1726,6 +1758,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="UUID linking predictions from the same multi-horizon analysis",
     )
     pc.add_argument(
+        "--components",
+        default=None,
+        help=(
+            "JSON object of per-pillar contributions, e.g. "
+            '\'{"algo":7.0,"news":1.0,"llm_context":-1.5,'
+            '"overextension":"ELEVATED","regime":"NEUTRAL"}\'. Stored for '
+            "capability-contribution analysis and future blended confidence."
+        ),
+    )
+    pc.add_argument(
         "--recalibrate",
         action="store_true",
         help=(
@@ -1790,6 +1832,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restrict calibration buckets to a single horizon (default: all)",
     )
     cal.set_defaults(func=cmd_calibration)
+
+    # --- component-contribution ---
+    cc = sub.add_parser(
+        "component-contribution",
+        help="Win-rate split by each stored per-pillar component (algo/news/llm/gates)",
+    )
+    cc.add_argument(
+        "--min-count",
+        type=int,
+        default=8,
+        help="Minimum closed rows in a bucket to report it (default 8)",
+    )
+    cc.set_defaults(func=cmd_component_contribution)
 
     # --- portfolio ---
     pf = sub.add_parser("portfolio", help="Portfolio tracking and evaluation")

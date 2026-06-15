@@ -225,10 +225,15 @@ bin/stock-cli predict create \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
+  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","regime":"NEUTRAL"}' \
   --source LIVE \
   --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
+
+`--components`는 항상 해당 콜의 pillar별 기여도(algo/news/llm_context 점수 + overextension 레벨 +
+regime 라벨)를 담아 전달 — `bin/stock-cli component-contribution`로 세 능력의 기여를 따로 측정하고
+향후 blended confidence 학습에 사용.
 
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
