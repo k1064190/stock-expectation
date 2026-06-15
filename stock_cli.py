@@ -99,7 +99,7 @@ from portfolio.evaluator import (
     compute_vs_predictions,
     compute_advice,
 )
-from portfolio.toss_sync import fetch_toss_positions, reconcile, tossctl_available
+from portfolio.toss_sync import fetch_positions, reconcile
 
 
 def _positive_int(value: str) -> int:
@@ -714,6 +714,46 @@ def cmd_graph_theme_winners(args) -> int:
 # ---------------------------------------------------------------------------
 
 
+# Minimum closed (HIT/MISS) predictions of a source before its recalibration
+# curve is trustworthy enough to apply live. Below this the isotonic map is
+# fit on too few outcomes to be anything but noise, so --recalibrate is a no-op.
+MIN_CLOSED_FOR_RECAL = 30
+
+
+def _recalibrated_confidence(
+    conn, raw_confidence: float, source: str
+) -> tuple[float, bool]:
+    """Map a raw confidence through the source's isotonic recalibration curve.
+
+    The curve is built from *closed* (HIT/MISS) predictions of the same source
+    so live confidences are calibrated against realised accuracy rather than the
+    model's near-constant raw output. A global (all-horizon) map is used: the
+    backfill A/B found it as accurate as per-horizon maps and far more robust on
+    the current sample size.
+
+    Args:
+        conn: SQLite connection to predictions.db.
+        raw_confidence: The model's raw confidence in [0, 1].
+        source: Prediction source (LIVE/BACKTEST/INTERACTIVE) whose history
+            defines the calibration curve.
+
+    Returns:
+        (confidence_to_store, applied). ``applied`` is False — and the raw
+        confidence is returned unchanged — when there are fewer than
+        ``MIN_CLOSED_FOR_RECAL`` closed predictions for the source.
+    """
+    n_closed = conn.execute(
+        "SELECT COUNT(*) FROM predictions WHERE status IN ('HIT', 'MISS') AND source = ?",
+        (source,),
+    ).fetchone()[0]
+    if n_closed < MIN_CLOSED_FOR_RECAL:
+        return raw_confidence, False
+    recal_map = build_recalibration_map(conn, source=source)
+    if not recal_map:
+        return raw_confidence, False
+    return apply_recalibration(raw_confidence, recal_map), True
+
+
 def cmd_predict_create(args) -> int:
     """Create a new prediction."""
     try:
@@ -729,25 +769,41 @@ def cmd_predict_create(args) -> int:
 
         signals = [s.strip() for s in args.signals.split(",")] if args.signals else []
 
-        pred = Prediction(
-            ticker=args.ticker.upper(),
-            market=args.market.upper(),
-            direction=args.direction.upper(),
-            confidence=args.confidence,
-            timeframe=args.timeframe,
-            reasoning=args.reasoning,
-            entry_price=args.entry_price,
-            signals_used=signals,
-            source=args.source.upper(),
-            target_price=args.target_price,
-            stop_price=args.stop_price,
-            analysis_group_id=args.analysis_group_id,
-        )
-
         conn = get_connection()
         try:
+            raw_confidence = args.confidence
+            recal_applied = False
+            stored_confidence = raw_confidence
+            if args.recalibrate:
+                stored_confidence, recal_applied = _recalibrated_confidence(
+                    conn, raw_confidence, args.source.upper()
+                )
+
+            pred = Prediction(
+                ticker=args.ticker.upper(),
+                market=args.market.upper(),
+                direction=args.direction.upper(),
+                confidence=stored_confidence,
+                # Always persist the model's raw confidence so the calibration
+                # curve trains on raw output, never on recalibrated values.
+                raw_confidence=raw_confidence,
+                timeframe=args.timeframe,
+                reasoning=args.reasoning,
+                entry_price=args.entry_price,
+                signals_used=signals,
+                source=args.source.upper(),
+                target_price=args.target_price,
+                stop_price=args.stop_price,
+                analysis_group_id=args.analysis_group_id,
+            )
+
             insert_prediction(conn, pred)
-            _print_json(asdict(pred))
+            out = asdict(pred)
+            if args.recalibrate:
+                # Surface the transform so the caller/log can see what happened.
+                out["raw_confidence"] = round(raw_confidence, 4)
+                out["recalibration_applied"] = recal_applied
+            _print_json(out)
             return 0
         finally:
             conn.close()
@@ -1291,17 +1347,14 @@ def cmd_portfolio_advice(args) -> int:
 
 
 def cmd_portfolio_sync(args) -> int:
-    """Sync portfolio from Toss Securities via tossctl.
+    """Sync portfolio from Toss Securities.
 
-    Fetches current positions from Toss, compares with local DB,
-    and records synthetic transactions to reconcile differences.
+    Fetches current positions via the official Toss Open API (falling back to
+    the tossctl CLI), compares with the local DB, and records synthetic
+    transactions to reconcile differences.
     """
     try:
-        if not tossctl_available():
-            _print_json({"error": "tossctl is not installed. See README for setup."})
-            return 1
-
-        toss_positions = fetch_toss_positions()
+        toss_positions, source = fetch_positions(args.source)
 
         markets = [args.market.upper()] if args.market else ["KR", "US"]
         total_actions = []
@@ -1344,6 +1397,7 @@ def cmd_portfolio_sync(args) -> int:
                 _print_json(
                     {
                         "dry_run": True,
+                        "source": source,
                         "actions": total_actions,
                         "action_count": len(total_actions),
                     }
@@ -1352,6 +1406,7 @@ def cmd_portfolio_sync(args) -> int:
                 _print_json(
                     {
                         "synced": True,
+                        "source": source,
                         "actions": total_actions,
                         "action_count": len(total_actions),
                     }
@@ -1581,6 +1636,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="UUID linking predictions from the same multi-horizon analysis",
     )
+    pc.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help=(
+            "Map the raw --confidence through the isotonic recalibration curve "
+            "(built from closed predictions of the same source) before storing, "
+            "so logged confidence reflects observed accuracy. No-op until enough "
+            "closed predictions exist."
+        ),
+    )
     pc.set_defaults(func=cmd_predict_create)
 
     pl = predict_sub.add_parser("list", help="List predictions")
@@ -1710,12 +1775,21 @@ def build_parser() -> argparse.ArgumentParser:
     pa.set_defaults(func=cmd_portfolio_advice)
 
     # portfolio sync
-    psync = pf_sub.add_parser("sync", help="Sync from Toss Securities via tossctl")
+    psync = pf_sub.add_parser(
+        "sync", help="Sync from Toss Securities (Open API, tossctl fallback)"
+    )
     psync.add_argument(
         "--market",
         default=None,
         choices=["US", "KR", "us", "kr"],
         help="Sync one market only (default: both)",
+    )
+    psync.add_argument(
+        "--source",
+        default="auto",
+        choices=["auto", "toss-api", "tossctl"],
+        help="Data source: auto (Open API if configured, else tossctl), "
+        "toss-api, or tossctl (default: auto)",
     )
     psync.add_argument("--dry-run", action="store_true", help="Preview without writing")
     psync.set_defaults(func=cmd_portfolio_sync)

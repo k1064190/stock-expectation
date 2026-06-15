@@ -87,6 +87,11 @@ class Prediction:
         analysis_group_id: Optional UUID shared by predictions that come
             from the same multi-horizon analysis (e.g. the 4 horizons emitted
             by a single ``/expect MU`` run). Legacy predictions have None.
+        raw_confidence: The model's confidence before recalibration. When
+            ``--recalibrate`` is applied, ``confidence`` holds the recalibrated
+            value and this holds the original; otherwise None. The calibration
+            curve trains on this (falling back to ``confidence``) so it always
+            reflects raw model output, never recalibrated values.
     """
 
     ticker: str
@@ -109,6 +114,7 @@ class Prediction:
     outcome_date: Optional[str] = None
     outcome_return: Optional[float] = None
     analysis_group_id: Optional[str] = None
+    raw_confidence: Optional[float] = None
 
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
@@ -121,6 +127,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     market TEXT NOT NULL CHECK(market IN ('US', 'KR')),
     direction TEXT NOT NULL CHECK(direction IN ('BULL', 'BEAR', 'NEUTRAL')),
     confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    raw_confidence REAL,
     timeframe TEXT NOT NULL CHECK(timeframe IN ('1W', '2W', '1M', '3M', '6M', '1Y')),
     reasoning TEXT NOT NULL,
     entry_price REAL NOT NULL,
@@ -229,10 +236,30 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # ``no such column`` on a legacy DB if we created indexes first.
     _migrate_schema_if_needed(conn)
     _create_schema(conn)
+    # Additive column for the raw (pre-recalibration) confidence. Runs after the
+    # full-swap migration so a DB that already has analysis_group_id but predates
+    # raw_confidence still gets the column.
+    _ensure_raw_confidence_column(conn)
     # Build the UNIQUE dedup index last — after any legacy rows have been
     # copied back by the migration — and self-heal pre-existing OPEN dupes.
     _ensure_open_dedup_index(conn)
     return conn
+
+
+def _ensure_raw_confidence_column(conn: sqlite3.Connection) -> None:
+    """Add the nullable ``raw_confidence`` column if an older DB lacks it.
+
+    ``raw_confidence`` records the model's confidence *before* recalibration, so
+    the calibration curve can always be rebuilt from raw model output even after
+    the ``confidence`` column starts holding recalibrated values. A plain
+    ``ALTER TABLE ADD COLUMN`` suffices — the column is nullable and existing
+    rows read back as NULL (calibration falls back to ``confidence`` for them).
+    Idempotent.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+    if "raw_confidence" not in cols:
+        conn.execute("ALTER TABLE predictions ADD COLUMN raw_confidence REAL")
+        conn.commit()
 
 
 def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
@@ -464,10 +491,11 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
 
     conn.execute(
         """INSERT INTO predictions
-           (id, created_at, ticker, market, direction, confidence, timeframe,
-            reasoning, entry_price, signals_used, source, target_price, stop_price,
-            status, outcome_price, outcome_date, outcome_return, analysis_group_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (id, created_at, ticker, market, direction, confidence, raw_confidence,
+            timeframe, reasoning, entry_price, signals_used, source, target_price,
+            stop_price, status, outcome_price, outcome_date, outcome_return,
+            analysis_group_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             pred.id,
             pred.created_at,
@@ -475,6 +503,7 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
             pred.market,
             pred.direction,
             pred.confidence,
+            pred.raw_confidence,
             pred.timeframe,
             pred.reasoning,
             pred.entry_price,
@@ -622,4 +651,7 @@ def _row_to_prediction(row: sqlite3.Row) -> Prediction:
         outcome_date=row["outcome_date"],
         outcome_return=row["outcome_return"],
         analysis_group_id=row["analysis_group_id"],
+        raw_confidence=(
+            row["raw_confidence"] if "raw_confidence" in row.keys() else None
+        ),
     )

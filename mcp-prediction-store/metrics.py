@@ -494,8 +494,14 @@ def get_calibration_report(
         params.append(timeframe)
 
     where = " AND ".join(conditions)
+    # Calibrate on RAW model confidence: once --recalibrate is in use the
+    # ``confidence`` column holds recalibrated values, so training the curve on
+    # it would feed recalibrated output back as input (a recursive loop that
+    # collapses the map's domain). ``raw_confidence`` preserves the original;
+    # COALESCE falls back to ``confidence`` for legacy/non-recalibrated rows.
     rows = conn.execute(
-        f"SELECT confidence, status FROM predictions WHERE {where}",
+        f"SELECT COALESCE(raw_confidence, confidence) AS confidence, status "
+        f"FROM predictions WHERE {where}",
         params,
     ).fetchall()
 

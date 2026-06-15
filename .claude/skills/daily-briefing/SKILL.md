@@ -202,12 +202,14 @@ bin/stock-cli predict create \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
   --source LIVE \
+  --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
 
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
-- **재보정 적용**: `bin/stock-cli calibration` 출력의 `recalibration_map`을 raw confidence에 적용해 등록 (예: 과신 구간 0.62 → ~0.50). 관측 정확도를 반영하기 위함.
+- **재보정 적용**: raw confidence를 그대로 넘기고 `--recalibrate` 플래그를 추가하면 CLI가 isotonic recalibration 곡선으로 결정론적으로 매핑해 저장한다 (예: 과신 구간 0.62 → ~0.50). 직접 손으로 매핑하지 말 것 — 플래그가 일관되게 처리하며, 해당 source의 closed 예측이 30건 미만이면 안전하게 no-op. JSON 출력의 `raw_confidence`/`recalibration_applied`로 확인.
+- **죽은 시그널 금지**: `cycle`, `valuation`, `mean_reversion`은 적중률 0%로 판정되어 signals_used에 기록하지 말 것 (calibration 오염). 해당 정성 신호는 `LLM_CONTEXT_SCORE`로 반영.
 - 최소 2개 signal 명시 (signals_used). `llm_context` 시그널은 `LLM_CONTEXT_SCORE`가 0이 아닐 때만 포함 (주별 calibration이 이 시그널 단독 측정)
 - KR 종목 기본 timeframe 1M (유동성 낮음 고려)
 - US 종목 기본 timeframe 1W

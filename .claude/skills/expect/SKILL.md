@@ -284,7 +284,7 @@ Direction = BULL / BEAR / NEUTRAL. Confidence ∈ [0.50, 0.85] using the 4-signa
 
 **BEAR edge bar (RULE C3 — higher bar for downside calls):** Our measured BEAR hit rate is ~6% vs ~61% for BULL — the system cannot reliably forecast declines. Therefore a BEAR horizon may only be logged when **all** of: (a) ≥3-signal alignment, (b) macro/cycle confirmation present (`LLM_CONTEXT_SCORE ≤ −2.0` **or** `cycle_risk_flag == True`), and (c) reward:risk ≥ 2.0. Otherwise emit NEUTRAL instead of BEAR. Note: under `--source LIVE` the prediction store **hard-rejects BEAR rows** (they error out), so for scheduler/cron runs always resolve a would-be BEAR to NEUTRAL rather than attempting to save it.
 
-Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Recalibrate confidence first:** apply the `recalibration_map` from the Step 1 calibration call to your raw confidence before saving (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6:
+Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Pass your raw confidence and add `--recalibrate`** — the CLI maps it through the isotonic recalibration curve deterministically before storing (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6. Do **not** hand-apply the map yourself; the flag does it consistently (and is a safe no-op until ≥30 closed predictions of that source exist):
 
 ```bash
 GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")
@@ -295,10 +295,11 @@ bin/stock-cli predict create \
   --entry-price 130.50 --target-price 138 --stop-price 125 \
   --reasoning "RSI 62, MA20+7.3%, Finnhub sentiment +0.21, no earnings risk" \
   --signals technical,news,momentum \
+  --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
 
-`--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `cycle`, `valuation`, `mean_reversion`, `disclosure`, `llm_context`. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
+The JSON output echoes `raw_confidence` and `recalibration_applied` so you can confirm the transform. `--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `disclosure`, `llm_context`. **Do not record `cycle`, `valuation`, or `mean_reversion`** — these are graded statistically dead (0% hit rate) and only pollute per-signal calibration; route any such qualitative read through `LLM_CONTEXT_SCORE` instead. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
 
 Generate a fresh `GROUP_ID` for each stock — never reuse across tickers.
 

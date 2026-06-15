@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>11단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0e0dc;
+        --text: #1a1a1a;
+        --muted: #6b7280;
+        --accent: #2d6a6a;
+        --accent-light: #e8f4f4;
+        --node-muted-bg: #b0bec5;
+        --node-muted-border: #90a4ae;
+        --radius: 8px;
+        --font:
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui,
+          -apple-system, "Segoe UI", sans-serif;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 15px;
+        line-height: 1.7;
+        padding: 2rem 1rem 4rem;
+      }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        max-width: 960px;
+        margin: 0 auto 2.5rem;
+        gap: 1rem;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.02em;
+      }
+
+      header p.subtitle {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-top: 0.2rem;
+      }
+
+      .lang-switcher {
+        font-size: 0.875rem;
+        white-space: nowrap;
+        padding-top: 0.1rem;
+      }
+
+      .lang-switcher .current {
+        color: var(--muted);
+      }
+
+      .lang-switcher a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .lang-switcher a:hover {
+        text-decoration: underline;
+      }
+
+      .lang-switcher .sep {
+        color: var(--muted);
+        margin: 0 0.3rem;
+      }
+
+      /* ── Timeline nav ── */
+      nav {
+        max-width: 960px;
+        margin: 0 auto 2.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .timeline-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .timeline-item:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        top: 14px;
+        left: calc(50% + 14px);
+        width: calc(100% - 28px);
+        height: 2px;
+        background: var(--node-muted-border);
+        z-index: 0;
+      }
+
+      .node-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 60px;
+      }
+
+      .node {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid var(--node-muted-border);
+        background: var(--node-muted-bg);
+        position: relative;
+        z-index: 1;
+        flex-shrink: 0;
+      }
+
+      .node.current {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-light);
+      }
+
+      .node-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        margin-top: 0.35rem;
+        text-align: center;
+        line-height: 1.2;
+      }
+
+      .node-label.current {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+
+      main h2 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      main .stage-summary {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 2rem;
+        max-width: 700px;
+      }
+
+      /* ── Card grid ── */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.25rem;
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+      }
+
+      article h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--accent-light);
+      }
+
+      /* ── Sections within a card ── */
+      .section {
+        margin-bottom: 1rem;
+      }
+
+      .section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .section p {
+        font-size: 0.875rem;
+        color: var(--text);
+        margin-bottom: 0.4rem;
+      }
+
+      .section p:last-child {
+        margin-bottom: 0;
+      }
+
+      .section ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .section ul li {
+        font-size: 0.875rem;
+        color: var(--text);
+        padding: 0.2rem 0 0.2rem 1rem;
+        position: relative;
+      }
+
+      .section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--muted);
+      }
+
+      /* ── Table ── */
+      .section table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+        margin-top: 0.3rem;
+      }
+
+      .section table th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        padding: 0.25rem 0.4rem;
+      }
+
+      .section table td {
+        padding: 0.25rem 0.4rem;
+        border-bottom: 1px solid var(--bg);
+        color: var(--text);
+      }
+
+      .section table tr:last-child td {
+        border-bottom: none;
+      }
+
+      /* ── Code / file paths ── */
+      code {
+        font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+        font-size: 0.8em;
+        background: var(--accent-light);
+        color: var(--accent);
+        padding: 0.1em 0.3em;
+        border-radius: 3px;
+      }
+
+      /* ── Retrospective callout ── */
+      .retro {
+        background: var(--accent-light);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        padding: 0.6rem 0.75rem;
+      }
+
+      .retro p {
+        font-size: 0.85rem;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Stock Expectation</h1>
+        <p class="subtitle">단계별 진행 상황</p>
+      </div>
+      <div class="lang-switcher">
+        <a href="index.html">EN</a><span class="sep">|</span
+        ><span class="current">한국어</span>
+      </div>
+    </header>
+
+    <nav aria-label="단계 타임라인">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">0단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">1단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">2단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">3단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">4단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">4.1단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">5단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">6단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">7단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">8단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">9단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">10단계</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node current"></div>
+            <div class="node-label current">11단계</div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <h2>11단계</h2>
+      <p class="stage-summary">
+        예측 정확도 개선 이니셔티브: 읽기 전용 백필 A/B 평가 게이트 구축과 함께,
+        결정론적 신뢰도 재보정 및 죽은 시그널 정리를 통해 낙관 편향이 라이브
+        <code>/expect</code> 흐름으로 유입되는 것을 방지합니다.
+      </p>
+
+      <div class="card-grid">
+        <!-- 카드 1: Backfill Harness -->
+        <article>
+          <h3>Backfill Harness</h3>
+
+          <div class="section">
+            <div class="section-label">왜</div>
+            <p>
+              예측 적중률이 73%(2026-05-11)에서 24%(2026-06-14)로 붕괴했습니다.
+              승인된 계획은 여섯 가지 정확도 변경(A-F)을 규정하고 있으며, 각
+              변경 사항은 라이브 <code>/expect</code> 흐름에 적용되기 전에
+              반드시 과거 데이터로 검증되어야 합니다 — 그렇지 않으면
+              LIVE-vs-INTERACTIVE 낙관 편향(F4)이 반복될 위험이 있습니다. 이
+              하네스가 바로 그 게이트입니다.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">무엇을</div>
+            <p>
+              <code>scheduler/backfill_eval.py</code> — 종료된(HIT/MISS) 예측을
+              대상으로 하는 읽기 전용 A/B 도구이며,
+              <code>tests/test_backfill_eval.py</code> (9개 테스트, 전체 통과)가
+              포함됩니다.
+            </p>
+            <p>보고서에 포함되는 항목:</p>
+            <ul>
+              <li>
+                <strong>[A] 등온 재보정</strong> — 누설 방지: 이전 학습
+                슬라이스로 재보정 맵을 피팅하고, 보류된 최근 테스트 슬라이스에서
+                원시 대 재보정 Brier 점수를 산출합니다.
+              </li>
+              <li>
+                <strong>[B] 죽은 시그널 기여도</strong> — 종료 행을 죽은 시그널
+                (<code>valuation</code>/<code>cycle</code>/<code>mean_reversion</code>)
+                사용 여부로 분류합니다.
+              </li>
+              <li>
+                <strong>[D] 레짐 구간 억제</strong> — 리스크-오프 구간 내에
+                생성된 BULL 예측의 결과 (강경 레짐 게이트가 적용되었을 경우
+                억제되었을 예측)를 분석합니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">첫 실행 결과 (실제 DB, n=420 종료)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>변경</th>
+                  <th>지표</th>
+                  <th>이전</th>
+                  <th>이후</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A (recal, OOS) ALL</td>
+                  <td>Brier</td>
+                  <td>0.340</td>
+                  <td><strong>0.204</strong></td>
+                </tr>
+                <tr>
+                  <td>A (recal, OOS) LIVE</td>
+                  <td>Brier</td>
+                  <td>0.331</td>
+                  <td><strong>0.160</strong></td>
+                </tr>
+                <tr>
+                  <td>B with-dead-signal</td>
+                  <td>적중률</td>
+                  <td>—</td>
+                  <td><strong>0.0%</strong> (n=15, Brier 0.424)</td>
+                </tr>
+                <tr>
+                  <td>D BULL 6/1-6/7</td>
+                  <td>적중률</td>
+                  <td>—</td>
+                  <td><strong>4.3%</strong> (n=140)</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="margin-top: 0.4rem">
+              이 결과는 A와 D를 강하게 검증하고, B는 노이즈(소량)임을
+              확인합니다.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">어떻게</div>
+            <p>
+              재구현 대신 프로덕션 보정
+              수학(<code>build_recalibration_map</code>,
+              <code>apply_recalibration</code>,
+              <code>get_calibration_report</code> —
+              <code>mcp-prediction-store/metrics.py</code>)을 재사용합니다. 학습
+              슬라이스는 인메모리 DB에 로드되어 버킷팅이 라이브와 동일하게
+              유지됩니다. 시간 순 분할은 <code>get_signal_decay</code> (<code
+                >outcome_date, created_at, id</code
+              >)를 따릅니다.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">코드 위치</div>
+            <ul>
+              <li>
+                <code>scheduler/backfill_eval.py</code> — 하네스
+                (<code>_connect_readonly</code>, <code>load_closed</code>,
+                <code>_metrics</code>, <code>eval_recalibration</code>,
+                <code>eval_dead_signals</code>, <code>eval_regime_window</code>,
+                <code>build_report</code>)
+              </li>
+              <li>
+                <code>tests/test_backfill_eval.py</code> — 단위 테스트 15개
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">리뷰 루프</div>
+            <ul>
+              <li>
+                <strong>수정 — DB 읽기 전용 미적용 (codex, High):</strong>
+                하네스가 <code>models.get_connection</code>을 사용해
+                마이그레이션/인덱스/WAL/중복 자가복구(쓰기)를 유발했습니다.
+                <code>_connect_readonly</code>(<code>file:...?mode=ro</code>
+                URI)로 교체했습니다.
+              </li>
+              <li>
+                <strong>수정 — avg-return 100배 팽창 (codex, Low):</strong>
+                <code>outcome_return</code>은 백분율 포인트로 저장되나
+                <code>:+.2%</code>가 100배를 곱해 -865%로 표시되었습니다.
+                <code>:+.2f%</code>로 수정. 이전의 "데이터 손상" 메모는
+                오류였습니다 — 표시 버그였습니다.
+              </li>
+              <li>
+                <strong
+                  >수정 — 유효하지 않은 <code>oos_fraction</code> / 소량 n
+                  (codex + gemini):</strong
+                >
+                <code>0 &lt; oos_fraction &lt; 1</code> 유효성 검사 및 "데이터
+                부족" 가드를 추가했습니다.
+              </li>
+              <li>
+                <strong
+                  >수정 — 수평선별 재보정 (gemini + code-reviewer):</strong
+                >
+                <code>eval_recalibration</code>/<code>build_report</code>에
+                선택적 <code>timeframe</code>과 <code>--timeframe</code> CLI
+                플래그를 추가했습니다.
+              </li>
+              <li>
+                <strong>수정 — 테스트 부족:</strong> 유효하지 않은 분수, 빈
+                시그널 목록, 커스텀 죽은 시그널 집합,
+                <code>build_report</code> 스모크 테스트를 추가했습니다 (9개에서
+                15개로).
+              </li>
+              <li>
+                <strong
+                  >기각 — 인메모리 스키마 "Critical" (code-reviewer):</strong
+                >
+                세 검토자 모두 <code>get_calibration_report</code>가 4개 열만
+                읽는다고 확인했습니다. 임시 테이블이 정확합니다.
+              </li>
+              <li>
+                <strong>기각 — 엄격한 시점 분할 (gemini/codex):</strong> 분할이
+                <code>outcome_date</code> 기준이므로 테스트 결과가 피팅 맵에
+                유입되지 않으며, 잔여 PIT 효과는 이차적입니다.
+                <code>eval_recalibration</code>에 문서화했습니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">기존 알려진 문제</div>
+            <p>
+              <code>scheduler/weekly_calibration.py:208,236</code>이
+              <code>avg_return</code>에 <code>:+.2%</code>를 사용하고 있어
+              동일한 100배 팽창 버그가 존재합니다. 프로덕션 주간 보고서에서 평균
+              수익률이 과도하게 표시됩니다. 별도의 범위가 정해진 수정으로
+              남겨두었습니다(이번 범위 밖).
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">회고</div>
+            <div class="retro">
+              <p>
+                인메모리 DB를 통해 프로덕션 재보정 빌더를 재사용함으로써
+                하네스의 정직성을 유지했습니다 — 라이브와 달라질 수 있는 중복
+                보정 로직이 없었습니다. 세 검토자 루프는 충분한 가치를
+                발휘했습니다: codex가 읽기 전용 계약 위반과 데이터를 잘못 탓하게
+                한 서식 버그를 잡아냈습니다. 교훈: 데이터를 탓하기 전에 표시
+                경로를 먼저 검증하세요.
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <!-- 카드 2: Recalibration And Dead Signals -->
+        <article>
+          <h3>Recalibration And Dead Signals</h3>
+
+          <div class="section">
+            <div class="section-label">왜</div>
+            <ul>
+              <li>
+                <strong>F1/F7 (과잉 확신 + 미사용 재보정 맵):</strong> 0.60-0.70
+                신뢰도 구간이 실제 대비 +0.28 과도하게 높았으며,
+                <code>/expect</code>가 운영자에게 수동으로 재보정 맵을
+                적용하도록 안내했음에도 백필 결과 기록된 신뢰도가 여전히 ~0.6에
+                가까웠습니다. 수동 LLM 단계는 신뢰할 수 없으므로 재보정은
+                결정론적이어야 합니다.
+              </li>
+              <li>
+                <strong>F2/F5 (죽은 시그널):</strong> <code>valuation</code>,
+                <code>cycle</code>, <code>mean_reversion</code>이 0%를 기록하며
+                시그널별 보정만 오염시킵니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">무엇을</div>
+            <ul>
+              <li>
+                <strong
+                  >A — <code>predict create</code>에
+                  <code>--recalibrate</code> 플래그 추가</strong
+                >
+                (<code>stock_cli.py</code>). 저장 전 원시
+                <code>--confidence</code>를 소스 범위 등온 곡선에 통과시키며,
+                JSON에 <code>raw_confidence</code> /
+                <code>recalibration_applied</code>를 출력합니다. 해당 소스의
+                종료 예측이 <code>MIN_CLOSED_FOR_RECAL = 30</code> 미만일 경우
+                안전하게 무작동(no-op)합니다.
+              </li>
+              <li>
+                <strong>B — 죽은 시그널 제거</strong> — <code>/expect</code>와
+                <code>daily-briefing</code> 스킬 모두의 허용
+                <code>--signals</code> 목록에서 제거했습니다. 운영자는 해당
+                읽기를 <code>LLM_CONTEXT_SCORE</code>로 라우팅하도록
+                안내받습니다.
+              </li>
+              <li>
+                <strong>기존 수정 (승인됨):</strong>
+                <code>weekly_calibration.py:208,236</code>이
+                <code>avg_return</code>에 <code>:+.2%</code>(100배 팽창)를
+                사용했습니다. <code>:+.2f%</code>로 수정.
+              </li>
+              <li>
+                테스트: <code>tests/test_recalibration_cli.py</code> (3개) —
+                최소 샘플 게이트, 과잉 확신 감소, 소스 범위 지정.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">어떻게</div>
+            <p>
+              재보정은 <code>build_recalibration_map</code>/<code
+                >apply_recalibration</code
+              >
+              (<code>mcp-prediction-store/metrics.py</code>)을 재사용합니다.
+              전역(전체 수평선) 맵을 사용합니다 — 백필 결과 수평선별 맵과 동등한
+              정확도를 보였으며(Brier 0.160 vs 0.169), 현재 샘플 크기에서 더
+              견고합니다. 소스 범위 지정: LIVE 예측은 LIVE 히스토리에만 대조하여
+              보정하며, 과적합된 INTERACTIVE 행은 사용하지 않습니다(F4 격차).
+              로깅 임계값은 여전히 원시 신뢰도 기준으로 판단하고, 저장되는 값만
+              재보정되므로 "각 수평선 >= 0.60 저장" 의미론은 변경되지 않습니다.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">검증</div>
+            <p>
+              백필 OOS Brier: LIVE <strong>0.331 에서 0.160</strong>, ALL
+              <strong>0.340 에서 0.204</strong>
+              (누설 방지 학습/테스트 분할).
+            </p>
+            <p>
+              <strong>라이브 맵 검사에서 드러난 주의사항:</strong> 프로덕션 LIVE
+              곡선은 원시 신뢰도가 거의 일정하기 때문에 단일 앵커(0.612 에서
+              0.248)만 가지고 있어, 재보정이 모든 신뢰도를 ~0.25 기저율로
+              수렴시킵니다. 이것이 Brier 향상의 원인이지만(기저율이 비정보적인
+              0.6을 이기는 것 — 순열 테스트에서 원시 신뢰도가 신호를 전달하지
+              않음이 이미 확인됨), 모델이 정보적인 신뢰도 분포를 생성할 때까지
+              기록된 신뢰도가 종목 <em>순위 지정</em>을 멈춘다는 의미입니다.
+              식별 능력 회복은 하위 작업(변경 E / 메타 레이블링)이며 재보정의
+              역할이 아닙니다.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">리뷰 루프</div>
+            <ul>
+              <li>
+                <strong
+                  >CRITICAL (전원, 수정) — 재보정이 자체 학습 데이터를
+                  오염:</strong
+                >
+                재보정된 값을 <code>confidence</code>에 다시 저장하면 향후 맵이
+                오염됩니다
+                (<code>build_recalibration_map</code>/<code>get_calibration_report</code>는
+                <code>confidence</code>를 원시 예측자로 읽기 때문에, 재보정된
+                행이 원시인 것처럼 곡선에 재진입해 도메인을 붕괴시키고 재실행 시
+                이중 적용). <strong>수정:</strong> nullable
+                <code>raw_confidence</code> 컬럼 추가 (<code>models.py</code>
+                스키마 + <code>_ensure_raw_confidence_column</code> 마이그레이션
+                + dataclass/insert/reader); 보정은
+                <code>COALESCE(raw_confidence, confidence)</code>로 학습하여
+                재보정된 값을 절대 볼 수 없습니다. 새 테스트
+                <code>test_map_trains_on_raw_not_recalibrated</code>가 저장값
+                0.30/원시값 0.65 행이 0.65를 맵에 기여함을 증명합니다. 프로덕션
+                복사본에서 마이그레이션 검증 완료(1169행 보존, 컬럼 추가, 레거시
+                맵 변경 없음).
+              </li>
+              <li>
+                <strong>수정 — 테스트 부족 (codex/code-reviewer):</strong>
+                게이트 후 빈 맵 무작동 테스트, 비오염 테스트, 원시값 보존 및
+                저장 신뢰도 보정을 검증하는 종단간
+                <code>cmd_predict_create --recalibrate</code> 테스트를
+                추가했습니다.
+              </li>
+              <li>
+                <strong>인지됨 — 재실행 이중 적용:</strong> 호출자가 저장된(이미
+                보정된) 신뢰도를 <code>--recalibrate</code>로 수동 재제출하면
+                다시 맵핑됩니다. 정상적인 <code>/expect</code> 경로(항상 모델의
+                원시 신뢰도를 전달)에서는 발생하지 않습니다. 문서화했으며
+                게이트는 추가하지 않았습니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">코드 위치</div>
+            <ul>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>_recalibrated_confidence</code>,
+                <code>MIN_CLOSED_FOR_RECAL</code>,
+                <code>cmd_predict_create</code>,
+                <code>--recalibrate</code> 인자,
+                <code>raw_confidence</code> 저장
+              </li>
+              <li>
+                <code>mcp-prediction-store/models.py</code> —
+                <code>raw_confidence</code> 컬럼, 스키마,
+                <code>_ensure_raw_confidence_column</code>, dataclass 필드,
+                insert, <code>_row_to_prediction</code>
+              </li>
+              <li>
+                <code>mcp-prediction-store/metrics.py</code> —
+                <code>get_calibration_report</code>가
+                <code>COALESCE(raw_confidence, confidence)</code>로 학습
+              </li>
+              <li>
+                <code>scheduler/weekly_calibration.py:208,236</code> —
+                avg_return 서식 수정
+              </li>
+              <li>
+                <code>.claude/skills/expect/SKILL.md</code> — recalibrate 단계 +
+                죽은 시그널 목록
+              </li>
+              <li>
+                <code>.claude/skills/daily-briefing/SKILL.md</code> —
+                recalibrate 단계 + 죽은 시그널 규칙
+              </li>
+              <li>
+                <code>tests/test_recalibration_cli.py</code> — 단위 테스트 7개
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">회고</div>
+            <div class="retro">
+              <p>
+                재보정을 수동 LLM 지침에서 CLI 플래그로 전환한 것이 F7의 실질적
+                해결책입니다 — 맵은 몇 주 동안 존재했지만 신뢰성 있게 적용된
+                적이 없었습니다. 백필 델타만이 아닌 실제 라이브 맵을 직접
+                검사함으로써 재보정이 현재 기저율로 수렴한다는 사실을
+                발견했습니다. 나중에 신뢰도가 식별 능력을 잃었다는 것을 발견하는
+                것보다, 지금 솔직하게 기록해두는 편이 낫습니다.
+              </p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </main>
+  </body>
+</html>

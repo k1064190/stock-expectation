@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 11 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0e0dc;
+        --text: #1a1a1a;
+        --muted: #6b7280;
+        --accent: #2d6a6a;
+        --accent-light: #e8f4f4;
+        --node-muted-bg: #b0bec5;
+        --node-muted-border: #90a4ae;
+        --radius: 8px;
+        --font:
+          system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 15px;
+        line-height: 1.6;
+        padding: 2rem 1rem 4rem;
+      }
+
+      /* ── Header ── */
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        max-width: 960px;
+        margin: 0 auto 2.5rem;
+        gap: 1rem;
+      }
+
+      header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.02em;
+      }
+
+      header p.subtitle {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-top: 0.2rem;
+      }
+
+      .lang-switcher {
+        font-size: 0.875rem;
+        white-space: nowrap;
+        padding-top: 0.1rem;
+      }
+
+      .lang-switcher .current {
+        color: var(--muted);
+      }
+
+      .lang-switcher a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .lang-switcher a:hover {
+        text-decoration: underline;
+      }
+
+      .lang-switcher .sep {
+        color: var(--muted);
+        margin: 0 0.3rem;
+      }
+
+      /* ── Timeline nav ── */
+      nav {
+        max-width: 960px;
+        margin: 0 auto 2.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: flex-start;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .timeline-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .timeline-item:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        top: 14px;
+        left: calc(50% + 14px);
+        width: calc(100% - 28px);
+        height: 2px;
+        background: var(--node-muted-border);
+        z-index: 0;
+      }
+
+      .node-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 60px;
+      }
+
+      .node {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid var(--node-muted-border);
+        background: var(--node-muted-bg);
+        position: relative;
+        z-index: 1;
+        flex-shrink: 0;
+      }
+
+      .node.current {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-light);
+      }
+
+      .node-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        margin-top: 0.35rem;
+        text-align: center;
+        line-height: 1.2;
+      }
+
+      .node-label.current {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+
+      main h2 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      main .stage-summary {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 2rem;
+        max-width: 700px;
+      }
+
+      /* ── Card grid ── */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.25rem;
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+      }
+
+      article h3 {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--accent-light);
+      }
+
+      /* ── Sections within a card ── */
+      .section {
+        margin-bottom: 1rem;
+      }
+
+      .section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.3rem;
+      }
+
+      .section p {
+        font-size: 0.875rem;
+        color: var(--text);
+        margin-bottom: 0.4rem;
+      }
+
+      .section p:last-child {
+        margin-bottom: 0;
+      }
+
+      .section ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .section ul li {
+        font-size: 0.875rem;
+        color: var(--text);
+        padding: 0.2rem 0 0.2rem 1rem;
+        position: relative;
+      }
+
+      .section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--muted);
+      }
+
+      /* ── Table ── */
+      .section table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+        margin-top: 0.3rem;
+      }
+
+      .section table th {
+        text-align: left;
+        font-weight: 600;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        padding: 0.25rem 0.4rem;
+      }
+
+      .section table td {
+        padding: 0.25rem 0.4rem;
+        border-bottom: 1px solid var(--bg);
+        color: var(--text);
+      }
+
+      .section table tr:last-child td {
+        border-bottom: none;
+      }
+
+      /* ── Code / file paths ── */
+      code {
+        font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+        font-size: 0.8em;
+        background: var(--accent-light);
+        color: var(--accent);
+        padding: 0.1em 0.3em;
+        border-radius: 3px;
+      }
+
+      /* ── Retrospective callout ── */
+      .retro {
+        background: var(--accent-light);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        padding: 0.6rem 0.75rem;
+      }
+
+      .retro p {
+        font-size: 0.85rem;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Stock Expectation</h1>
+        <p class="subtitle">Staged plan progress</p>
+      </div>
+      <div class="lang-switcher">
+        <span class="current">EN</span><span class="sep">|</span
+        ><a href="index.ko.html">한국어</a>
+      </div>
+    </header>
+
+    <nav aria-label="Stage timeline">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 0</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 1</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 2</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 3</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 4</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 4.1</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 5</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 6</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 7</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 8</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 9</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node"></div>
+            <div class="node-label">Stage 10</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="node-wrap">
+            <div class="node current"></div>
+            <div class="node-label current">Stage 11</div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <h2>Stage 11</h2>
+      <p class="stage-summary">
+        Prediction-accuracy initiative: a read-only backfill A/B evaluation gate
+        plus deterministic confidence recalibration and dead-signal pruning,
+        preventing optimism bias from entering the live
+        <code>/expect</code> flow.
+      </p>
+
+      <div class="card-grid">
+        <!-- Card 1: Backfill Harness -->
+        <article>
+          <h3>Backfill Harness</h3>
+
+          <div class="section">
+            <div class="section-label">Why</div>
+            <p>
+              Prediction win rate collapsed 73% (2026-05-11) to 24%
+              (2026-06-14). The approved plan prescribes six accuracy changes
+              (A-F). Every change must be judged on past data before it touches
+              the live <code>/expect</code> flow — otherwise we risk repeating
+              the LIVE-vs-INTERACTIVE optimism (F4). This harness is that gate.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">What</div>
+            <p>
+              <code>scheduler/backfill_eval.py</code> — read-only A/B tool over
+              closed (HIT/MISS) predictions, plus
+              <code>tests/test_backfill_eval.py</code> (9 tests, all passing).
+            </p>
+            <p>Sections it reports:</p>
+            <ul>
+              <li>
+                <strong>[A] Isotonic recalibration</strong> — leakage-safe: fits
+                the recal map on an earlier train slice, scores
+                raw-vs-recalibrated Brier on a held-out recent test slice.
+              </li>
+              <li>
+                <strong>[B] Dead-signal contribution</strong> — splits closed
+                rows by whether they used a dead signal
+                (<code>valuation</code>/<code>cycle</code>/<code>mean_reversion</code>).
+              </li>
+              <li>
+                <strong>[D] Regime-window suppression</strong> — outcome of BULL
+                predictions created inside a risk-off window (what a hard regime
+                gate would have suppressed).
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">
+              First Run Results (real DB, n=420 closed)
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Change</th>
+                  <th>Metric</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A (recal, OOS) ALL</td>
+                  <td>Brier</td>
+                  <td>0.340</td>
+                  <td><strong>0.204</strong></td>
+                </tr>
+                <tr>
+                  <td>A (recal, OOS) LIVE</td>
+                  <td>Brier</td>
+                  <td>0.331</td>
+                  <td><strong>0.160</strong></td>
+                </tr>
+                <tr>
+                  <td>B with-dead-signal</td>
+                  <td>win rate</td>
+                  <td>—</td>
+                  <td><strong>0.0%</strong> (n=15, Brier 0.424)</td>
+                </tr>
+                <tr>
+                  <td>D BULL 6/1-6/7</td>
+                  <td>win rate</td>
+                  <td>—</td>
+                  <td><strong>4.3%</strong> (n=140)</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="margin-top: 0.4rem">
+              These validate A and D strongly and confirm B as noise (low
+              volume).
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">How</div>
+            <p>
+              Reuses production calibration math
+              (<code>build_recalibration_map</code>,
+              <code>apply_recalibration</code>,
+              <code>get_calibration_report</code> in
+              <code>mcp-prediction-store/metrics.py</code>) rather than
+              reimplementing it; the train slice is loaded into an in-memory DB
+              so bucketing is identical to live. Time-ordered split mirrors
+              <code>get_signal_decay</code> (<code
+                >outcome_date, created_at, id</code
+              >).
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Code Locations</div>
+            <ul>
+              <li>
+                <code>scheduler/backfill_eval.py</code> — harness
+                (<code>_connect_readonly</code>, <code>load_closed</code>,
+                <code>_metrics</code>, <code>eval_recalibration</code>,
+                <code>eval_dead_signals</code>, <code>eval_regime_window</code>,
+                <code>build_report</code>)
+              </li>
+              <li><code>tests/test_backfill_eval.py</code> — 15 unit tests</li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Review Loop</div>
+            <ul>
+              <li>
+                <strong>Fixed — DB not read-only (codex, High):</strong> harness
+                used <code>models.get_connection</code>, which
+                migrates/indexes/WAL/dedup-self-heals (writes). Replaced with
+                <code>_connect_readonly</code> (<code>file:...?mode=ro</code>
+                URI).
+              </li>
+              <li>
+                <strong>Fixed — avg-return inflated x100 (codex, Low):</strong>
+                <code>outcome_return</code> stored as percentage points;
+                <code>:+.2%</code> multiplied by 100 (showed -865%). Now
+                <code>:+.2f%</code>. The earlier "corrupted data" note was wrong
+                — it was a display bug.
+              </li>
+              <li>
+                <strong
+                  >Fixed — invalid <code>oos_fraction</code> / tiny-n (codex +
+                  gemini):</strong
+                >
+                added <code>0 &lt; oos_fraction &lt; 1</code> validation and an
+                "insufficient data" guard.
+              </li>
+              <li>
+                <strong
+                  >Fixed — per-horizon recalibration (gemini +
+                  code-reviewer):</strong
+                >
+                exposed optional <code>timeframe</code> on
+                <code>eval_recalibration</code>/<code>build_report</code> +
+                <code>--timeframe</code> CLI flag.
+              </li>
+              <li>
+                <strong>Fixed — test gaps:</strong> added invalid-fraction,
+                empty-signal-list, custom dead-set, and
+                <code>build_report</code> smoke tests (9 to 15).
+              </li>
+              <li>
+                <strong
+                  >Dismissed — in-memory schema "Critical"
+                  (code-reviewer):</strong
+                >
+                all three reviewers confirmed
+                <code>get_calibration_report</code> only reads 4 columns; temp
+                table is correct.
+              </li>
+              <li>
+                <strong
+                  >Dismissed — strict point-in-time split
+                  (gemini/codex):</strong
+                >
+                split is by <code>outcome_date</code> so test outcomes never
+                enter the fitted map; residual PIT effect is second-order.
+                Documented in <code>eval_recalibration</code>.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Known Pre-Existing Issue</div>
+            <p>
+              <code>scheduler/weekly_calibration.py:208,236</code> formats
+              <code>avg_return</code> with <code>:+.2%</code> — the same x100
+              inflation bug. Production weekly report overstates average return.
+              Left for a separate, scoped fix (out of scope here).
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Retrospective</div>
+            <div class="retro">
+              <p>
+                Reusing the production recal builder via an in-memory DB kept
+                the harness honest — no duplicated calibration logic that could
+                drift from live. The three-reviewer loop earned its keep: codex
+                caught the read-only contract violation and the formatting bug
+                that had led to wrongly blaming the data. Lesson: verify the
+                display path before blaming the data.
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <!-- Card 2: Recalibration And Dead Signals -->
+        <article>
+          <h3>Recalibration And Dead Signals</h3>
+
+          <div class="section">
+            <div class="section-label">Why</div>
+            <ul>
+              <li>
+                <strong>F1/F7 (overconfidence + unused recal map):</strong> the
+                0.60-0.70 confidence band ran +0.28 over actual, and although
+                <code>/expect</code> told the operator to apply the
+                recalibration map by hand, backfill proved logged confidences
+                were still near-constant ~0.6. A manual LLM step is not
+                reliable; recalibration must be deterministic.
+              </li>
+              <li>
+                <strong>F2/F5 (dead signals):</strong> <code>valuation</code>,
+                <code>cycle</code>, <code>mean_reversion</code> hit 0% and only
+                pollute per-signal calibration.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">What</div>
+            <ul>
+              <li>
+                <strong
+                  >A — <code>--recalibrate</code> flag on
+                  <code>predict create</code></strong
+                >
+                (<code>stock_cli.py</code>). Maps raw
+                <code>--confidence</code> through the source-scoped isotonic
+                curve before storing; echoes <code>raw_confidence</code> /
+                <code>recalibration_applied</code> in the JSON. Safe no-op below
+                <code>MIN_CLOSED_FOR_RECAL = 30</code> closed predictions of
+                that source.
+              </li>
+              <li>
+                <strong>B — dead signals removed</strong> from the allowable
+                <code>--signals</code> list in both <code>/expect</code> and
+                <code>daily-briefing</code> skills; operators told to route
+                those reads through <code>LLM_CONTEXT_SCORE</code> instead.
+              </li>
+              <li>
+                <strong>Pre-existing fix (authorized):</strong>
+                <code>weekly_calibration.py:208,236</code> formatted
+                <code>avg_return</code> with <code>:+.2%</code> (x100
+                inflation). Now <code>:+.2f%</code>.
+              </li>
+              <li>
+                Tests: <code>tests/test_recalibration_cli.py</code> (3) —
+                min-sample gate, overconfident pull-down, source-scoping.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">How</div>
+            <p>
+              Recalibration reuses <code>build_recalibration_map</code>/<code
+                >apply_recalibration</code
+              >
+              (<code>mcp-prediction-store/metrics.py</code>). A global
+              (all-horizon) map is used — the backfill found it as accurate as
+              per-horizon maps (Brier 0.160 vs 0.169) and more robust at current
+              sample sizes. Source-scoped: a LIVE prediction calibrates only
+              against LIVE history, never the over-fit INTERACTIVE rows (the F4
+              gap). Logging threshold still gates on raw confidence; only the
+              stored value is recalibrated, so "save each horizon >= 0.60"
+              semantics are unchanged.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Verification</div>
+            <p>
+              Backfill OOS Brier: LIVE <strong>0.331 to 0.160</strong>, ALL
+              <strong>0.340 to 0.204</strong>
+              (leakage-safe train/test split).
+            </p>
+            <p>
+              <strong>Caveat surfaced by inspecting the live map:</strong> the
+              production LIVE curve has a single anchor (0.612 to 0.248) because
+              raw confidence is near-constant, so recalibration collapses every
+              confidence to the ~0.25 base rate. This is the source of the Brier
+              win (base-rate beats a non-informative 0.6 — the permutation test
+              already showed raw confidence carries no signal), but it means
+              logged confidence stops <em>ranking</em> picks until the model
+              emits an informative confidence spread. Restoring discrimination
+              is downstream work (change E / meta-labeling), not recalibration's
+              job.
+            </p>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Review Loop</div>
+            <ul>
+              <li>
+                <strong
+                  >CRITICAL (all 3, fixed) — recalibration corrupted its own
+                  training data:</strong
+                >
+                storing the recalibrated value back into
+                <code>confidence</code> poisoned future maps
+                (<code>build_recalibration_map</code>/<code
+                  >get_calibration_report</code
+                >
+                read <code>confidence</code> as the raw predictor, so
+                recalibrated rows would re-enter the curve as if raw, collapsing
+                its domain). <strong>Fix:</strong> added nullable
+                <code>raw_confidence</code> column (<code>models.py</code>
+                schema + <code>_ensure_raw_confidence_column</code> migration +
+                dataclass/insert/reader); calibration trains on
+                <code>COALESCE(raw_confidence, confidence)</code> so it can
+                never see recalibrated values. New test
+                <code>test_map_trains_on_raw_not_recalibrated</code> proves a
+                stored-0.30/raw-0.65 row contributes 0.65 to the map. Migration
+                verified on a copy of production (1169 rows preserved, column
+                added, legacy map unchanged).
+              </li>
+              <li>
+                <strong>Fixed — test gaps (codex/code-reviewer):</strong> added
+                empty-map-after-gate no-op, no-corruption test, and end-to-end
+                <code>cmd_predict_create --recalibrate</code> test asserting raw
+                is kept and stored confidence is calibrated.
+              </li>
+              <li>
+                <strong>Acknowledged — replay double-apply:</strong> if a caller
+                manually re-submits a stored (already-calibrated) confidence
+                with <code>--recalibrate</code>, it would map again. Out of the
+                normal <code>/expect</code> path; documented, not gated.
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Code Locations</div>
+            <ul>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>_recalibrated_confidence</code>,
+                <code>MIN_CLOSED_FOR_RECAL</code>,
+                <code>cmd_predict_create</code>, <code>--recalibrate</code> arg,
+                <code>raw_confidence</code> persistence
+              </li>
+              <li>
+                <code>mcp-prediction-store/models.py</code> —
+                <code>raw_confidence</code> column, schema,
+                <code>_ensure_raw_confidence_column</code>, dataclass field,
+                insert, <code>_row_to_prediction</code>
+              </li>
+              <li>
+                <code>mcp-prediction-store/metrics.py</code> —
+                <code>get_calibration_report</code> trains on
+                <code>COALESCE(raw_confidence, confidence)</code>
+              </li>
+              <li>
+                <code>scheduler/weekly_calibration.py:208,236</code> —
+                avg_return format fix
+              </li>
+              <li>
+                <code>.claude/skills/expect/SKILL.md</code> — recalibrate step +
+                dead-signal list
+              </li>
+              <li>
+                <code>.claude/skills/daily-briefing/SKILL.md</code> —
+                recalibrate step + dead-signal rule
+              </li>
+              <li>
+                <code>tests/test_recalibration_cli.py</code> — 7 unit tests
+              </li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <div class="section-label">Retrospective</div>
+            <div class="retro">
+              <p>
+                Moving recalibration from a hand-applied LLM instruction to a
+                CLI flag is the real fix for F7 — the map existed for weeks but
+                was never reliably applied. Inspecting the actual live map (not
+                just the backfill delta) caught that recalibration currently
+                degenerates to base-rate. Better to log that honestly now than
+                to discover later that confidence stopped discriminating.
+              </p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </main>
+  </body>
+</html>
