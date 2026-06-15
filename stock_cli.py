@@ -964,21 +964,41 @@ def cmd_track_record(args) -> int:
             source=args.source,
             days=args.days,
         )
-        _print_json(
-            {
-                "period_days": args.days,
-                "market": args.market or "ALL",
-                "timeframe": args.timeframe or "ALL",
-                "total_predictions": record.total,
-                "wins": record.wins,
-                "losses": record.losses,
-                "expired": record.expired,
-                "win_rate": record.win_rate,
-                "avg_return_pct": record.avg_return,
-                "current_streak": record.current_streak,
-                "brier_score": record.brier_score,
-            }
-        )
+        out = {
+            "period_days": args.days,
+            "market": args.market or "ALL",
+            "timeframe": args.timeframe or "ALL",
+            "source": args.source or "ALL",
+            "total_predictions": record.total,
+            "wins": record.wins,
+            "losses": record.losses,
+            "expired": record.expired,
+            "win_rate": record.win_rate,
+            "avg_return_pct": record.avg_return,
+            "current_streak": record.current_streak,
+            "brier_score": record.brier_score,
+        }
+        # When sources are blended, break out per-source: LIVE (real cron/skill
+        # performance) and INTERACTIVE (manual deep-dives) are NOT comparable —
+        # they cover different periods and selection, so the blended win rate
+        # misleads. See docs/stage-11/leakage-audit.md.
+        if args.source is None:
+            out["by_source"] = {}
+            for src in ("LIVE", "INTERACTIVE", "BACKTEST"):
+                r = get_track_record(
+                    conn,
+                    market=args.market,
+                    timeframe=args.timeframe,
+                    source=src,
+                    days=args.days,
+                )
+                if r.total:
+                    out["by_source"][src] = {
+                        "total": r.total,
+                        "win_rate": r.win_rate,
+                        "brier_score": r.brier_score,
+                    }
+        _print_json(out)
         return 0
     finally:
         conn.close()

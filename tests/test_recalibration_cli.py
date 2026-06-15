@@ -140,6 +140,41 @@ def test_map_trains_on_raw_not_recalibrated(db):
     assert min(x for x, _ in anchors) >= 0.55
 
 
+def test_track_record_blended_breaks_out_by_source(db, db_path, monkeypatch):
+    # Seed clearly different LIVE vs INTERACTIVE performance.
+    _seed_closed(db, n=20, win_fraction=0.25, confidence=0.6, source="LIVE")
+    _seed_closed(db, n=12, win_fraction=0.75, confidence=0.6, source="INTERACTIVE")
+    real_get = stock_cli.get_connection
+    monkeypatch.setattr(stock_cli, "get_connection", lambda *a, **k: real_get(db_path))
+    import io
+    from contextlib import redirect_stdout
+
+    args = types.SimpleNamespace(market=None, timeframe=None, source=None, days=365)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        assert stock_cli.cmd_track_record(args) == 0
+    out = json.loads(buf.getvalue())
+    assert set(out["by_source"]) == {"LIVE", "INTERACTIVE"}
+    assert (
+        out["by_source"]["LIVE"]["win_rate"]
+        < out["by_source"]["INTERACTIVE"]["win_rate"]
+    )
+
+
+def test_track_record_with_source_filter_has_no_breakdown(db, db_path, monkeypatch):
+    _seed_closed(db, n=20, win_fraction=0.25, confidence=0.6, source="LIVE")
+    real_get = stock_cli.get_connection
+    monkeypatch.setattr(stock_cli, "get_connection", lambda *a, **k: real_get(db_path))
+    import io
+    from contextlib import redirect_stdout
+
+    args = types.SimpleNamespace(market=None, timeframe=None, source="LIVE", days=365)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        stock_cli.cmd_track_record(args)
+    assert "by_source" not in json.loads(buf.getvalue())
+
+
 def test_cli_create_recalibrate_persists_raw(db, db_path, monkeypatch):
     """End-to-end predict create --recalibrate: raw kept, confidence calibrated."""
     _seed_closed(db, n=60, win_fraction=0.3, confidence=0.65)
