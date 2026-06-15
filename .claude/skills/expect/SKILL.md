@@ -202,24 +202,30 @@ Interpolate between anchors (e.g., -2.5 is allowed and common).
 
 ### Step 6 — Compute the news score (deterministic point table)
 
-**NEWS_SCORE — sums to a max of +3.0, can be hard-capped negative.** Sentiment buckets are mutually exclusive:
+**NEWS_SCORE — sums to a max of +3.0, can be hard-capped negative.** Read the
+`signal` block in the `news` output (deduped, recency-weighted) — do **not**
+re-derive these from raw `items`. Sentiment buckets are mutually exclusive and
+use `signal.recency_weighted_sentiment` (fresh headlines dominate a week-old
+blip); if it is null (no AV score — KR or US without key), Sentiment = 0.
 
 | Component | Bucket (evaluate in order) | Points |
 |---|---|---|
-| **Sentiment** (US, Alpha Vantage `sentiment_score` available) | average across items > +0.15 | +2.0 |
-| | 0 < avg ≤ +0.15 | +1.0 |
-| | -0.15 ≤ avg ≤ 0 | -1.0 |
-| | avg < -0.15 | -2.0 |
-| **Sentiment** (no AV score — KR market or US without key) | n/a | 0 |
-| **Headline volume** | ≥ 3 items returned in `--since-days 7` | +1.0 |
+| **Sentiment** (`signal.recency_weighted_sentiment` available) | > +0.15 | +2.0 |
+| | 0 < rw ≤ +0.15 | +1.0 |
+| | -0.15 ≤ rw ≤ 0 | -1.0 |
+| | rw < -0.15 | -2.0 |
+| **Sentiment** (null) | n/a | 0 |
+| **Headline volume** | `signal.unique_count` ≥ 3 (deduped) | +1.0 |
 | | else | 0 |
 
 Then apply hard caps **after** summing the above:
 
-- **Negative keyword scan.** If any headline contains a case-insensitive match for any of: `bankrupt`, `fraud`, `lawsuit`, `downgrade`, `SEC investigation`, `recall`, `delist` → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
+- **Negative catalyst.** If `signal.has_negative_catalyst` is true (the module
+  scans for bankrupt/fraud/lawsuit/downgrade/investigation/recall/delist/guidance
+  cut/etc.) → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
 - **KR disclosure flag.** If any disclosure `report_nm` contains: 감자, 유상증자, 관리종목, 거래정지, 상장폐지 → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
 
-Hard caps override even strongly positive sentiment — that is the whole point of the cap.
+Hard caps override even strongly positive sentiment — that is the whole point of the cap. Pass `signal.event_tags` into Step 5b: a hard catalyst (earnings/guidance/M&A/regulatory) is exactly the kind of specific, dated fact the LLM_CONTEXT bear/bull debate should weigh.
 
 Max positive sum: 2 + 1 = **3.0**. Floor without hard caps: -2 + 0 = -2.0. With a hard cap firing: **-2.0** (caps clamp, they don't stack).
 

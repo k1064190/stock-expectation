@@ -169,11 +169,12 @@ R2(종목)은 함께 적용 — 둘 중 하나라도 BULL을 WATCH로 막으면 
 - Volume: `vol_ratio` > 1.3 → +1.0 | else 0
 - Cycle: `pct_from_52w_high` ≥ -10% → +1.0 | `max_drawdown_1y` ≤ -25% → -1.0 | else 0
 
-**NEWS_SCORE (max +3.0)** — `news` + `disclosure` 결과로:
-- Sentiment (US AV): >+0.15 → +2.0 | 0~+0.15 → +1.0 | -0.15~0 → -1.0 | <-0.15 → -2.0
-- Headline volume: 7일 ≥3건 → +1.0 | else 0
-- Hard cap: 부정 키워드(bankrupt, fraud, lawsuit, downgrade, recall, delist) → cap -2.0
+**NEWS_SCORE (max +3.0)** — `news` 출력의 `signal` 블록(중복 제거·최신 가중) + `disclosure`로:
+- Sentiment: `signal.recency_weighted_sentiment` 사용 — >+0.15 → +2.0 | 0~+0.15 → +1.0 | -0.15~0 → -1.0 | <-0.15 → -2.0 | null → 0
+- Headline volume: `signal.unique_count` ≥3 → +1.0 | else 0
+- Hard cap: `signal.has_negative_catalyst` true → cap -2.0
 - Hard cap: KR 공시 감자/유상증자/관리종목/거래정지/상장폐지 → cap -2.0
+- `signal.event_tags`(earnings/guidance/ma/regulatory 등)는 Section 4의 LLM_CONTEXT 논쟁 입력으로 전달
 
 **LLM_CONTEXT_SCORE (range -5.0 ~ +3.0)** — 매크로/내러티브 컨텍스트 (모멘텀 편향 보정):
 

@@ -82,6 +82,7 @@ from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
 from regime import aggregate_regime, compute_regime, compute_realized_vol
+from news_features import summarize_news
 
 from portfolio.db import (
     get_connection as pf_get_connection,
@@ -477,13 +478,16 @@ def cmd_news(args) -> int:
         )
         market = args.market.upper()
         ticker_display = args.ticker.upper() if market == "US" else args.ticker.zfill(6)
+        now = datetime.now()
+        signal = summarize_news(items, asof_date=now.date().isoformat())
         _print_json(
             {
                 "ticker": ticker_display,
                 "market": market,
-                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "generated_at": now.isoformat(timespec="seconds"),
                 "since_days": args.since_days,
                 "count": len(items),
+                "signal": asdict(signal),
                 "items": [asdict(n) for n in items],
             }
         )
