@@ -150,7 +150,17 @@ bin/stock-cli portfolio risk --market US
 
 근거: 2026년 6월 조정장 백필에서, worse-of-SPY/QQQ(US)·KODEX 200(KR) 레짐이 NEUTRAL/RISK_OFF인
 동안 발행된 BULL은 ~3%만 적중 — 게이트가 바로 그 구간을 억제/강화한다. 시장 단위 게이트이며,
-개별 종목 과열은 `cycle_risk_flag` + LLM_CONTEXT 베어 논쟁이 따로 처리.
+개별 종목 과열은 RULE R2가 처리.
+
+**RULE R2 — 개별 종목 과열 게이트 (포물선/blow-off 진입).** `horizon-metrics`의
+`overextension_level` 사용:
+- **EXTREME**: 신규 BUY/BULL 로깅 금지 — WATCH 캡, BULL horizon은 NEUTRAL 해소. "⚠️ OVEREXTENDED (EXTREME)".
+- **ELEVATED**: BUY 기준선 +1.0 상향(COMPOSITE ≥ 9.0) + confidence 한 단계 트림(0.60 캡). "⚠️ OVEREXTENDED (ELEVATED)".
+- **NONE**: 변경 없음.
+
+근거: closed BULL 377건에서 진입 시 RSI14>75는 26% 적중(RSI<60은 47%), MA20 대비 +15% 초과는
+30% 적중(3~8% 구간은 66%). blow-off 진입은 레짐 게이트(R1)가 못 보는 강한 역신호. R1(시장)과
+R2(종목)은 함께 적용 — 둘 중 하나라도 BULL을 WATCH로 막으면 WATCH 유지.
 
 **ALGO_SCORE (max +8.0)** — `horizon-metrics-batch` 결과로 산정:
 - Trend: MA20>MA50>MA200 → +3.0 | MA20>MA50 only → +1.0 | full bear → -1.0 | else 0

@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stock Expectation — 11단계</title>
     <style>
       *,
@@ -15,15 +15,12 @@
 
       :root {
         --accent: #2d6a7f;
-        --accent-light: #e8f4f8;
         --bg: #f7f7f5;
-        --card-bg: #fafaf9;
-        --border: #d8d8d4;
-        --text: #1a1a18;
-        --muted: #6b6b65;
-        --node-done: #9ab8c2;
-        --node-current: #2d6a7f;
-        --radius: 6px;
+        --card-bg: #fefefd;
+        --border: #d9d9d6;
+        --text: #1c1c1a;
+        --muted: #787872;
+        --node-muted: #b0b0aa;
       }
 
       body {
@@ -38,58 +35,55 @@
         background: var(--bg);
         color: var(--text);
         line-height: 1.7;
-        font-size: 15px;
-        word-break: keep-all;
+        padding-bottom: 4rem;
       }
 
-      /* Header */
+      /* ── Header ── */
       header {
-        background: #fff;
+        background: var(--card-bg);
         border-bottom: 1px solid var(--border);
-        padding: 1rem 2rem;
+        padding: 1.25rem 2rem;
         display: flex;
         align-items: baseline;
         justify-content: space-between;
+        gap: 1rem;
         flex-wrap: wrap;
-        gap: 0.5rem;
       }
-      .brand h1 {
-        font-size: 1.25rem;
+      header .brand h1 {
+        font-size: 1.35rem;
         font-weight: 700;
         letter-spacing: -0.01em;
       }
-      .brand p {
-        font-size: 0.825rem;
+      header .brand p {
+        font-size: 0.82rem;
         color: var(--muted);
         margin-top: 0.1rem;
       }
-      .lang-switch {
-        font-size: 0.85rem;
-      }
-      .lang-switch span {
+      .lang-switcher {
+        font-size: 0.82rem;
         color: var(--muted);
+        white-space: nowrap;
       }
-      .lang-switch a {
+      .lang-switcher a {
         color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
-      .lang-switch a:hover {
+      .lang-switcher a:hover {
         text-decoration: underline;
       }
 
-      /* Timeline */
+      /* ── Timeline ── */
       nav.timeline {
-        background: #fff;
-        border-bottom: 1px solid var(--border);
-        padding: 1rem 2rem;
+        padding: 1.5rem 2rem 0.5rem;
         overflow-x: auto;
       }
-      nav.timeline ul {
+      nav.timeline ol {
         display: flex;
         align-items: center;
         list-style: none;
         min-width: max-content;
+        gap: 0;
       }
       nav.timeline li {
         display: flex;
@@ -103,155 +97,170 @@
         background: var(--border);
         flex-shrink: 0;
       }
-      .stage-node {
-        display: inline-flex;
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .tl-circle {
+        width: 2.1rem;
+        height: 2.1rem;
+        border-radius: 50%;
+        border: 2px solid var(--node-muted);
+        background: var(--node-muted);
+        display: flex;
         align-items: center;
         justify-content: center;
-        width: 2.6rem;
-        height: 2.6rem;
-        border-radius: 50%;
-        font-size: 0.65rem;
+        font-size: 0.58rem;
         font-weight: 700;
-        text-align: center;
-        line-height: 1.2;
-        user-select: none;
+        color: #fff;
         flex-shrink: 0;
       }
-      .stage-node.done {
-        background: var(--node-done);
-        color: #fff;
+      .tl-circle.current {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(45, 106, 127, 0.22);
       }
-      .stage-node.current {
-        background: var(--node-current);
-        color: #fff;
-        box-shadow:
-          0 0 0 3px var(--accent-light),
-          0 0 0 5px var(--node-current);
+      .tl-label {
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
       }
-
-      /* Main */
-      main {
-        max-width: 1080px;
-        margin: 0 auto;
-        padding: 2rem 1.5rem 4rem;
-      }
-
-      .stage-heading {
-        font-size: 1.6rem;
-        font-weight: 800;
+      .tl-label.current {
         color: var(--accent);
-        letter-spacing: -0.02em;
+        font-weight: 700;
+      }
+
+      /* ── Main ── */
+      main {
+        max-width: 1140px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.65rem;
+        font-weight: 700;
+        color: var(--accent);
         margin-bottom: 0.4rem;
       }
       .stage-summary {
+        font-size: 0.93rem;
         color: var(--muted);
-        font-size: 0.95rem;
         margin-bottom: 2rem;
-        max-width: 72ch;
+        max-width: 820px;
       }
 
-      /* Card grid */
+      /* ── Card grid ── */
       .card-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 1.25rem;
-        align-items: start;
+        grid-template-columns: repeat(auto-fill, minmax(490px, 1fr));
+        gap: 1.5rem;
+      }
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+        main {
+          padding: 1rem;
+        }
+        header {
+          padding: 1rem;
+        }
       }
 
       article.card {
         background: var(--card-bg);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem 1.5rem 1.25rem;
+        border-radius: 8px;
+        padding: 1.5rem;
+        overflow: hidden;
       }
-
       article.card h3 {
         font-size: 1.05rem;
         font-weight: 700;
         color: var(--accent);
-        margin-bottom: 1rem;
         padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--accent-light);
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1rem;
       }
 
-      .section {
-        margin-bottom: 0.9rem;
+      /* ── Section blocks ── */
+      .card-section {
+        margin-top: 0.95rem;
+      }
+      .card-section:first-child {
+        margin-top: 0;
       }
 
       .section-label {
-        font-size: 0.7rem;
+        display: inline-block;
+        font-size: 0.68rem;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--muted);
-        margin-bottom: 0.3rem;
+        letter-spacing: 0.05em;
+        color: var(--accent);
+        background: rgba(45, 106, 127, 0.08);
+        border-radius: 3px;
+        padding: 0.14rem 0.42rem;
+        margin-bottom: 0.4rem;
       }
 
-      .section p,
-      .section li {
+      .card-section p,
+      .card-section li {
         font-size: 0.875rem;
-        line-height: 1.7;
         color: var(--text);
       }
-
-      .section ul,
-      .section ol {
-        padding-left: 1.2em;
+      .card-section p + p {
+        margin-top: 0.4rem;
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        margin-top: 0.3rem;
+      }
+      .card-section li + li {
+        margin-top: 0.25rem;
       }
 
-      .section li {
-        margin-bottom: 0.2rem;
-      }
-
-      .section p + p {
-        margin-top: 0.45rem;
-      }
-
+      /* ── Inline code ── */
       code {
         font-family:
           "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        font-size: 0.8rem;
-        background: var(--accent-light);
+        font-size: 0.79em;
+        background: rgba(45, 106, 127, 0.08);
         color: var(--accent);
-        padding: 0.05em 0.35em;
         border-radius: 3px;
-        word-break: break-word;
+        padding: 0.1em 0.35em;
       }
 
+      /* ── Tables ── */
+      .card-table-wrap {
+        overflow-x: auto;
+        margin-top: 0.5rem;
+      }
       table {
-        border-collapse: collapse;
         width: 100%;
-        margin-top: 0.3rem;
-        font-size: 0.8rem;
+        border-collapse: collapse;
+        font-size: 0.82rem;
       }
-      table th,
-      table td {
-        border: 1px solid var(--border);
-        padding: 0.3rem 0.5rem;
+      th,
+      td {
         text-align: left;
+        padding: 0.42rem 0.65rem;
+        border: 1px solid var(--border);
+        vertical-align: top;
       }
-      table th {
-        background: var(--accent-light);
-        font-weight: 700;
+      th {
+        background: rgba(45, 106, 127, 0.06);
+        font-weight: 600;
         color: var(--accent);
       }
-      table tbody tr:nth-child(even) {
-        background: #f2f2f0;
+      tr:nth-child(even) td {
+        background: rgba(0, 0, 0, 0.018);
       }
 
-      @media (max-width: 720px) {
-        .card-grid {
-          grid-template-columns: 1fr;
-        }
-        header {
-          padding: 0.85rem 1rem;
-        }
-        nav.timeline {
-          padding: 0.75rem 1rem;
-        }
-        main {
-          padding: 1.25rem 1rem 3rem;
-        }
+      strong {
+        font-weight: 600;
       }
     </style>
   </head>
@@ -261,595 +270,797 @@
         <h1>Stock Expectation</h1>
         <p>단계별 진행 상황</p>
       </div>
-      <div class="lang-switch">
-        <a href="index.html">EN</a> | <span>한국어</span>
-      </div>
+      <div class="lang-switcher"><a href="index.html">EN</a> | 한국어</div>
     </header>
 
-    <nav class="timeline" aria-label="단계 타임라인">
-      <ul>
-        <li><span class="stage-node done">0단계</span></li>
-        <li><span class="stage-node done">1단계</span></li>
-        <li><span class="stage-node done">2단계</span></li>
-        <li><span class="stage-node done">3단계</span></li>
-        <li><span class="stage-node done">4단계</span></li>
-        <li><span class="stage-node done">4.1단계</span></li>
-        <li><span class="stage-node done">5단계</span></li>
-        <li><span class="stage-node done">6단계</span></li>
-        <li><span class="stage-node done">7단계</span></li>
-        <li><span class="stage-node done">8단계</span></li>
-        <li><span class="stage-node done">9단계</span></li>
-        <li><span class="stage-node done">10단계</span></li>
+    <nav class="timeline" aria-label="계획 단계">
+      <ol>
         <li>
-          <span class="stage-node current" aria-current="step">11단계</span>
+          <div class="tl-node">
+            <div class="tl-circle">0</div>
+            <span class="tl-label">0단계</span>
+          </div>
         </li>
-      </ul>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">1</div>
+            <span class="tl-label">1단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">2</div>
+            <span class="tl-label">2단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">3</div>
+            <span class="tl-label">3단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">4</div>
+            <span class="tl-label">4단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">4.1</div>
+            <span class="tl-label">4.1단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">5</div>
+            <span class="tl-label">5단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">6</div>
+            <span class="tl-label">6단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">7</div>
+            <span class="tl-label">7단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">8</div>
+            <span class="tl-label">8단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">9</div>
+            <span class="tl-label">9단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle">10</div>
+            <span class="tl-label">10단계</span>
+          </div>
+        </li>
+        <li>
+          <div class="tl-node">
+            <div class="tl-circle current">11</div>
+            <span class="tl-label current">11단계</span>
+          </div>
+        </li>
+      </ol>
     </nav>
 
     <main>
-      <h2 class="stage-heading">11단계</h2>
+      <div class="stage-heading">
+        <h2>11단계</h2>
+      </div>
       <p class="stage-summary">
-        예측 정확도 이니셔티브: 읽기 전용 A/B 백필 평가 하네스,
-        <code>predict create</code> 경로에 결정론적으로 연결된 아이소토닉 재보정
-        및 죽은 신호 제거, 그리고 리스크오프·중립 구간에서 BULL 호출을 억제하는
-        강성 시장 레짐 게이트.
+        예측 정확도 이니셔티브: 백필 A/B 평가 게이트, 결정론적 등온 재보정, 사멸
+        신호 제거, 강력한 시장 레짐 게이트, 그리고 종목별 과열 게이트 — 2026년
+        5월~6월 사이에 관찰된 승률 73% &#8594; 24% 폭락에 대한 종합 대응입니다.
       </p>
 
       <div class="card-grid">
-        <!-- 카드 1: Backfill Harness -->
+        <!-- 카드 1 -->
         <article class="card">
           <h3>Backfill Harness</h3>
 
-          <div class="section">
-            <div class="section-label">왜</div>
+          <div class="card-section">
+            <span class="section-label">왜</span>
             <p>
-              예측 적중률이 73%(2026-05-11)에서 24%(2026-06-14)로 폭락했습니다.
-              승인된 계획은 여섯 가지 정확도 변경 사항(A&#x2013;F)을 규정합니다.
-              모든 변경 사항은 라이브 <code>/expect</code> 흐름에 적용되기 전에
-              과거 데이터로 검증되어야 합니다&#x2009;&#x2014;&#x2009;그렇지
-              않으면 LIVE-vs-INTERACTIVE 낙관 편향(F4)을 반복할 위험이 있습니다.
-              이 하네스가 그 게이트입니다.
+              예측 승률이 73%(2026-05-11)에서 24%(2026-06-14)로 폭락했습니다.
+              승인된 계획은 여섯 가지 정확도 개선 항목(A–F)을 규정합니다. 각
+              변경 사항은 라이브 <code>/expect</code> 흐름에 반영되기 전에
+              반드시 과거 데이터로 검증되어야 합니다 — 그렇지 않으면
+              LIVE-vs-INTERACTIVE 낙관 편향(F4)이 반복됩니다. 이 하네스가 바로
+              그 검증 게이트입니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">무엇을</div>
+          <div class="card-section">
+            <span class="section-label">무엇을</span>
             <p>
-              <code>scheduler/backfill_eval.py</code> &#x2014; 종료된(HIT/MISS)
-              예측에 대한 읽기 전용 A/B 도구, 그리고
-              <code>tests/test_backfill_eval.py</code>(9개 테스트, 전부 통과).
-              세 섹션을 보고합니다:
+              <code>scheduler/backfill_eval.py</code> — 종료(HIT/MISS) 예측에
+              대한 읽기 전용 A/B 도구, 그리고
+              <code>tests/test_backfill_eval.py</code>
+              (9개 테스트, 전부 통과). 보고 항목:
             </p>
             <ul>
               <li>
-                <strong>[A] 아이소토닉 재보정</strong> &#x2014; 누설 방지: 이전
-                훈련 슬라이스에서 재보정 맵을 적합시키고, 보류된 최근 테스트
-                슬라이스에서 원시 vs. 재보정 Brier를 채점합니다.
+                <strong>[A] 등온 재보정</strong> — 누출 방지: 이전 훈련
+                슬라이스에서 재보정 맵을 피팅하고, 보류된 최근 테스트
+                슬라이스에서 원시 대비 재보정된 Brier 점수를 측정합니다.
               </li>
               <li>
-                <strong>[B] 죽은 신호 기여도</strong> &#x2014; 종료 행을 죽은
-                신호 (<code>valuation</code> / <code>cycle</code> /
-                <code>mean_reversion</code>) 사용 여부로 분리합니다.
+                <strong>[B] 사멸 신호 기여도</strong> — 종료된 행을 사멸 신호
+                (<code>valuation</code>/<code>cycle</code>/<code>mean_reversion</code>)
+                사용 여부로 분류합니다.
               </li>
               <li>
-                <strong>[D] 레짐 구간 억제</strong> &#x2014; 리스크오프 구간
-                내에서 생성된 BULL 예측의 결과.
+                <strong>[D] 레짐 창 억제</strong> — 리스크-오프 구간 내에서
+                생성된 BULL 예측의 결과(강력한 레짐 게이트가 억제했을 경우의
+                효과)를 산출합니다.
               </li>
             </ul>
+            <p style="margin-top: 0.6rem">
+              <strong>최초 실행 결과 (실제 DB, n=420 종료):</strong>
+            </p>
+            <div class="card-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>변경 항목</th>
+                    <th>지표</th>
+                    <th>이전</th>
+                    <th>이후</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>A (재보정, OOS) ALL</td>
+                    <td>Brier</td>
+                    <td>0.340</td>
+                    <td><strong>0.204</strong></td>
+                  </tr>
+                  <tr>
+                    <td>A (재보정, OOS) LIVE</td>
+                    <td>Brier</td>
+                    <td>0.331</td>
+                    <td><strong>0.160</strong></td>
+                  </tr>
+                  <tr>
+                    <td>B 사멸 신호 포함</td>
+                    <td>승률</td>
+                    <td>—</td>
+                    <td><strong>0.0%</strong> (n=15, Brier 0.424)</td>
+                  </tr>
+                  <tr>
+                    <td>D BULL 6/1–6/7</td>
+                    <td>승률</td>
+                    <td>—</td>
+                    <td><strong>4.3%</strong> (n=140)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div class="section">
-            <div class="section-label">첫 실행 결과 (실제 DB, n=420 종료)</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>변경</th>
-                  <th>지표</th>
-                  <th>이전</th>
-                  <th>이후</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>A (recal, OOS) ALL</td>
-                  <td>Brier</td>
-                  <td>0.340</td>
-                  <td>0.204</td>
-                </tr>
-                <tr>
-                  <td>A (recal, OOS) LIVE</td>
-                  <td>Brier</td>
-                  <td>0.331</td>
-                  <td>0.160</td>
-                </tr>
-                <tr>
-                  <td>B with-dead-signal</td>
-                  <td>적중률</td>
-                  <td>&#x2014;</td>
-                  <td>0.0% (n=15, Brier 0.424)</td>
-                </tr>
-                <tr>
-                  <td>D BULL 6/1&#x2013;6/7</td>
-                  <td>적중률</td>
-                  <td>&#x2014;</td>
-                  <td>4.3% (n=140)</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="section">
-            <div class="section-label">어떻게</div>
+          <div class="card-section">
+            <span class="section-label">어떻게</span>
             <p>
-              재구현 대신 프로덕션 보정
-              수학(<code>build_recalibration_map</code>,
+              별도로 재구현하지 않고 프로덕션 보정 수학
+              (<code>build_recalibration_map</code>,
               <code>apply_recalibration</code>,
-              <code>get_calibration_report</code>,
+              <code>get_calibration_report</code> in
               <code>mcp-prediction-store/metrics.py</code>)을 재사용합니다. 훈련
-              슬라이스는 인메모리 DB에 로드되어 버킷팅이 라이브와 동일합니다.
+              슬라이스를 인메모리 DB에 로드하므로 버킷팅이 라이브와 동일합니다.
               시간순 분할은 <code>get_signal_decay</code> (<code
                 >outcome_date, created_at, id</code
-              >)를 반영합니다.
+              >)를 미러링합니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">코드 위치</div>
+          <div class="card-section">
+            <span class="section-label">코드 위치</span>
             <ul>
               <li>
-                <code>scheduler/backfill_eval.py</code> &#x2014;
-                <code>_connect_readonly</code>, <code>load_closed</code>,
+                <code>scheduler/backfill_eval.py</code> — 하네스
+                (<code>_connect_readonly</code>, <code>load_closed</code>,
                 <code>_metrics</code>, <code>eval_recalibration</code>,
                 <code>eval_dead_signals</code>, <code>eval_regime_window</code>,
-                <code>build_report</code>.
+                <code>build_report</code>).
               </li>
               <li>
-                <code>tests/test_backfill_eval.py</code> &#x2014; 유닛 테스트
-                15개.
+                <code>tests/test_backfill_eval.py</code> — 15개 단위 테스트.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">리뷰 루프</div>
+          <div class="card-section">
+            <span class="section-label">리뷰 루프</span>
             <ul>
               <li>
-                <strong
-                  >수정 &#x2014; DB가 읽기 전용이 아님 (codex, High):</strong
-                >
-                하네스가 <code>models.get_connection</code>을 사용했는데, 이는
-                마이그레이션/인덱스/WAL/중복 자가 복구(쓰기)를 수행합니다.
-                <code>_connect_readonly</code>(<code>file:...?mode=ro</code>
-                URI)로 교체하여 읽기 전용 계약을 준수합니다.
+                <strong>수정 — DB 읽기 전용 미적용 (codex, High):</strong>
+                하네스가 쓰기 동작을 수행하는
+                <code>models.get_connection</code>을 사용했습니다.
+                <code>_connect_readonly</code> (<code>file:...?mode=ro</code>
+                URI)로 교체했습니다.
               </li>
               <li>
                 <strong
-                  >수정 &#x2014; avg-return이 &#xD7;100 팽창 (codex,
-                  Low):</strong
+                  >수정 — avg-return &#215;100 과대 표시 (codex, Low):</strong
                 >
-                <code>outcome_return</code>은 퍼센트 포인트로 저장되는데
-                <code>:+.2%</code> 형식 지정자가 100을 곱했습니다. 이제
-                <code>:+.2f%</code>. 이전의 &#x201C;데이터 손상&#x201D; 메모는
-                틀린 것이었습니다&#x2014;데이터는 정상이었으며 표시
+                <code>:+.2%</code> 형식 지정자가 100배 곱셈을 일으켰습니다
+                (&#8722;865% 표시). <code>:+.2f%</code>로 수정. "데이터 오염"
+                메모는 잘못된 것이었습니다 — 데이터는 정상이며 표시
                 버그였습니다.
               </li>
               <li>
                 <strong
-                  >수정 &#x2014; 잘못된 <code>oos_fraction</code> / tiny-n
-                  (codex + gemini):</strong
+                  >수정 — 잘못된 <code>oos_fraction</code> / 소수 표본 (codex +
+                  gemini):</strong
                 >
-                <code>0 &lt; oos_fraction &lt; 1</code> 검증과 &#x201C;데이터
-                부족&#x201D; 가드 추가.
+                <code>0 &lt; oos_fraction &lt; 1</code> 유효성 검사와 "데이터
+                부족" 가드를 추가했습니다.
               </li>
               <li>
                 <strong
-                  >수정 &#x2014; 수평별 재보정 (gemini + code-reviewer):</strong
+                  >수정 — 지평선별 재보정 (gemini + code-reviewer):</strong
                 >
-                <code>eval_recalibration</code> / <code>build_report</code>에
-                선택적 <code>timeframe</code> 및 <code>--timeframe</code> CLI
-                플래그 노출. 변경 A가 전역 vs. 수평별 맵을 비교할 수 있게
-                됩니다(1W 전역 Brier 0.331&#x2192;0.169 vs. 전체 수평
-                0.331&#x2192;0.160).
+                선택적 <code>timeframe</code>과 <code>--timeframe</code> CLI
+                플래그를 노출했습니다.
               </li>
               <li>
-                <strong>수정 &#x2014; 테스트 공백:</strong> 잘못된 fraction, 빈
-                신호 목록, 커스텀 dead-set, <code>build_report</code> 스모크
-                테스트 추가 (9 &#x2192; 15).
+                <strong>수정 — 테스트 공백:</strong> invalid-fraction,
+                empty-signal-list, custom dead-set,
+                <code>build_report</code> 스모크 테스트를 추가했습니다 (9
+                &#8594; 15개).
               </li>
               <li>
                 <strong
-                  >기각 &#x2014; 인메모리 스키마 &#x201C;Critical&#x201D;
-                  (code-reviewer):</strong
+                  >기각 — 인메모리 스키마 "Critical" (code-reviewer):</strong
                 >
-                세 리뷰어 모두 4열 임시 테이블이 정확하게 옳다는 것을
+                세 명의 리뷰어 모두 4열 임시 테이블이 정확히 올바르다고
                 확인했습니다.
               </li>
               <li>
-                <strong>기각 &#x2014; 엄격한 시점 분할 (gemini/codex):</strong>
-                분할이 <code>outcome_date</code> 기준이라 잔여 PIT 효과는
-                2차적입니다. <code>eval_recalibration</code>에 문서화.
+                <strong>기각 — 엄격한 시점별 분할 (gemini/codex):</strong>
+                분할은 <code>outcome_date</code> 기준이므로 테스트 결과가 피팅
+                맵에 유입되지 않습니다. 잔여 PIT 효과는 이차적입니다.
+                <code>eval_recalibration</code>에 문서화했습니다.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">
-              알려진 기존 이슈 (표시됨, 수정 안 함 — 범위 외)
-            </div>
+          <div class="card-section">
+            <span class="section-label">기존에 알려진 문제</span>
             <p>
-              <code>scheduler/weekly_calibration.py:208,236</code>에서
-              <code>avg_return</code>을 <code>:+.2%</code>로 포맷합니다
-              (&#xD7;100 팽창 버그)&#x2014;프로덕션 주간 리포트에서 평균
-              수익률이 과장 표시됩니다. 별도의 범위 지정 수정으로 남겨둡니다.
+              <code>scheduler/weekly_calibration.py:208,236</code>는
+              <code>avg_return</code>을 <code>:+.2%</code>로
+              형식화합니다(&#215;100 과대 표시 버그) — 프로덕션 주간 보고서가
+              평균 수익률을 과대 표시합니다. 별도의 범위 한정된 수정을 위해 남겨
+              두었습니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">회고</div>
+          <div class="card-section">
+            <span class="section-label">회고</span>
             <p>
-              인메모리 DB를 통해 프로덕션 재보정 빌더를 재사용한 것이 하네스를
-              정직하게 유지시켰습니다(라이브에서 이탈할 수 있는 중복 보정 로직
-              없음). 세 리뷰어 루프는 충분한 가치를 발휘했습니다: codex가 읽기
-              전용 계약 위반과 잘못된 데이터를 탓하게 만든 포맷팅 버그를
-              잡아냈습니다. 교훈: 데이터를 탓하기 전에 표시 경로를 먼저
-              검증하라.
+              인메모리 DB를 통해 프로덕션 재보정 빌더를 재사용한 덕분에 하네스의
+              정직성을 유지할 수 있었습니다. 세 명의 리뷰어 루프는 충분히 가치를
+              증명했습니다: codex가 읽기 전용 계약 위반과 데이터를 잘못 비난하게
+              만든 표시 버그를 잡아냈습니다. 교훈: 데이터를 탓하기 전에 표시
+              경로를 먼저 검증하세요.
             </p>
           </div>
         </article>
 
-        <!-- 카드 2: Recalibration And Dead Signals -->
+        <!-- 카드 2 -->
         <article class="card">
           <h3>Recalibration And Dead Signals</h3>
 
-          <div class="section">
-            <div class="section-label">왜</div>
+          <div class="card-section">
+            <span class="section-label">왜</span>
             <ul>
               <li>
-                <strong>F1/F7 (과신 + 미사용 재보정 맵):</strong>
-                0.60&#x2013;0.70 신뢰도 구간이 실제보다 +0.28 높게 나타났고,
-                <code>/expect</code>가 오퍼레이터에게 재보정 맵을 수동으로
-                적용하라고 안내했음에도 백필에서 기록된 신뢰도는 여전히 ~0.6으로
-                거의 일정했습니다. 수동 LLM 단계는 신뢰할 수 없습니다; 재보정은
-                결정론적이어야 합니다.
+                <strong>F1/F7 (과신 + 미사용 재보정 맵):</strong> 0.60–0.70
+                신뢰도 구간이 실제보다 +0.28 높게 나타났으며,
+                <code>/expect</code>가 수동 적용을 지시했음에도 기록된 신뢰도는
+                여전히 ~0.6 상수에 머물렀습니다. 수동 LLM 단계는 신뢰할 수
+                없으며 재보정은 결정론적이어야 합니다.
               </li>
               <li>
-                <strong>F2/F5 (죽은 신호):</strong> <code>valuation</code>,
-                <code>cycle</code>, <code>mean_reversion</code>의 적중률이
-                0%이며 신호별 보정만 오염시킵니다.
+                <strong>F2/F5 (사멸 신호):</strong> <code>valuation</code>,
+                <code>cycle</code>, <code>mean_reversion</code>은 0%에
+                도달했으며 신호별 보정만 오염시킵니다.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">무엇을</div>
+          <div class="card-section">
+            <span class="section-label">무엇을</span>
             <ul>
               <li>
                 <strong
-                  >A &#x2014; <code>predict create</code>에
+                  >A — <code>predict create</code>에
                   <code>--recalibrate</code> 플래그</strong
                 >
-                (<code>stock_cli.py</code>). 저장 전에 원시
-                <code>--confidence</code>를 소스 범위 아이소토닉 곡선에
-                통과시킵니다; JSON에 <code>raw_confidence</code> /
+                (<code>stock_cli.py</code>). 저장 전 원시
+                <code>--confidence</code>를 소스 범위 등온 곡선으로 매핑합니다;
+                JSON에 <code>raw_confidence</code> /
                 <code>recalibration_applied</code>를 출력합니다. 해당 소스의
-                종료 예측이 <code>MIN_CLOSED_FOR_RECAL = 30</code>개 미만이면
-                안전한 no-op.
+                종료 예측이 <code>MIN_CLOSED_FOR_RECAL = 30</code> 미만이면
+                안전하게 무작동합니다.
               </li>
               <li>
-                <strong>B &#x2014; 죽은 신호 제거.</strong>
-                <code>/expect</code>와 <code>daily-briefing</code> 스킬 모두의
-                허용 가능한 <code>--signals</code> 목록에서 제거; 오퍼레이터는
-                그 읽기를 <code>LLM_CONTEXT_SCORE</code>로 라우팅하도록
-                안내받습니다.
+                <strong>B — 사멸 신호 제거:</strong> <code>/expect</code>와
+                <code>daily-briefing</code> 스킬의 허용 <code>--signals</code>
+                목록에서 제거했습니다. 운영자는 해당 읽기를
+                <code>LLM_CONTEXT_SCORE</code>를 통해 라우팅하도록 안내받습니다.
               </li>
               <li>
-                <strong>기존 버그 수정 (승인됨):</strong>
-                <code>weekly_calibration.py:208,236</code>에서
-                <code>avg_return</code>을 <code>:+.2%</code>로 포맷 (&#xD7;100
-                팽창). 이제 <code>:+.2f%</code>.
+                <strong>기존 수정 (승인됨):</strong>
+                <code>weekly_calibration.py:208,236</code> avg-return 형식
+                <code>:+.2%</code> &#8594; <code>:+.2f%</code>.
               </li>
               <li>
-                테스트: <code>tests/test_recalibration_cli.py</code>(3개)
-                &#x2014; 최소 샘플 게이트, 과신 당김, 소스 범위 지정.
+                테스트: <code>tests/test_recalibration_cli.py</code> (3개) —
+                최소 표본 게이트, 과신 하향, 소스 범위 지정.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">어떻게</div>
+          <div class="card-section">
+            <span class="section-label">어떻게</span>
             <p>
               재보정은 <code>build_recalibration_map</code> /
               <code>apply_recalibration</code>
               (<code>mcp-prediction-store/metrics.py</code>)을 재사용합니다.
-              전역(전체 수평) 맵을 사용합니다&#x2014;백필에서 수평별 맵만큼
-              정확하고 (Brier 0.160 vs. 0.169) 현재 표본 규모에서 더 견고합니다.
-              소스 범위 지정: LIVE 예측은 LIVE 이력에 대해서만 보정되며,
-              과적합된 INTERACTIVE 행과는 혼합되지 않습니다(F4 격차). 로깅
-              임계값은 여전히 원시 신뢰도로 게이팅되며, 저장 값만 재보정되므로
-              &#x201C;각 수평 &#x2265; 0.60 저장&#x201D; 의미론이 그대로
-              유지됩니다.
+              전역 (전체 지평선) 맵을 사용합니다 — 백필에서 지평선별 맵만큼
+              정확하면서 (Brier 0.160 vs 0.169) 현재 표본 크기에서 더
+              강건합니다. 소스 범위 지정: LIVE 예측은 LIVE 이력에 대해서만
+              보정되며, 과적합된 INTERACTIVE 행(F4 격차)과는 무관합니다. 로깅
+              임계값은 여전히 원시 신뢰도 기준으로 게이팅되며, 저장되는 값만
+              재보정됩니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">검증</div>
+          <div class="card-section">
+            <span class="section-label">검증</span>
             <p>
-              백필 OOS Brier: LIVE <strong>0.331 &#x2192; 0.160</strong>, ALL
-              <strong>0.340 &#x2192; 0.204</strong> (누설 방지 훈련/테스트
-              분할).
+              백필 OOS Brier: LIVE <strong>0.331 &#8594; 0.160</strong>, ALL
+              <strong>0.340 &#8594; 0.204</strong> (누출 방지 훈련/테스트 분할).
             </p>
             <p>
-              <strong>라이브 맵 검사로 드러난 경고:</strong> 프로덕션 LIVE
-              곡선에는 단일 앵커(0.612 &#x2192; 0.248)만 있는데,
-              <code>raw_confidence</code>가 거의 일정하기 때문입니다. 재보정이
-              모든 신뢰도를 ~0.25 기본율로 수렴시킵니다. 이것이 Brier 개선의
-              원천이지만 (순열 테스트가 이미 원시 신뢰도에 신호가 없음을
-              보여줬습니다), 모델이 정보가 담긴 신뢰도 스프레드를 출력할 때까지
-              기록된 신뢰도가 종목 <em>순위</em>를 멈추게 됩니다. 판별력 회복은
-              하위 작업(변경 E / 메타-레이블링)이지 재보정의 역할이 아닙니다.
+              <strong>라이브 맵 검사에서 드러난 주의 사항:</strong> 프로덕션
+              LIVE 곡선은 원시 신뢰도가 상수에 가깝기 때문에 단일 앵커 (0.612
+              &#8594; 0.248)만 가집니다. 따라서 재보정은 모든 신뢰도를 ~0.25
+              기본 비율로 수렴시킵니다. 이것이 Brier 개선의 원인이지만, 모델이
+              정보적인 신뢰도 분포를 출력하기 전까지 기록된 신뢰도가 종목을 순위
+              매기는 기능을 잃는다는 의미이기도 합니다. 식별력 복원은 후속
+              작업(변경 E / 메타 레이블링)입니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">리뷰 루프</div>
+          <div class="card-section">
+            <span class="section-label">리뷰 루프</span>
             <ul>
               <li>
                 <strong
-                  >CRITICAL (3개 모두, 수정) &#x2014; 재보정이 자체 훈련
-                  데이터를 오염시킴.</strong
+                  >CRITICAL (전원, 수정) — 재보정이 자체 훈련 데이터를
+                  오염시켰습니다.</strong
                 >
-                재보정된 값을 <code>confidence</code>에 다시 저장하면 향후 맵을
-                오염시킵니다: <code>build_recalibration_map</code> /
+                재보정된 값을 다시 <code>confidence</code>에 저장하면 향후 맵이
+                오염됩니다: <code>build_recalibration_map</code> /
                 <code>get_calibration_report</code>가 <code>confidence</code>를
-                원시 예측 변수로 읽으므로, 재보정된 행(&#x2248;0.25)이 종료되면
-                원시인 것처럼 곡선에 다시 진입하여 그 도메인을 붕괴시킵니다(재귀
-                피드백). 수정: nullable <code>raw_confidence</code> 열
-                추가(<code>models.py</code> 스키마 + 가산적
+                원시 예측값으로 읽기 때문에, 재보정된 행(&#8776;0.25)이 종료되면
+                원시인 것처럼 곡선에 재진입하여 도메인을 붕괴시키고(재귀 피드백)
+                재실행 시 조용히 이중 적용됩니다. 수정: nullable
+                <code>raw_confidence</code> 열 추가(<code>models.py</code>
+                스키마 + 가산적
                 <code>_ensure_raw_confidence_column</code> 마이그레이션 +
-                dataclass/insert/reader); <code>predict create</code>는 이제
-                항상 원시 신뢰도를 거기에 유지하며, 보정은
-                <code>COALESCE(raw_confidence, confidence)</code>로 훈련하여
-                재보정된 값을 절대 볼 수 없습니다. 새 테스트
-                <code>test_map_trains_on_raw_not_recalibrated</code>는
-                stored-0.30 / raw-0.65 행이 0.65를 맵에 기여함을 증명합니다.
-                마이그레이션은 프로덕션 복사본에서 검증되었습니다 (1169행 보존,
-                열 추가, 레거시 맵 변경 없음).
+                dataclass/insert/reader); 보정은 이제
+                <code>COALESCE(raw_confidence, confidence)</code>로 훈련됩니다.
+                새 테스트 <code>test_map_trains_on_raw_not_recalibrated</code>가
+                stored-0.30 / raw-0.65 행이 맵에 0.65로 기여함을 증명합니다.
+                마이그레이션이 프로덕션 복사본에서 검증되었습니다 (1169행 보존,
+                열 추가, 기존 맵 변경 없음).
               </li>
               <li>
-                <strong
-                  >수정 &#x2014; 테스트 공백 (codex/code-reviewer):</strong
-                >
-                게이트 이후 빈 맵 no-op, 무오염 테스트, 엔드투엔드
-                <code>cmd_predict_create --recalibrate</code> 테스트 추가.
+                <strong>수정 — 테스트 공백 (codex/code-reviewer):</strong>
+                empty-map-after-gate no-op, no-corruption 테스트, 그리고
+                엔드투엔드
+                <code>cmd_predict_create --recalibrate</code> 테스트를
+                추가했습니다.
               </li>
               <li>
-                <strong>인지됨 &#x2014; 리플레이 이중 적용:</strong> 호출자가
-                <code>--recalibrate</code>로 이미 보정된 저장 신뢰도를 수동으로
-                재제출하면 다시 맵핑됩니다. 정상적인 <code>/expect</code> 경로
-                밖의 이야기이며, 문서화되었고 게이팅되지 않았습니다.
+                <strong>인정 — 재실행 이중 적용:</strong> 호출자가 이미 보정된
+                신뢰도를 <code>--recalibrate</code>로 재제출하면 재매핑됩니다.
+                정상적인 <code>/expect</code> 경로 외의 경우이며, 문서화만 하고
+                게이팅하지 않았습니다.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">코드 위치</div>
+          <div class="card-section">
+            <span class="section-label">코드 위치</span>
             <ul>
               <li>
-                <code>stock_cli.py</code> &#x2014;
+                <code>stock_cli.py</code> —
                 <code>_recalibrated_confidence</code>,
                 <code>MIN_CLOSED_FOR_RECAL</code>,
                 <code>cmd_predict_create</code>,
-                <code>--recalibrate</code> 인자,
-                <code>raw_confidence</code> 유지.
+                <code>--recalibrate</code> 인수,
+                <code>raw_confidence</code> 저장.
               </li>
               <li>
-                <code>mcp-prediction-store/models.py</code> &#x2014;
+                <code>mcp-prediction-store/models.py</code> —
                 <code>raw_confidence</code> 열, 스키마,
                 <code>_ensure_raw_confidence_column</code>, dataclass 필드,
                 insert, <code>_row_to_prediction</code>.
               </li>
               <li>
-                <code>mcp-prediction-store/metrics.py</code> &#x2014;
-                <code>get_calibration_report</code>가
+                <code>mcp-prediction-store/metrics.py</code> —
                 <code>COALESCE(raw_confidence, confidence)</code>로 훈련.
               </li>
               <li>
-                <code>scheduler/weekly_calibration.py:208,236</code> &#x2014;
-                avg_return 포맷 수정.
+                <code>scheduler/weekly_calibration.py:208,236</code> —
+                avg_return 형식 수정.
               </li>
               <li>
-                <code>.claude/skills/expect/SKILL.md</code> &#x2014; 재보정 단계
-                + 죽은 신호 목록.
+                <code>.claude/skills/expect/SKILL.md</code> — 재보정 단계 + 사멸
+                신호 목록.
               </li>
               <li>
-                <code>.claude/skills/daily-briefing/SKILL.md</code> &#x2014;
-                재보정 단계 + 죽은 신호 규칙.
+                <code>.claude/skills/daily-briefing/SKILL.md</code> — 재보정
+                단계 + 사멸 신호 규칙.
               </li>
               <li>
-                <code>tests/test_recalibration_cli.py</code> &#x2014; 유닛
-                테스트 7개.
+                <code>tests/test_recalibration_cli.py</code> — 7개 단위 테스트.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">회고</div>
+          <div class="card-section">
+            <span class="section-label">회고</span>
             <p>
-              재보정을 수동 LLM 지시에서 CLI 플래그로 이동한 것이 F7의 실질적인
-              수정입니다&#x2014;맵이 수 주 동안 존재했지만 한 번도 안정적으로
-              적용되지 않았습니다. 백필 델타만이 아닌 실제 라이브 맵을 검사한
-              것이, 재보정이 현재 기본율로 퇴화하고 있음을 포착했습니다.
-              신뢰도가 판별을 멈췄음을 나중에 발견하는 것보다 지금 솔직하게
-              기록하는 것이 낫습니다.
+              재보정을 수동 LLM 지시에서 CLI 플래그로 전환한 것이 F7의 진정한
+              수정입니다 — 맵은 수 주 동안 존재했지만 신뢰할 수 있게 적용된 적이
+              없었습니다. 실제 라이브 맵을 검사(백필 델타만이 아닌)하여 재보정이
+              현재 기본 비율로 퇴화하고 있음을 발견한 것은 중요합니다: 나중에
+              신뢰도가 식별력을 잃었음을 발견하는 것보다 지금 솔직하게 기록하는
+              것이 낫습니다.
             </p>
           </div>
         </article>
 
-        <!-- 카드 3: Regime Gate -->
+        <!-- 카드 3 -->
         <article class="card">
           <h3>Regime Gate</h3>
 
-          <div class="section">
-            <div class="section-label">왜</div>
+          <div class="card-section">
+            <span class="section-label">왜</span>
             <p>
-              F3: 2026년 6월 하락장 동안 <code>/expect</code>가 조정을 통해 계속
-              BULL을 발행했습니다(6/1&#x2013;6/7의 140개 종료 BULL 중 적중률
-              4.3%). 결정론적 리스크오프 게이트가 없었습니다&#x2014;매크로
-              스킬들은 LLM이 무시할 수 있는 권고성 콜아웃에 불과했습니다.
+              F3: 2026년 6월 하락 구간 동안 <code>/expect</code>는 조정 내내
+              BULL을 계속 발행했습니다(6/1–6/7 종료된 BULL 140건, 승률 4.3%).
+              결정론적 리스크-오프 게이트가 없었으며 매크로 스킬은 LLM이 무시할
+              수 있는 권고성 콜아웃에 불과했습니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">무엇을</div>
+          <div class="card-section">
+            <span class="section-label">무엇을</span>
             <ul>
               <li>
-                <code>stock-cli regime --market US|KR</code> &#x2192; 결정론적
-                <code>RISK_ON</code> / <code>NEUTRAL</code> /
-                <code>RISK_OFF</code>
-                판정: 인덱스 프록시 가격 구조 기반(MA50/MA200 대비 추세, 52주
-                고점 대비 하락, 1개월 수익률, 연율화 20일 실현 변동성). US는
-                <code>SPY</code> + <code>QQQ</code> 중 더 나쁜 것을 집계; KR은
-                KODEX 200(069500) 사용.
+                <code>stock-cli regime --market US|KR</code> &#8594; 지수 프록시
+                가격 구조(MA50/MA200 대비 추세, 52주 고점 대비 낙폭, 1개월 수익,
+                연환산 20일 실현 변동성)로부터 결정론적 <code>RISK_ON</code> /
+                <code>NEUTRAL</code> / <code>RISK_OFF</code> 판정. 미국은
+                <strong>SPY + QQQ 중 더 나쁜 것</strong>을 집계하고, 한국은
+                KODEX 200 (069500)을 사용합니다.
               </li>
               <li>
-                <code>/expect</code>(RULE R1) 및
-                <code>daily-briefing</code>(RULE R1)에 강성 게이트 연결:
-                <code>RISK_OFF</code> &#x2192; 신규 BULL 억제(WATCH로 제한, 수평
-                &#x2192; NEUTRAL); <code>NEUTRAL</code> &#x2192; BUY 바
-                8.0&#x2192;9.0 상향 및 신뢰도 제한(cap 0.60);
-                <code>RISK_ON</code> &#x2192; 변경 없음.
+                <code>/expect</code>(RULE R1)와 <code>daily-briefing</code>(RULE
+                R1)에 강력한 게이트를 연결: <code>RISK_OFF</code> &#8594; 새
+                BULL 억제 (WATCH로 제한, 지평선 &#8594; NEUTRAL);
+                <code>NEUTRAL</code> &#8594; BUY 기준 8.0&#8594;9.0 상향 및
+                신뢰도 축소(0.60 상한); <code>RISK_ON</code> &#8594; 변경 없음.
               </li>
-              <li><code>tests/test_regime.py</code>(16개 테스트).</li>
+              <li><code>tests/test_regime.py</code> (16개 테스트).</li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">어떻게</div>
+          <div class="card-section">
+            <span class="section-label">어떻게</span>
             <p>
               <code>mcp-market-data/regime.py</code>의 순수하고 네트워크 없는
               로직 (<code>compute_realized_vol</code>,
-              <code>compute_regime</code>, <code>aggregate_regime</code>); CLI가
-              기존 프로바이더 + <code>compute_horizon_metrics</code>를 통해
-              인덱스 봉을 공급합니다. <code>aggregate_regime</code>은
-              <code>dataclasses.replace</code>(입력 변경 없음)를 통해 최악의
-              프록시를 반환하고 모든 프록시 점수를 <code>proxy_scores</code>에
-              기록합니다.
+              <code>compute_regime</code>, <code>aggregate_regime</code>); CLI는
+              기존 프로바이더 + <code>compute_horizon_metrics</code>를 통해 지수
+              바 데이터를 공급합니다. <code>aggregate_regime</code>은
+              <code>dataclasses.replace</code>를 통해 최악의 프록시를
+              반환하며(입력 변형 없음) 모든 프록시의 점수를
+              <code>proxy_scores</code>에 기록합니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">검증</div>
+          <div class="card-section">
+            <span class="section-label">검증</span>
             <p>
-              각 예측의 발행일 기준 레짐을 재구성하고 140개 종료 BULL을
-              버킷팅했습니다 (6월 구간에 대한 네트워크 재구성 &#x2014; 솔직한
-              결과):
+              각 예측의 발행일 기준으로 레짐을 재구성하고 종료된 BULL 140건을
+              분류했습니다(6월 구간에 대한 네트워크 재구성 — 정직한 결과):
             </p>
             <ul>
               <li>
-                <strong>발행 시 NEUTRAL: n=65, 적중률 3.1%</strong> &#x2014;
-                게이트가 억제/강화합니다.
+                <strong>발행 시 NEUTRAL: n=65, 승률 3.1%</strong> — 게이트가
+                억제/강화합니다.
               </li>
               <li>
-                <strong>발행 시 RISK_ON: n=75, 적중률 5.3%</strong> &#x2014;
-                발행 시점에 지수가 침착했습니다; 게이트가 포착할 수 없습니다.
+                <strong>발행 시 RISK_ON: n=75, 승률 5.3%</strong> — 발행 당시
+                지수는 평온했습니다; 게이트로 잡을 수 없습니다.
               </li>
               <li>
-                6/2 클러스터(72건)는 인덱스만으로는 게이팅 불가였습니다&#x2014;
-                <code>QQQ</code>조차 <code>RISK_ON</code>이었고 하락은 그 이후에
-                왔습니다. <code>SPY</code>는 전체 구간 동안
-                <code>RISK_ON</code>을 벗어나지 않았습니다; <code>QQQ</code>는
-                6/7에 <code>NEUTRAL</code>로 전환했습니다; KR은 급등
-                변동성(1개월 +40%, 변동성 56%)을 통해 일찍
-                <code>NEUTRAL</code>을 표시했습니다.
+                6/2 클러스터(72건)는 <strong>지수만으로는 게이팅 불가</strong> —
+                QQQ조차 RISK_ON이었고 낙폭은 이후에 발생했습니다. SPY는 전체
+                구간에서 RISK_ON을 유지했고, QQQ는 6/7이 되어서야 NEUTRAL로
+                전환되었습니다. KR은 포물선 변동성(1M +40%, vol 56%)을 통해 일찍
+                NEUTRAL을 표시했습니다.
               </li>
             </ul>
             <p>
-              <strong>결론 (과장 없이):</strong> 레짐 게이트는 부분적인
-              완화책입니다&#x2014; 창구의 패자 중 ~46%(NEUTRAL 건들)를 제거하고
-              진행 중인/급등 조정으로의 매수를 중단시키지만, 6/2 고점에서
-              광범위한 지수는 침착했습니다. 보완적 레버&#x2014;개별 종목
-              과확장&#x2014;는 계획된 후속 단계입니다; 재보정(A)이 이미 6/2
-              클러스터를 그토록 피해를 주게 만든 과신을 붕괴시킵니다.
+              <strong>결론 (과장 없음):</strong> 레짐 게이트는 부분적 완화
+              수단입니다 — 해당 구간의 패패(NEUTRAL) 약 46%를 제거하고
+              진행/포물선 조정장에서의 매수를 차단하지만, 6/2 고점에서 광역
+              지수는 평온했습니다. 보완 수단인 종목별 과열 게이트는 계획된 후속
+              단계이며, 재보정(A)은 이미 6/2 클러스터를 그토록 치명적으로 만든
+              과신을 해소합니다.
             </p>
           </div>
 
-          <div class="section">
-            <div class="section-label">리뷰 루프</div>
+          <div class="card-section">
+            <span class="section-label">리뷰 루프</span>
             <ul>
               <li>
                 <strong
-                  >수정 (3개 모두) &#x2014; <code>aggregate_regime</code>이 입력
-                  판정을 변경.</strong
+                  >수정 (전원) — <code>aggregate_regime</code>이 입력 판정을
+                  변형시켰습니다.</strong
                 >
-                이제 <code>dataclasses.replace</code>가 복사본을 반환합니다;
-                테스트가 입력 불변을 단언합니다.
+                이제 <code>dataclasses.replace</code>를 사용하며 테스트가 입력
+                불변을 검증합니다.
               </li>
               <li>
                 <strong
-                  >수정 (codex High) &#x2014; <code>cmd_regime</code>이 실패한
-                  프록시를 조용히 누락.</strong
+                  >수정 (codex High) — <code>cmd_regime</code>이 실패한 프록시를
+                  조용히 제거했습니다</strong
                 >
-                (<code>QQQ</code> 손실 시 US 게이트가 성장 주도 하락에 맹목적이
-                됩니다.) 이제 누락된 프록시가 판정 노트에 표시됩니다.
+                (QQQ 누락은 성장 주도 하락에 대한 미국 게이트를 맹목적으로
+                만듭니다). 누락된 프록시는 이제 판정 메모에 표시됩니다.
               </li>
               <li>
                 <strong
-                  >수정 (codex+gemini) &#x2014; 이력 부족 시 RISK_ON
-                  기본값.</strong
+                  >수정 (codex+gemini) — 불충분한 이력이 RISK_ON으로 기본값
+                  설정되었습니다.</strong
                 >
-                MA200이 없으면 추세를 알 수 없으므로 강성 게이트가
-                <code>RISK_ON</code>을 인증해서는 안 됩니다; 이제 노트와 함께
-                <code>NEUTRAL</code>로 내려갑니다.
+                MA200 없이는 추세를 알 수 없으므로 강력한 게이트는 RISK_ON을
+                인증해서는 안 됩니다; 이제 메모와 함께 NEUTRAL로 하한이
+                설정됩니다.
               </li>
               <li>
-                <strong>수정 &#x2014; argparser 도움말</strong>이 US의
-                기본값으로 <code>SPY</code>라고 했습니다; 이제 &#x201C;worst-of
-                <code>SPY</code>+<code>QQQ</code>&#x201D;.
+                <strong>수정 — argparser 도움말</strong>이 미국 기본값으로 SPY를
+                명시했습니다; 이제 "worst-of SPY+QQQ"로 변경되었습니다.
               </li>
               <li>
-                <strong>수정 &#x2014; 테스트 공백:</strong> 정확한 실현 변동성
-                값, MA 우선순위, 이력 부족, 변경 없음, tie&#x2192;first, 단일
-                프록시.
+                <strong>수정 — 테스트 공백:</strong> 정확한 실현 변동성 값, MA
+                우선순위, 불충분한 이력, 무변형, tie&#8594;first, 단일 프록시.
               </li>
               <li>
-                <strong
-                  >기각 &#x2014; 임계값 플래핑/히스테리시스 (gemini):</strong
-                >
-                임계값 근처의 일별 플래핑에는 영속 상태가 필요합니다; 게이트는
-                장중이 아닌 브리핑당 한 번 조회됩니다. 알려진 제한 사항으로
-                문서화하고 구현하지 않았습니다.
+                <strong>기각 — 임계값 진동/히스테리시스 (gemini):</strong>
+                임계값 근처의 일별 진동은 영구 상태가 필요합니다; 게이트는
+                장중이 아닌 브리핑당 한 번 조회됩니다. 알려진 제한으로
+                문서화했습니다.
               </li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">코드 위치</div>
+          <div class="card-section">
+            <span class="section-label">코드 위치</span>
             <ul>
               <li>
-                <code>mcp-market-data/regime.py</code> &#x2014; 판정 + 채점 +
-                집계.
+                <code>mcp-market-data/regime.py</code> — 판정 + 점수화 + 집계.
               </li>
               <li>
-                <code>stock_cli.py</code> &#x2014; <code>cmd_regime</code>,
+                <code>stock_cli.py</code> — <code>cmd_regime</code>,
                 <code>_regime_for_proxy</code>, <code>REGIME_INDEX</code>,
                 <code>regime</code> 파서.
               </li>
               <li>
-                <code>.claude/skills/expect/SKILL.md</code>(RULE R1, Step 1
-                fetch), <code>.claude/skills/daily-briefing/SKILL.md</code>(RULE
-                R1, Section 1 fetch).
+                <code>.claude/skills/expect/SKILL.md</code> (RULE R1, Step 1
+                fetch),
+                <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE R1,
+                Section 1 fetch).
               </li>
               <li><code>tests/test_regime.py</code>.</li>
             </ul>
           </div>
 
-          <div class="section">
-            <div class="section-label">회고</div>
+          <div class="card-section">
+            <span class="section-label">회고</span>
             <p>
-              검증이 첫 번째 직관(레짐 게이트가 &#x201C;손실을 막았을
-              것이다&#x201D;)을 반박했습니다. 데이터가 솔직하고 좁은 주장을
-              강제하고 실제 다음 레버 (개별 종목 과확장)를 드러냈습니다. 연결
-              전에 백필하는 것이 효과가 있었습니다.
+              검증이 첫 번째 직관(레짐 게이트가 손실을 막았을 것)을
+              반박했습니다. 데이터가 정직하고 좁은 주장을 강제했으며 진짜 다음
+              레버(종목별 과열)를 드러냈습니다. 연결 전에 백필 검증을 수행한
+              것이 성과를 냈습니다.
+            </p>
+          </div>
+        </article>
+
+        <!-- 카드 4 -->
+        <article class="card">
+          <h3>Overextension Gate</h3>
+
+          <div class="card-section">
+            <span class="section-label">왜</span>
+            <p>
+              D단계 검증은 광역 지수 레짐 게이트가 6/2 클러스터를 잡을 수 없음을
+              증명했습니다: 그 패자들(ORCL, NET, SMCI, DDOG, KR 반도체)은 지수가
+              평온한 동안 반전한 포물선 개별 종목들이었습니다. 종목별 과열
+              게이트가 누락된 레버입니다.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">무엇을</span>
+            <ul>
+              <li>
+                <code>HorizonMetrics</code>에 새
+                <code>overextension_level</code> (<code>NONE</code> /
+                <code>ELEVATED</code> / <code>EXTREME</code>) 추가. RSI14와 MA20
+                대비 가격 거리로
+                <code>classify_overextension(rsi14, price, ma20)</code>를 통해
+                계산됩니다. <code>horizon-metrics[-batch]</code>에서 자동으로
+                표시됩니다.
+              </li>
+              <li>
+                <code>/expect</code> + <code>daily-briefing</code>의 RULE R2:
+                <code>EXTREME</code> &#8594; 새 BULL 억제(WATCH로 제한);
+                <code>ELEVATED</code> &#8594; BUY 기준 +1.0 상향 및 신뢰도 축소
+                (0.60 상한).
+              </li>
+              <li>
+                R1+R2 중첩을 명시적으로 규정: 어느 쪽에서든 WATCH 상한이 우선;
+                BUY 기준 상향은 가산적 (NEUTRAL 레짐 + ELEVATED 종목 &#8594;
+                COMPOSITE &#8805; 10.0).
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_indicators.py</code>에 테스트
+                추가; CLI 계약 테스트가 새 필드를 고정합니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">어떻게</span>
+            <p>
+              377개의 종료된 BULL에 대해 각 예측의 진입 시점 메트릭을
+              (<code>created_at</code>까지 각 종목 이력을 잘라내어) 재구성하여
+              임계값을 보정했습니다: <code>EXTREME</code> = RSI14 &gt; 75 또는
+              MA20 대비 15% 초과; <code>ELEVATED</code> = RSI14 &gt; 70 또는 8%
+              초과. 순수하고 네트워크 없는 분류기입니다.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">검증</span>
+            <p>진입 시점 재구성, 377개 종료 BULL:</p>
+            <div class="card-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>진입 시 <code>overextension_level</code></th>
+                    <th>n</th>
+                    <th>승률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>NONE</code></td>
+                    <td>99</td>
+                    <td><strong>53.5%</strong></td>
+                  </tr>
+                  <tr>
+                    <td><code>ELEVATED</code></td>
+                    <td>79</td>
+                    <td>41.8%</td>
+                  </tr>
+                  <tr>
+                    <td><code>EXTREME</code></td>
+                    <td>199</td>
+                    <td><strong>29.1%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              <code>EXTREME</code> 억제 시 유지된 BULL 승률이
+              <strong>48.3%(n=178) vs 전체 38.2% — +10pp</strong>로 상승하며
+              깔끔한 단조 기울기를 보입니다. RSI14만으로: RSI14&gt;75는
+              26.4%(n=125) vs RSI14&lt;60에서 47.5%. MA20 거리로: &gt;15%는
+              29.6%(n=196) vs 3–8% 구간에서 66%.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">리뷰 루프</span>
+            <ul>
+              <li>
+                세 명의 리뷰어 모두 코드가 올바르다고 검증했습니다(심각도 순서,
+                <code>ma20&#8804;0</code>/None 가드, RSI-None 기본값, 포인트
+                테이블과 이중 계산 없음, 기본값 dataclass 필드는 하위 호환).
+              </li>
+              <li>
+                <strong>수정 (codex Medium) — R1+R2 중첩 모호성:</strong> 기준
+                상향이 가산적이고 WATCH 상한이 "어느 쪽이든 우선"임을
+                문서화했습니다.
+              </li>
+              <li>
+                <strong
+                  >수정 (both Low) — 오래된 스키마 목록 / 미고정 필드:</strong
+                >
+                <code>/expect</code> 필드 목록과 CLI 계약 테스트의
+                <code>expected_fields</code>에
+                <code>overextension_level</code>을 추가했습니다.
+              </li>
+              <li>
+                <strong>수정 — 경계 테스트:</strong> 엄격한 RSI 경계 및
+                MA20-band 테스트를 추가했습니다(부동소수점 불안정 정확-퍼센트
+                엣지는 한 번 플레이크 후 회피).
+              </li>
+              <li>
+                <strong>주목 (both) — ELEVATED는 의도적으로 완화됩니다:</strong>
+                RSI 70–75는 여전히 +0.5 모멘텀과 근고점 사이클 +1.0을 얻어 R2의
+                +1.0 기준 상향을 부분 상쇄합니다. 정당화: ELEVATED는 41.8%
+                (손익분기점에 가까움)이므로 부드러운 게이트가 적절합니다;
+                EXTREME(29%)은 강제 억제를 받습니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">코드 위치</span>
+            <ul>
+              <li>
+                <code>mcp-market-data/indicators.py</code> —
+                <code>classify_overextension</code>,
+                <code>OVEREXT_*</code> 상수,
+                <code>HorizonMetrics.overextension_level</code>,
+                <code>compute_horizon_metrics</code>에서의 연결.
+              </li>
+              <li>
+                <code>.claude/skills/expect/SKILL.md</code> (RULE R2 + 필드
+                목록), <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE
+                R2).
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_indicators.py</code>,
+                <code>tests/test_cli_integration.py</code>.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <span class="section-label">회고</span>
+            <p>
+              이것은 D 검증이 예측한 보완책입니다: R1(시장) + R2(종목)가 함께
+              레짐 맹목 클러스터와 포물선 개별 종목 모두를 다룹니다. 저장된
+              <code>created_at</code>에서 진입 시점 메트릭을 재구성한 것이
+              "패자들이 과열되어 있었다"는 직관을 보정된 단조 임계값으로
+              전환했습니다.
             </p>
           </div>
         </article>

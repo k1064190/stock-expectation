@@ -48,6 +48,7 @@ def _metrics(
         vol_5d_avg=None,
         vol_50d_avg=None,
         vol_ratio=None,
+        overextension_level="NONE",  # regime tests don't exercise the R2 gate
     )
 
 

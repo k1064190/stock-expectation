@@ -85,7 +85,7 @@ bin/stock-cli horizon-metrics-batch 005930,000660,035420,005380,051910 --market 
 bin/stock-cli fundamentals-batch    005930,000660,035420,005380,051910 --market KR
 ```
 
-Each `horizon-metrics-batch` row gives you `ma20, ma50, ma200, rsi14, return_1w, return_1m, return_6m, return_1y, pct_from_52w_high, pct_from_52w_low, max_drawdown_1y, cycle_risk_flag`. Use these directly — do not recompute.
+Each `horizon-metrics-batch` row gives you `ma20, ma50, ma200, rsi14, return_1w, return_1m, return_6m, return_1y, pct_from_52w_high, pct_from_52w_low, max_drawdown_1y, cycle_risk_flag, vol_ratio, overextension_level`. Use these directly — do not recompute. `overextension_level` (NONE/ELEVATED/EXTREME) drives RULE R2.
 
 ### Step 4 — News + disclosure fetch (per ticker)
 
@@ -253,9 +253,29 @@ Read the `regime` verdict (Step 1) for the candidate's market and apply:
 Rationale: backfilled over the June 2026 drawdown, BULL calls issued while the
 worse-of-SPY/QQQ (US) or KODEX 200 (KR) regime was NEUTRAL/RISK_OFF won only
 ~3%; the gate suppresses or hardens exactly those. It is a market-level gate —
-per-stock overextension is handled separately by `cycle_risk_flag` + the
-LLM_CONTEXT bear debate. The gate does **not** raise the bar for BEAR/NEUTRAL
-calls (those already clear RULE C3).
+per-stock overextension is RULE R2. The gate does **not** raise the bar for
+BEAR/NEUTRAL calls (those already clear RULE C3).
+
+**RULE R2 — Per-stock overextension gate (parabolic/blow-off entries).** Read
+`overextension_level` from the candidate's `horizon-metrics` row:
+- **EXTREME**: do **not** issue BUY or log BULL horizons — cap the label at
+  WATCH, resolve would-be BULL horizons to NEUTRAL. Emit "⚠️ OVEREXTENDED
+  (EXTREME)".
+- **ELEVATED**: raise the BUY bar by +1.0 (BUY needs COMPOSITE ≥ 9.0) and trim
+  logged confidence one step (cap 0.60). Emit "⚠️ OVEREXTENDED (ELEVATED)".
+- **NONE**: no change.
+
+Rationale: on 377 closed BULL, entries with RSI14 > 75 won 26% (vs 47% at
+RSI < 60) and entries > 15% above MA20 won 30% (vs 66% in the 3–8% band). A
+blow-off entry is a strong anti-signal that the broad regime gate (R1) cannot
+see.
+
+**R1 + R2 stacking (explicit):** apply both gates cumulatively.
+- A WATCH cap from *either* rule wins: if R1 is RISK_OFF **or** R2 is EXTREME,
+  the label is WATCH (no BULL logged), full stop.
+- The BUY-bar raises are **additive**: base 8.0, +1.0 if R1 NEUTRAL, +1.0 if R2
+  ELEVATED → e.g. NEUTRAL regime **and** ELEVATED stock requires COMPOSITE ≥ 10.0.
+- Confidence caps take the **minimum** of the applicable caps (each is 0.60 here).
 
 Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
 

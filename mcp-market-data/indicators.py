@@ -23,6 +23,49 @@ CYCLE_RISK_PCT_FROM_ATH_THRESHOLD = -0.15  # within 15% of 52W high
 
 RSI_PERIOD = 14
 
+# Overextension thresholds. Calibrated on the closed BULL history (377 preds):
+# entry RSI14>75 won 26% (vs 47% at RSI<60) and price >15% above MA20 won 30%
+# (vs 66% in the 3-8% band) — a parabolic/blow-off entry is a strong anti-signal.
+# EXTREME = blow-off (suppress new BULL); ELEVATED = stretched (raise the bar).
+OVEREXT_RSI_EXTREME = 75.0
+OVEREXT_RSI_ELEVATED = 70.0
+OVEREXT_MA20_EXTREME = 0.15  # price >15% above MA20
+OVEREXT_MA20_ELEVATED = 0.08  # price >8% above MA20
+
+
+def classify_overextension(
+    rsi14: Optional[float],
+    current_price: Optional[float],
+    ma20: Optional[float],
+) -> str:
+    """Classify how parabolically extended a long entry is.
+
+    A blow-off entry (very high RSI and/or price far above its 20-day mean) is
+    empirically a strong anti-signal for BULL predictions. Returns the more
+    severe of the RSI and MA20-extension reads.
+
+    Args:
+        rsi14: 14-period RSI, or None.
+        current_price: Latest close, or None.
+        ma20: 20-day SMA, or None.
+
+    Returns:
+        "EXTREME", "ELEVATED", or "NONE" (also "NONE" when inputs are missing).
+    """
+    ext_pct = None
+    if current_price is not None and ma20 is not None and ma20 > 0:
+        ext_pct = current_price / ma20 - 1.0
+    rsi = rsi14 if rsi14 is not None else 0.0
+    extreme = rsi > OVEREXT_RSI_EXTREME or (
+        ext_pct is not None and ext_pct > OVEREXT_MA20_EXTREME
+    )
+    if extreme:
+        return "EXTREME"
+    elevated = rsi > OVEREXT_RSI_ELEVATED or (
+        ext_pct is not None and ext_pct > OVEREXT_MA20_ELEVATED
+    )
+    return "ELEVATED" if elevated else "NONE"
+
 
 @dataclass
 class HorizonMetrics:
@@ -57,6 +100,9 @@ class HorizonMetrics:
         vol_ratio: ``vol_5d_avg / vol_50d_avg``. None when either input is None
             or when ``vol_50d_avg`` is zero (avoid division-by-zero). The
             ``/expect`` Volume bucket awards +1.0 when this ratio > 1.3.
+        overextension_level: "EXTREME" / "ELEVATED" / "NONE" — how parabolically
+            stretched the entry is (RSI14 and price-vs-MA20). The BULL gate
+            (RULE R2) suppresses EXTREME and raises the bar for ELEVATED.
     """
 
     ticker: str
@@ -77,6 +123,7 @@ class HorizonMetrics:
     vol_5d_avg: Optional[float]
     vol_50d_avg: Optional[float]
     vol_ratio: Optional[float]
+    overextension_level: str = "NONE"
 
 
 def compute_sma(closes: list[float], period: int) -> Optional[float]:
@@ -282,4 +329,5 @@ def compute_horizon_metrics(
         vol_5d_avg=vol_5d_avg,
         vol_50d_avg=vol_50d_avg,
         vol_ratio=vol_ratio,
+        overextension_level=classify_overextension(rsi14, current, ma20),
     )

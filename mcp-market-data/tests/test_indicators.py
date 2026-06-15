@@ -10,6 +10,7 @@ import pytest
 from indicators import (
     CYCLE_RISK_PCT_FROM_ATH_THRESHOLD,
     CYCLE_RISK_RETURN_1Y_THRESHOLD,
+    classify_overextension,
     compute_horizon_metrics,
     compute_rsi,
     compute_sma,
@@ -192,3 +193,56 @@ def test_volume_zero_avg_returns_none_ratio():
     metrics = compute_horizon_metrics(_bars(closes, volumes), ticker="X", market="US")
     assert metrics.vol_50d_avg == 0.0
     assert metrics.vol_ratio is None  # would have been ZeroDivisionError otherwise
+
+
+# --- overextension (RULE R2 gate input) ------------------------------------ #
+def test_overext_extreme_by_rsi():
+    assert classify_overextension(76.0, 100.0, 99.0) == "EXTREME"
+
+
+def test_overext_extreme_by_ma20_distance():
+    # >15% above MA20 → EXTREME even with a calm RSI.
+    assert classify_overextension(55.0, 120.0, 100.0) == "EXTREME"
+
+
+def test_overext_elevated_band():
+    assert classify_overextension(72.0, 100.0, 99.0) == "ELEVATED"  # RSI 70-75
+    assert classify_overextension(55.0, 110.0, 100.0) == "ELEVATED"  # +10% MA20
+
+
+def test_overext_none_in_sweet_spot():
+    assert classify_overextension(60.0, 105.0, 100.0) == "NONE"  # RSI<70, +5% MA20
+
+
+def test_overext_missing_inputs_is_none():
+    assert classify_overextension(None, None, None) == "NONE"
+    assert classify_overextension(None, 100.0, 0.0) == "NONE"  # ma20==0 guarded
+
+
+def test_overext_takes_more_severe_of_rsi_and_distance():
+    # Calm RSI but extreme distance → EXTREME (max severity wins).
+    assert classify_overextension(50.0, 130.0, 100.0) == "EXTREME"
+
+
+def test_overext_strict_rsi_boundaries():
+    # RSI thresholds use strict '>': exact values do NOT trip the higher tier.
+    assert classify_overextension(70.0, 100.0, 100.0) == "NONE"  # exactly 70
+    assert classify_overextension(75.0, 100.0, 100.0) == "ELEVATED"  # exactly 75
+
+
+def test_overext_ma20_bands():
+    # MA20-distance bands (clearly inside each band to avoid float-edge noise).
+    assert classify_overextension(50.0, 107.0, 100.0) == "NONE"  # +7%
+    assert classify_overextension(50.0, 110.0, 100.0) == "ELEVATED"  # +10%
+    assert classify_overextension(50.0, 116.0, 100.0) == "EXTREME"  # +16%
+
+
+def test_overext_rsi_none_with_extreme_distance():
+    # Missing RSI must not block the MA20-distance read.
+    assert classify_overextension(None, 130.0, 100.0) == "EXTREME"
+
+
+def test_horizon_metrics_exposes_overextension():
+    flat = [100.0] * 60
+    m = compute_horizon_metrics(_bars(flat), ticker="X", market="US")
+    assert m.overextension_level == "NONE"
