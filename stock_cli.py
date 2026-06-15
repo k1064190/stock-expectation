@@ -81,6 +81,7 @@ from metrics import (
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
+from regime import aggregate_regime, compute_regime, compute_realized_vol
 
 from portfolio.db import (
     get_connection as pf_get_connection,
@@ -387,6 +388,71 @@ def cmd_horizon_metrics_batch(args) -> int:
             }
         )
         return 0 if any_ok else 1
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+# Default liquid index proxies for the market-regime gate. US uses both the
+# broad market (SPY) and the tech/growth proxy (QQQ) because the June 2026
+# drawdown was growth-led — SPY stayed calm while QQQ broke down — and the gate
+# takes the more risk-off of the two.
+REGIME_INDEX = {"US": ["SPY", "QQQ"], "KR": ["069500"]}  # KR: KODEX 200 ETF
+
+
+def _regime_for_proxy(provider, ticker, market, days):
+    """Fetch one index proxy and compute its RegimeVerdict, or None if no data."""
+    bars = provider.get_price_history(ticker, days=days)
+    if not bars:
+        return None
+    bar_dicts = [asdict(b) for b in bars]
+    metrics = compute_horizon_metrics(bars=bar_dicts, ticker=ticker, market=market)
+    closes = [b["close"] for b in bar_dicts if b.get("close") is not None]
+    return compute_regime(metrics, compute_realized_vol(closes))
+
+
+def cmd_regime(args) -> int:
+    """Classify the current market regime (RISK_ON / NEUTRAL / RISK_OFF).
+
+    Fetches ~400 calendar days for each index proxy of the market (SPY + QQQ for
+    US, KODEX 200 for KR; override with ``--index``), computes each one's
+    HorizonMetrics + 20-day realized volatility via ``compute_regime``, and
+    aggregates to the most risk-off verdict. This is the hard gate the /expect
+    and daily-briefing skills consult before issuing new BULL calls. Read-only;
+    JSON output.
+
+    Args:
+        args: Parsed CLI arguments with market, optional index, days.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    try:
+        market = args.market.upper()
+        proxies = [args.index] if args.index else REGIME_INDEX.get(market)
+        if not proxies:
+            _print_json({"error": f"no default index for market {market}"})
+            return 1
+        provider = _get_provider(market)
+        verdicts = []
+        missing = []
+        for t in proxies:
+            v = _regime_for_proxy(provider, t, market, args.days)
+            (verdicts if v is not None else missing).append(v if v is not None else t)
+        if not verdicts:
+            _print_json(
+                {"error": f"No price data for index proxies {proxies} on {market}"}
+            )
+            return 1
+        verdict = aggregate_regime(verdicts)
+        if missing:
+            # A dropped proxy weakens the gate (e.g. losing QQQ blinds it to a
+            # growth-led drawdown), so make the gap explicit rather than silent.
+            verdict.notes.append(
+                f"⚠️ regime computed without proxies {missing} (no data)"
+            )
+        _print_json(asdict(verdict))
+        return 0
     except Exception as e:
         _print_json({"error": str(e)})
         return 1
@@ -1500,6 +1566,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Calendar days of history per ticker (default 400)",
     )
     p.set_defaults(func=cmd_horizon_metrics_batch)
+
+    # --- regime ---
+    p = sub.add_parser(
+        "regime",
+        help="Classify market regime RISK_ON/NEUTRAL/RISK_OFF (hard BULL gate)",
+    )
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--index",
+        default=None,
+        help="Index proxy ticker (default: worst-of SPY+QQQ for US, 069500 for KR)",
+    )
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of index history to fetch (default 400)",
+    )
+    p.set_defaults(func=cmd_regime)
 
     # --- news ---
     p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")

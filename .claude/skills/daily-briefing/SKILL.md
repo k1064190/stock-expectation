@@ -78,6 +78,8 @@ bin/stock-cli disclosure 005930 --since-days 14   # KR only — 감자/유상증
 bin/stock-cli predict list --status OPEN --limit 30
 bin/stock-cli track-record --days 30
 bin/stock-cli calibration
+bin/stock-cli regime --market US    # 하드 BULL 게이트 — Section 4 라벨 규칙 참조
+bin/stock-cli regime --market KR
 ```
 
 ### 2. 포트폴리오 상태 수집 (필수 단계)
@@ -138,6 +140,17 @@ bin/stock-cli portfolio risk --market US
 ### 4. 종목 점수화 + 라벨 결정 (BUY/WATCH/HOLD/AVOID/SELL)
 
 `/expect` 스킬과 **동일한** 결정론적 포인트 테이블 사용 (sync 유지 필수):
+
+**RULE R1 — 하드 레짐 게이트 (BULL 라벨/horizon 로깅 전 적용).** Section 1의 `regime`
+출력(`label`)을 해당 종목의 시장에 적용:
+- **RISK_OFF**: 신규 BUY/BULL 로깅 금지. 라벨은 WATCH로 캡, BULL horizon은 NEUTRAL로 해소.
+  "⚠️ REGIME RISK_OFF" 표기.
+- **NEUTRAL**: BUY 기준선 8.0 → **9.0** 상향 + 로깅 confidence 한 단계 추가 트림(0.60 캡).
+- **RISK_ON**: 변경 없음.
+
+근거: 2026년 6월 조정장 백필에서, worse-of-SPY/QQQ(US)·KODEX 200(KR) 레짐이 NEUTRAL/RISK_OFF인
+동안 발행된 BULL은 ~3%만 적중 — 게이트가 바로 그 구간을 억제/강화한다. 시장 단위 게이트이며,
+개별 종목 과열은 `cycle_risk_flag` + LLM_CONTEXT 베어 논쟁이 따로 처리.
 
 **ALGO_SCORE (max +8.0)** — `horizon-metrics-batch` 결과로 산정:
 - Trend: MA20>MA50>MA200 → +3.0 | MA20>MA50 only → +1.0 | full bear → -1.0 | else 0

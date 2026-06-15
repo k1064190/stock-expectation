@@ -46,12 +46,14 @@ Always run before scoring, even in single-stock mode:
 ```bash
 bin/stock-cli track-record --days 30
 bin/stock-cli calibration
+bin/stock-cli regime --market US   # and/or --market KR for the market(s) you score
 ```
 
 Surface to yourself:
 - Recent overconfidence buckets (e.g. "0.70-0.80 confidence → 45% actual win rate" → cap output confidence at 0.65 for that band)
 - Per-signal performance (if `news` signal is hitting <50% lately, weight news_score lower until calibration recovers)
 - Open predictions for the same tickers (skip re-prediction; reference the existing one)
+- **Market regime** (`regime` output `label`): the hard BULL gate — see RULE R1 below. Fetch once per run per market and reuse for every candidate in that market.
 
 ### Step 2 — Discovery (Market Scan and ALL modes only)
 
@@ -237,6 +239,23 @@ Label mapping (contiguous half-open ranges — every score lands in exactly one 
 ```
 
 Round COMPOSITE to one decimal in the output.
+
+**RULE R1 — Hard regime gate (applies to BULL labels/horizons before logging).**
+Read the `regime` verdict (Step 1) for the candidate's market and apply:
+- **RISK_OFF** (`label == "RISK_OFF"`): do **not** issue new BUY or log BULL
+  horizons. Cap the label at WATCH and resolve would-be BULL horizons to
+  NEUTRAL. Emit "⚠️ REGIME RISK_OFF — new longs gated" in the per-stock detail.
+- **NEUTRAL**: raise the BUY bar from 8.0 to **9.0** (a NEUTRAL regime demands a
+  stronger setup) and trim logged confidence one extra step (cap at 0.60). Emit
+  "⚠️ REGIME NEUTRAL — higher bar".
+- **RISK_ON**: no change.
+
+Rationale: backfilled over the June 2026 drawdown, BULL calls issued while the
+worse-of-SPY/QQQ (US) or KODEX 200 (KR) regime was NEUTRAL/RISK_OFF won only
+~3%; the gate suppresses or hardens exactly those. It is a market-level gate —
+per-stock overextension is handled separately by `cycle_risk_flag` + the
+LLM_CONTEXT bear debate. The gate does **not** raise the bar for BEAR/NEUTRAL
+calls (those already clear RULE C3).
 
 Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
 
