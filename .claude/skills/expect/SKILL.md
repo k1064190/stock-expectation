@@ -165,6 +165,24 @@ The deterministic ALGO_SCORE rewards stocks that are already trending (full bull
 
 This debate *produces* `LLM_CONTEXT_SCORE`; it does not add a second override channel. The bounded -5.0..+3.0 range and the composite math are unchanged — a more rigorous score is the only output.
 
+**Rigor gate (deterministic).** Structure the debate as JSON and lint it before
+trusting a strong score:
+
+```bash
+bin/stock-cli lint-llm-context '{"score":-3.0,"winner":"bear",
+  "bull_points":[{"claim":"...","evidence":"return_1m=+7%","signal_type":"technical"}],
+  "bear_points":[{"claim":"KOSPI parabolic","evidence":"+25%/22d","signal_type":"macro"}]}'
+```
+
+The linter enforces: score ∈ [-5,+3]; `winner` agrees with the score's sign; a
+real (non-empty) `bear_points` always present; and when **|score| ≥ 2.0** the
+winning side has ≥1 point with non-empty `evidence` and a `signal_type` in
+{macro, sector, event, flow, valuation, technical, narrative}. If the lint is
+not clean, **dampen the score toward 0** until it is — a strong score with no
+cited, typed evidence is exactly the noise that made `llm_context` underperform.
+Pass the final score into Step 9's `--components` so its marginal value is
+measured (`component-contribution`).
+
 **Scoring rubric** (anchors — pick the nearest):
 
 | Score | Anchor | Example |

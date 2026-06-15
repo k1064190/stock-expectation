@@ -84,6 +84,7 @@ from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
 from regime import aggregate_regime, compute_regime, compute_realized_vol
 from news_features import summarize_news
+from llm_context import validate_llm_context, score_from_debate
 
 from portfolio.db import (
     get_connection as pf_get_connection,
@@ -983,6 +984,34 @@ def cmd_track_record(args) -> int:
         conn.close()
 
 
+def cmd_lint_llm_context(args) -> int:
+    """Lint a structured LLM_CONTEXT debate for rigor (range, sign, evidence).
+
+    Returns 0 when clean, 1 when issues are found (so a skill or CI can gate on
+    it). Echoes the clamped score and any violations as JSON.
+
+    Args:
+        args: Parsed CLI arguments with ``debate`` (a JSON string).
+
+    Returns:
+        0 if the debate passes all rigor checks, 1 otherwise.
+    """
+    try:
+        debate = json.loads(args.debate)
+    except json.JSONDecodeError as exc:
+        _print_json({"error": f"debate is not valid JSON: {exc}"})
+        return 1
+    issues = validate_llm_context(debate)
+    _print_json(
+        {
+            "clean": not issues,
+            "clamped_score": score_from_debate(debate),
+            "issues": issues,
+        }
+    )
+    return 0 if not issues else 1
+
+
 def cmd_component_contribution(args) -> int:
     """Show win-rate by each stored per-pillar component (algo/news/llm/gates)."""
     conn = get_connection()
@@ -1845,6 +1874,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum closed rows in a bucket to report it (default 8)",
     )
     cc.set_defaults(func=cmd_component_contribution)
+
+    # --- lint-llm-context ---
+    lc = sub.add_parser(
+        "lint-llm-context",
+        help="Lint a structured LLM_CONTEXT debate JSON for rigor (range/sign/evidence)",
+    )
+    lc.add_argument(
+        "debate", help="JSON debate object {score, winner, bull_points, bear_points}"
+    )
+    lc.set_defaults(func=cmd_lint_llm_context)
 
     # --- portfolio ---
     pf = sub.add_parser("portfolio", help="Portfolio tracking and evaluation")

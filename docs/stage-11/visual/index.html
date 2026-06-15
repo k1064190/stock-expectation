@@ -13,70 +13,66 @@
         padding: 0;
       }
 
-      :root {
-        --accent: #2c5f6e;
-        --accent-light: #e8f2f5;
-        --accent-muted: #7aacbb;
-        --bg: #f7f7f5;
-        --card-bg: #fafaf8;
-        --border: #e2e2de;
-        --text: #1a1a18;
-        --text-muted: #6b6b65;
-        --text-subtle: #9a9a94;
-        --radius: 6px;
-        --font:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
-          sans-serif;
-      }
-
       body {
-        font-family: var(--font);
-        background: var(--bg);
-        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
         font-size: 15px;
-        line-height: 1.6;
       }
 
-      /* ── Header ── */
-      header {
-        background: var(--accent);
-        color: #fff;
-        padding: 1.25rem 2rem;
+      :root {
+        --accent: #1d4e6b;
+        --accent-light: #e8f1f6;
+        --muted: #6b7280;
+        --border: #d1d5db;
+        --card-bg: #fafaf9;
+      }
+
+      /* ── Site header ── */
+      .site-header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 16px 32px;
         display: flex;
         align-items: baseline;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 8px;
       }
 
-      header .branding h1 {
+      .site-header__left {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0;
+      }
+
+      .site-header__title {
         font-size: 1.25rem;
-        font-weight: 600;
+        font-weight: 700;
+        color: var(--accent);
         letter-spacing: -0.01em;
       }
 
-      header .branding p {
-        font-size: 0.82rem;
-        opacity: 0.75;
-        margin-top: 0.1rem;
+      .site-header__subtitle {
+        font-size: 0.875rem;
+        color: var(--muted);
+        margin-left: 12px;
       }
 
       .lang-switcher {
-        font-size: 0.85rem;
-        white-space: nowrap;
+        font-size: 0.875rem;
       }
 
-      .lang-switcher .current {
-        color: rgba(255, 255, 255, 0.45);
-      }
-
-      .lang-switcher .sep {
-        color: rgba(255, 255, 255, 0.3);
-        margin: 0 0.35rem;
+      .lang-switcher .current-lang {
+        color: var(--muted);
       }
 
       .lang-switcher a {
-        color: #fff;
+        color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
@@ -86,91 +82,101 @@
       }
 
       /* ── Timeline nav ── */
-      nav.timeline {
+      .timeline-nav {
         background: #fff;
         border-bottom: 1px solid var(--border);
-        padding: 0.9rem 2rem;
+        padding: 16px 32px;
         overflow-x: auto;
       }
 
-      nav.timeline ul {
+      .timeline-nav__list {
         display: flex;
-        list-style: none;
-        gap: 0.3rem;
         align-items: center;
-        flex-wrap: nowrap;
+        list-style: none;
+        white-space: nowrap;
         min-width: max-content;
       }
 
-      nav.timeline li {
+      .timeline-nav__item {
         display: flex;
         align-items: center;
-        gap: 0.3rem;
       }
 
-      nav.timeline li + li::before {
-        content: "";
-        display: block;
-        width: 16px;
+      .timeline-nav__connector {
+        width: 24px;
         height: 2px;
         background: var(--border);
         flex-shrink: 0;
       }
 
-      .stage-node {
-        display: inline-flex;
+      .timeline-nav__node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .timeline-nav__circle {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 2px solid var(--border);
+        background: #e5e7eb;
+        display: flex;
         align-items: center;
         justify-content: center;
-        padding: 0.2rem 0.6rem;
-        border-radius: 999px;
-        font-size: 0.73rem;
-        font-weight: 600;
-        white-space: nowrap;
-        border: 2px solid transparent;
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-align: center;
+        line-height: 1.1;
       }
 
-      .stage-node.past {
-        background: var(--text-subtle);
-        color: #fff;
-        border-color: var(--text-subtle);
-      }
-
-      .stage-node.current {
+      .timeline-nav__circle--current {
+        border-color: var(--accent);
         background: var(--accent);
         color: #fff;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 3px var(--accent-light);
       }
 
-      /* ── Stage heading ── */
-      .stage-intro {
-        max-width: 920px;
-        margin: 2rem auto 0;
-        padding: 0 2rem;
+      .timeline-nav__label {
+        font-size: 0.625rem;
+        color: var(--muted);
+        text-align: center;
       }
 
-      .stage-intro h2 {
-        font-size: 1.55rem;
+      .timeline-nav__label--current {
+        color: var(--accent);
         font-weight: 700;
+      }
+
+      /* ── Main ── */
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px 24px 64px;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.85rem;
+        font-weight: 800;
         color: var(--accent);
         letter-spacing: -0.02em;
+        margin-bottom: 8px;
       }
 
-      .stage-intro p {
-        margin-top: 0.45rem;
-        color: var(--text-muted);
-        font-size: 0.93rem;
-        max-width: 78ch;
+      .stage-summary {
+        font-size: 0.95rem;
+        color: #374151;
+        margin-bottom: 32px;
+        max-width: 840px;
+        line-height: 1.75;
       }
 
       /* ── Card grid ── */
       .card-grid {
-        max-width: 920px;
-        margin: 1.5rem auto 3rem;
-        padding: 0 2rem;
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.25rem;
+        grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+        gap: 20px;
       }
 
       @media (max-width: 720px) {
@@ -179,189 +185,265 @@
         }
       }
 
-      article.card {
+      /* ── Article card ── */
+      article {
         background: var(--card-bg);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.25rem 1.4rem;
+        border-radius: 6px;
+        padding: 24px 24px 20px;
       }
 
-      article.card h3 {
-        font-size: 1rem;
+      article h3 {
+        font-size: 1.05rem;
         font-weight: 700;
         color: var(--accent);
-        letter-spacing: -0.01em;
-        margin-bottom: 0.85rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .section {
-        margin-top: 0.9rem;
+        border-bottom: 2px solid var(--accent-light);
+        padding-bottom: 8px;
+        margin-bottom: 14px;
       }
 
       .section-label {
-        font-size: 0.71rem;
+        font-size: 0.73rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.07em;
-        color: var(--accent-muted);
-        margin-bottom: 0.3rem;
+        color: var(--muted);
+        margin-top: 14px;
+        margin-bottom: 4px;
       }
 
-      .section p,
-      .section li {
-        font-size: 0.875rem;
-        color: var(--text);
-        line-height: 1.6;
+      article p {
+        font-size: 0.89rem;
+        color: #374151;
+        margin-bottom: 7px;
       }
 
-      .section ul {
-        padding-left: 1.1rem;
-        margin-top: 0.2rem;
+      article ul {
+        margin: 4px 0 7px 0;
+        padding-left: 18px;
       }
 
-      .section ul li + li {
-        margin-top: 0.15rem;
+      article li {
+        font-size: 0.89rem;
+        color: #374151;
+        margin-bottom: 3px;
       }
 
-      .section p + p {
-        margin-top: 0.4rem;
-      }
-
+      /* ── Inline code ── */
       code {
         font-family:
           "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        font-size: 0.8em;
-        background: #eef0ee;
-        padding: 0.1em 0.35em;
+        font-size: 0.82em;
+        background: #f0f0ee;
+        border: 1px solid #e0e0de;
         border-radius: 3px;
-        word-break: break-all;
+        padding: 1px 4px;
+        color: #1a1a1a;
       }
 
       /* ── Tables ── */
-      .section table {
-        border-collapse: collapse;
-        width: 100%;
-        font-size: 0.82rem;
-        margin-top: 0.4rem;
+      .table-wrapper {
+        overflow-x: auto;
+        margin: 10px 0;
       }
 
-      .section th,
-      .section td {
-        border: 1px solid var(--border);
-        padding: 0.3rem 0.55rem;
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.84rem;
+      }
+
+      th {
+        background: var(--accent-light);
+        color: var(--accent);
+        font-weight: 700;
         text-align: left;
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+      }
+
+      td {
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        color: #374151;
         vertical-align: top;
       }
 
-      .section th {
+      tr:nth-child(even) td {
+        background: #f0f0ee;
+      }
+
+      /* ── Retrospective callout ── */
+      .retrospective {
         background: var(--accent-light);
-        font-weight: 600;
-        color: var(--accent);
-        font-size: 0.77rem;
+        border-left: 3px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        padding: 10px 14px;
+        margin-top: 12px;
+        font-size: 0.87rem;
+        color: #1e3a4a;
+        line-height: 1.6;
       }
 
-      .section tr:nth-child(even) td {
-        background: #f3f4f2;
-      }
-
-      /* ── Review loop items ── */
-      .review-item {
-        font-size: 0.84rem;
-        padding: 0.4rem 0.6rem;
-        border-left: 3px solid var(--accent-light);
-        margin-top: 0.45rem;
-        line-height: 1.5;
-      }
-
-      .tag {
-        font-size: 0.69rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-right: 0.3rem;
-      }
-
-      .tag.fixed {
-        color: #2a7a3a;
-      }
-      .tag.dismissed {
-        color: #8a5a00;
-      }
-      .tag.noted {
-        color: #5a5a55;
+      /* ── Footer ── */
+      footer {
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--muted);
+        padding: 24px;
+        border-top: 1px solid var(--border);
+        margin-top: 16px;
       }
     </style>
   </head>
   <body>
-    <header>
-      <div class="branding">
-        <h1>Stock Expectation</h1>
-        <p>Staged plan progress</p>
+    <header class="site-header">
+      <div class="site-header__left">
+        <span class="site-header__title">Stock Expectation</span>
+        <span class="site-header__subtitle">Staged plan progress</span>
       </div>
-      <div class="lang-switcher">
-        <span class="current">EN</span>
-        <span class="sep">|</span>
-        <a href="index.ko.html">한국어</a>
-      </div>
+      <nav class="lang-switcher" aria-label="Language">
+        <span class="current-lang">EN</span>
+        &nbsp;|&nbsp;
+        <a href="index.ko.html" hreflang="ko">한국어</a>
+      </nav>
     </header>
 
-    <nav class="timeline" aria-label="Project stages">
-      <ul>
-        <li><span class="stage-node past">Stage 0</span></li>
-        <li><span class="stage-node past">Stage 1</span></li>
-        <li><span class="stage-node past">Stage 2</span></li>
-        <li><span class="stage-node past">Stage 3</span></li>
-        <li><span class="stage-node past">Stage 4</span></li>
-        <li><span class="stage-node past">Stage 4.1</span></li>
-        <li><span class="stage-node past">Stage 5</span></li>
-        <li><span class="stage-node past">Stage 6</span></li>
-        <li><span class="stage-node past">Stage 7</span></li>
-        <li><span class="stage-node past">Stage 8</span></li>
-        <li><span class="stage-node past">Stage 9</span></li>
-        <li><span class="stage-node past">Stage 10</span></li>
-        <li>
-          <span class="stage-node current" aria-current="step">Stage 11</span>
+    <nav class="timeline-nav" aria-label="Project timeline">
+      <ul class="timeline-nav__list">
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">0</div>
+            <div class="timeline-nav__label">Stage 0</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">1</div>
+            <div class="timeline-nav__label">Stage 1</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">2</div>
+            <div class="timeline-nav__label">Stage 2</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">3</div>
+            <div class="timeline-nav__label">Stage 3</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">4</div>
+            <div class="timeline-nav__label">Stage 4</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">4.1</div>
+            <div class="timeline-nav__label">Stage 4.1</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">5</div>
+            <div class="timeline-nav__label">Stage 5</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">6</div>
+            <div class="timeline-nav__label">Stage 6</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">7</div>
+            <div class="timeline-nav__label">Stage 7</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">8</div>
+            <div class="timeline-nav__label">Stage 8</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">9</div>
+            <div class="timeline-nav__label">Stage 9</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle">10</div>
+            <div class="timeline-nav__label">Stage 10</div>
+          </div>
+        </li>
+        <li class="timeline-nav__item">
+          <div class="timeline-nav__connector"></div>
+          <div class="timeline-nav__node">
+            <div class="timeline-nav__circle timeline-nav__circle--current">
+              11
+            </div>
+            <div class="timeline-nav__label timeline-nav__label--current">
+              Stage 11
+            </div>
+          </div>
         </li>
       </ul>
     </nav>
 
-    <div class="stage-intro">
-      <h2>Stage 11</h2>
-      <p>
-        The prediction-accuracy initiative: a backfill A/B evaluation gate,
-        deterministic isotonic recalibration, dead-signal pruning, a hard
-        market-regime gate, a per-stock overextension gate, structured news
-        features, and per-pillar component persistence.
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 11</h2>
+      </div>
+      <p class="stage-summary">
+        The prediction-accuracy initiative: a read-only backfill A/B evaluation
+        harness gates every accuracy change on past data before it touches the
+        live flow; deterministic recalibration and dead-signal pruning fix
+        systematic overconfidence; a hard market-regime gate and a per-stock
+        overextension gate suppress high-risk entries; structured news features
+        replace raw volume scoring; per-pillar component persistence lays the
+        foundation for a learned confidence blend; and an LLM_CONTEXT rigor gate
+        enforces debate discipline before trusting that pillar's score.
       </p>
-    </div>
 
-    <div class="card-grid">
-      <!-- ── Card 1: Backfill Harness ── -->
-      <article class="card">
-        <h3>Backfill Harness</h3>
+      <div class="card-grid">
+        <!-- 1 of 7 -->
+        <article id="backfill-harness">
+          <h3>Backfill Harness</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <p>
-            Prediction win rate collapsed from 73% (2026-05-11) to 24%
-            (2026-06-14). The approved plan prescribes six accuracy changes
-            (A–F). Every change must be judged on past data before it touches
-            the live <code>/expect</code> flow — otherwise we risk repeating the
-            LIVE-vs-INTERACTIVE optimism bias (F4). This harness is that gate.
+            Prediction win rate collapsed 73% (2026-05-11) to 24% (2026-06-14).
+            The approved plan prescribes six accuracy changes (A–F). Every
+            change must be judged on past data before it touches the live
+            <code>/expect</code> flow — otherwise we risk repeating the
+            LIVE-vs-INTERACTIVE optimism (F4). This harness is that gate.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <p>
             <code>scheduler/backfill_eval.py</code> — read-only A/B tool over
             closed (HIT/MISS) predictions, plus
-            <code>tests/test_backfill_eval.py</code>
-            (9 tests, all passing).
+            <code>tests/test_backfill_eval.py</code> (15 tests, all passing).
+            Sections reported:
           </p>
-          <p>Sections it reports:</p>
           <ul>
             <li>
               <strong>[A] Isotonic recalibration</strong> — leakage-safe: fits
@@ -379,54 +461,52 @@
               gate would have suppressed).
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">
             First Run Results (real DB, n=420 closed)
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Change</th>
-                <th>Metric</th>
-                <th>Before</th>
-                <th>After</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>A (recal, OOS) ALL</td>
-                <td>Brier</td>
-                <td>0.340</td>
-                <td>0.204</td>
-              </tr>
-              <tr>
-                <td>A (recal, OOS) LIVE</td>
-                <td>Brier</td>
-                <td>0.331</td>
-                <td>0.160</td>
-              </tr>
-              <tr>
-                <td>B with-dead-signal</td>
-                <td>win rate</td>
-                <td>—</td>
-                <td>0.0% (n=15, Brier 0.424)</td>
-              </tr>
-              <tr>
-                <td>D BULL 6/1–6/7</td>
-                <td>win rate</td>
-                <td>—</td>
-                <td>4.3% (n=140)</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Change</th>
+                  <th>Metric</th>
+                  <th>Before</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A (recal, OOS) ALL</td>
+                  <td>Brier</td>
+                  <td>0.340</td>
+                  <td><strong>0.204</strong></td>
+                </tr>
+                <tr>
+                  <td>A (recal, OOS) LIVE</td>
+                  <td>Brier</td>
+                  <td>0.331</td>
+                  <td><strong>0.160</strong></td>
+                </tr>
+                <tr>
+                  <td>B with-dead-signal</td>
+                  <td>win rate</td>
+                  <td>—</td>
+                  <td><strong>0.0%</strong> (n=15, Brier 0.424)</td>
+                </tr>
+                <tr>
+                  <td>D BULL 6/1–6/7</td>
+                  <td>win rate</td>
+                  <td>—</td>
+                  <td><strong>4.3%</strong> (n=140)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p>
             These validate A and D strongly and confirm B as noise (low volume).
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <p>
             Reuses production calibration math
@@ -440,114 +520,102 @@
               >outcome_date, created_at, id</code
             >).
           </p>
-        </div>
 
-        <div class="section">
-          <div class="section-label">Code Locations</div>
+          <div class="section-label">Review Loop</div>
           <ul>
             <li>
-              <code>scheduler/backfill_eval.py</code> — harness
-              (<code>_connect_readonly</code>, <code>load_closed</code>,
-              <code>_metrics</code>, <code>eval_recalibration</code>,
-              <code>eval_dead_signals</code>, <code>eval_regime_window</code>,
-              <code>build_report</code>).
+              <strong>Fixed — DB not read-only (codex, High):</strong> replaced
+              <code>models.get_connection</code> with
+              <code>_connect_readonly</code> (<code>file:...?mode=ro</code>
+              URI).
             </li>
-            <li><code>tests/test_backfill_eval.py</code> — 15 unit tests.</li>
+            <li>
+              <strong>Fixed — avg-return inflated x100 (codex, Low):</strong>
+              <code>outcome_return</code> is stored as percentage points;
+              <code>:+.2%</code> multiplied by 100. Now <code>:+.2f%</code>. The
+              earlier "corrupted data" note was wrong — it was a display bug.
+            </li>
+            <li>
+              <strong
+                >Fixed — invalid <code>oos_fraction</code> / tiny-n (codex +
+                gemini):</strong
+              >
+              added validation and an "insufficient data" guard.
+            </li>
+            <li>
+              <strong
+                >Fixed — per-horizon recalibration (gemini +
+                code-reviewer):</strong
+              >
+              exposed an optional <code>timeframe</code> on
+              <code>eval_recalibration</code> and a <code>--timeframe</code> CLI
+              flag.
+            </li>
+            <li>
+              <strong>Fixed — test gaps:</strong> added invalid-fraction,
+              empty-signal-list, custom dead-set, and
+              <code>build_report</code> smoke tests (9 to 15).
+            </li>
+            <li>
+              <strong
+                >Dismissed — in-memory schema "Critical"
+                (code-reviewer):</strong
+              >
+              all three reviewers confirmed the 4-column temp table is exactly
+              right.
+            </li>
+            <li>
+              <strong
+                >Dismissed — strict point-in-time split (gemini/codex):</strong
+              >
+              split is by <code>outcome_date</code>; residual PIT effect is
+              second-order. Documented in <code>eval_recalibration</code>.
+            </li>
           </ul>
-        </div>
 
-        <div class="section">
-          <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            DB not read-only (codex, High): the harness used
-            <code>models.get_connection</code>, which
-            migrates/indexes/WAL/dedup-self-heals (writes). Replaced with
-            <code>_connect_readonly</code> (<code>file:...?mode=ro</code> URI).
-            Honors the read-only contract.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            avg-return inflated x100 (codex, Low): <code>:+.2%</code> format
-            spec multiplied by 100 (showed -865%). Now <code>:+.2f%</code>. The
-            earlier "corrupted data" note was wrong — the data is fine; it was a
-            display bug.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Invalid <code>oos_fraction</code> / tiny-n (codex + gemini): added
-            <code>0 &lt; oos_fraction &lt; 1</code> validation and an
-            "insufficient data" guard in the report.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Per-horizon recalibration (gemini + code-reviewer): exposed optional
-            <code>timeframe</code> on <code>eval_recalibration</code>/<code
-              >build_report</code
-            >
-            + <code>--timeframe</code> CLI flag (1W global Brier 0.331 to 0.169
-            vs all-horizon 0.331 to 0.160).
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Test gaps: added invalid-fraction, empty-signal-list, custom
-            dead-set, and
-            <code>build_report</code> smoke tests (9 to 15).
-          </div>
-          <div class="review-item">
-            <span class="tag dismissed">Dismissed</span>
-            In-memory schema "Critical" (code-reviewer): all three reviewers
-            confirmed
-            <code>get_calibration_report</code> only reads
-            confidence/status/source/timeframe; the 4-column temp table is
-            exactly right.
-          </div>
-          <div class="review-item">
-            <span class="tag dismissed">Dismissed</span>
-            Strict point-in-time split (gemini/codex): split is by
-            <code>outcome_date</code>
-            so test outcomes never enter the fitted map. Documented in
-            <code>eval_recalibration</code> rather than restructured.
-          </div>
-        </div>
-
-        <div class="section">
           <div class="section-label">Known Pre-Existing Issue</div>
           <p>
             <code>scheduler/weekly_calibration.py:208,236</code> formats
-            <code>avg_return</code> with <code>:+.2%</code> (the same x100
-            inflation bug) — the production weekly report overstates average
-            return. Left for a separate, scoped fix.
+            <code>avg_return</code> with <code>:+.2%</code> — the same x100
+            inflation bug. Left for a separate, scoped fix.
           </p>
-        </div>
 
-        <div class="section">
+          <div class="section-label">Code Locations</div>
+          <ul>
+            <li>
+              <code>scheduler/backfill_eval.py</code> —
+              <code>_connect_readonly</code>, <code>load_closed</code>,
+              <code>_metrics</code>, <code>eval_recalibration</code>,
+              <code>eval_dead_signals</code>, <code>eval_regime_window</code>,
+              <code>build_report</code>.
+            </li>
+            <li><code>tests/test_backfill_eval.py</code> — 15 unit tests.</li>
+          </ul>
+
           <div class="section-label">Retrospective</div>
-          <p>
+          <div class="retrospective">
             Reusing the production recal builder via an in-memory DB kept the
             harness honest (no duplicated calibration logic that could drift
             from live). The three-reviewer loop earned its keep: codex caught
             the read-only contract violation and the formatting bug that had led
             to wrongly blaming the data. Lesson to carry forward: verify the
             display path before blaming the data.
-          </p>
-        </div>
-      </article>
+          </div>
+        </article>
 
-      <!-- ── Card 2: Recalibration And Dead Signals ── -->
-      <article class="card">
-        <h3>Recalibration And Dead Signals</h3>
+        <!-- 2 of 7 -->
+        <article id="recalibration-and-dead-signals">
+          <h3>Recalibration And Dead Signals</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <ul>
             <li>
               <strong>F1/F7 (overconfidence + unused recal map):</strong> the
               0.60–0.70 confidence band ran +0.28 over actual, and although
-              <code>/expect</code>
-              told the operator to apply the recalibration map by hand, logged
-              confidences were still a near-constant ~0.6. A manual LLM step is
-              not reliable; recalibration must be deterministic.
+              <code>/expect</code> told the operator to apply the recalibration
+              map by hand, logged confidences were still a near-constant ~0.6. A
+              manual LLM step is not reliable; recalibration must be
+              deterministic.
             </li>
             <li>
               <strong>F2/F5 (dead signals):</strong> <code>valuation</code>,
@@ -555,19 +623,17 @@
               pollute per-signal calibration.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <ul>
             <li>
               <strong
                 >A — <code>--recalibrate</code> flag on
-                <code>predict create</code>:</strong
+                <code>predict create</code></strong
               >
-              maps the raw <code>--confidence</code> through the source-scoped
-              isotonic curve before storing; echoes
-              <code>raw_confidence</code> /
+              (<code>stock_cli.py</code>). Maps raw
+              <code>--confidence</code> through the source-scoped isotonic curve
+              before storing; echoes <code>raw_confidence</code> /
               <code>recalibration_applied</code> in the JSON. Safe no-op below
               <code>MIN_CLOSED_FOR_RECAL = 30</code> closed predictions of that
               source.
@@ -585,107 +651,85 @@
               Now <code>:+.2f%</code>.
             </li>
             <li>
-              Tests: <code>tests/test_recalibration_cli.py</code> (3) —
+              Tests: <code>tests/test_recalibration_cli.py</code> (7) —
               min-sample gate, overconfident pull-down, source-scoping.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <p>
-            Recalibration reuses
-            <code>build_recalibration_map</code>/<code
-              >apply_recalibration</code
-            >
+            Recalibration reuses <code>build_recalibration_map</code> /
+            <code>apply_recalibration</code>
             (<code>mcp-prediction-store/metrics.py</code>). A global
             (all-horizon) map is used — the backfill found it as accurate as
             per-horizon maps (Brier 0.160 vs 0.169) and more robust at current
             sample sizes. Source-scoped: a LIVE prediction calibrates only
             against LIVE history, never the over-fit INTERACTIVE rows (the F4
-            gap). The logging threshold still gates on raw confidence; only the
+            gap). Logging threshold still gates on raw confidence; only the
             stored value is recalibrated.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Verification</div>
           <p>
             Backfill OOS Brier: LIVE <strong>0.331 to 0.160</strong>, ALL
             <strong>0.340 to 0.204</strong> (leakage-safe train/test split).
           </p>
           <p>
-            <strong>Caveat surfaced by inspecting the live map:</strong> the
-            production LIVE curve has a single anchor (0.612 to 0.248) because
-            raw confidence is near-constant, so recalibration collapses every
-            confidence to the ~0.25 base rate. This is the source of the Brier
-            win (base-rate beats a non-informative 0.6 — the permutation test
-            already showed raw confidence carries no signal), but it means
-            logged confidence stops ranking picks until the model emits an
-            informative confidence spread. Restoring discrimination is
-            downstream work (change E / meta-labeling), not recalibration's job.
+            <strong>Caveat:</strong> the production LIVE curve has a single
+            anchor (0.612 to 0.248) because raw confidence is near-constant, so
+            recalibration collapses every confidence to the ~0.25 base rate.
+            This is the source of the Brier win, but it means logged confidence
+            stops ranking picks until the model emits an informative confidence
+            spread. Restoring discrimination is downstream work (change E /
+            meta-labeling), not recalibration's job.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed — Critical (all 3)</span>
-            Recalibration corrupted its own training data. Storing the
-            recalibrated value back into <code>confidence</code> poisoned future
-            maps: <code>build_recalibration_map</code>/<code
-              >get_calibration_report</code
-            >
-            read <code>confidence</code> as the raw predictor, so once
-            recalibrated rows (~0.25) closed they would re-enter the curve as if
-            raw (recursive feedback) and silently double-apply on replays. Fix:
-            added a nullable <code>raw_confidence</code> column (<code
-              >models.py</code
-            >
-            schema + additive
-            <code>_ensure_raw_confidence_column</code> migration +
-            dataclass/insert/reader); <code>predict create</code> now always
-            persists the raw confidence there, and calibration trains on
-            <code>COALESCE(raw_confidence, confidence)</code>. New test
-            <code>test_map_trains_on_raw_not_recalibrated</code> proves a
-            stored-0.30 / raw-0.65 row contributes 0.65 to the map. Migration
-            verified on a copy of production (1169 rows preserved, column added,
-            legacy map unchanged).
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Test gaps (codex/code-reviewer): added empty-map-after-gate no-op,
-            the no-corruption test, and an end-to-end
-            <code>cmd_predict_create --recalibrate</code> test asserting raw is
-            kept and stored confidence is calibrated.
-          </div>
-          <div class="review-item">
-            <span class="tag noted">Acknowledged</span>
-            Replay double-apply: if a caller manually re-submits a stored
-            (already-calibrated) confidence with <code>--recalibrate</code>, it
-            would map again. Out of the normal <code>/expect</code> path;
-            documented, not gated.
-          </div>
-        </div>
+          <ul>
+            <li>
+              <strong
+                >CRITICAL (all 3, fixed) — recalibration corrupted its own
+                training data.</strong
+              >
+              Storing the recalibrated value back into
+              <code>confidence</code> poisoned future maps. Fix: added a
+              nullable <code>raw_confidence</code> column; calibration trains on
+              <code>COALESCE(raw_confidence, confidence)</code> so it can never
+              see recalibrated values. New test
+              <code>test_map_trains_on_raw_not_recalibrated</code> proves a
+              stored-0.30 / raw-0.65 row contributes 0.65 to the map. Migration
+              verified on a copy of production (1169 rows preserved, column
+              added, legacy map unchanged).
+            </li>
+            <li>
+              <strong>Fixed — test gaps (codex/code-reviewer):</strong> added
+              empty-map-after-gate no-op, the no-corruption test, and an
+              end-to-end <code>cmd_predict_create --recalibrate</code> test.
+            </li>
+            <li>
+              <strong>Acknowledged — replay double-apply:</strong> if a caller
+              manually re-submits a stored confidence with
+              <code>--recalibrate</code>, it would map again. Out of the normal
+              <code>/expect</code> path; documented, not gated.
+            </li>
+          </ul>
 
-        <div class="section">
           <div class="section-label">Code Locations</div>
           <ul>
             <li>
               <code>stock_cli.py</code> — <code>_recalibrated_confidence</code>,
               <code>MIN_CLOSED_FOR_RECAL</code>,
-              <code>cmd_predict_create</code>, <code>--recalibrate</code> arg,
+              <code>cmd_predict_create</code>, <code>--recalibrate</code>,
               <code>raw_confidence</code> persistence.
             </li>
             <li>
               <code>mcp-prediction-store/models.py</code> —
-              <code>raw_confidence</code> column, schema,
-              <code>_ensure_raw_confidence_column</code>, dataclass field,
-              insert, <code>_row_to_prediction</code>.
+              <code>raw_confidence</code> column,
+              <code>_ensure_raw_confidence_column</code>,
+              dataclass/insert/<code>_row_to_prediction</code>.
             </li>
             <li>
-              <code>mcp-prediction-store/metrics.py</code> —
-              <code>get_calibration_report</code> trains on
+              <code>mcp-prediction-store/metrics.py</code> — trains on
               <code>COALESCE(raw_confidence, confidence)</code>.
             </li>
             <li>
@@ -704,26 +748,22 @@
               <code>tests/test_recalibration_cli.py</code> — 7 unit tests.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Retrospective</div>
-          <p>
+          <div class="retrospective">
             Moving recalibration from a hand-applied LLM instruction to a CLI
             flag is the real fix for F7 — the map existed for weeks but was
             never reliably applied. Inspecting the actual live map (not just the
             backfill delta) caught that recalibration currently degenerates to
             base-rate. Better to log that honestly now than to discover later
             that confidence stopped discriminating.
-          </p>
-        </div>
-      </article>
+          </div>
+        </article>
 
-      <!-- ── Card 3: Regime Gate ── -->
-      <article class="card">
-        <h3>Regime Gate</h3>
+        <!-- 3 of 7 -->
+        <article id="regime-gate">
+          <h3>Regime Gate</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <p>
             F3: during the June 2026 drawdown <code>/expect</code> kept issuing
@@ -731,9 +771,7 @@
             4.3%). There was no deterministic risk-off gate — the macro skills
             were advisory callouts an LLM could ignore.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <ul>
             <li>
@@ -748,14 +786,13 @@
               Hard gate wired into <code>/expect</code> (RULE R1) and
               <code>daily-briefing</code> (RULE R1):
               <code>RISK_OFF</code> suppresses new BULL (cap WATCH, horizons to
-              NEUTRAL); <code>NEUTRAL</code> raises BUY bar 8.0 to 9.0 and trims
-              confidence (cap 0.60); <code>RISK_ON</code> unchanged.
+              <code>NEUTRAL</code>); <code>NEUTRAL</code> raises BUY bar 8.0 to
+              9.0 and trims confidence (cap 0.60); <code>RISK_ON</code> is
+              unchanged.
             </li>
-            <li><code>tests/test_regime.py</code> (16 tests).</li>
+            <li><code>tests/test_regime.py</code> — 16 tests.</li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <p>
             Pure, network-free logic in
@@ -767,84 +804,97 @@
             <code>dataclasses.replace</code> (no input mutation) and records
             every proxy's score in <code>proxy_scores</code>.
           </p>
-        </div>
 
-        <div class="section">
-          <div class="section-label">Validation</div>
+          <div class="section-label">
+            Validation (network reconstruction over the June window)
+          </div>
           <p>
             Reconstructed the regime as-of each prediction's issue date and
             bucketed the 140 closed BULL:
           </p>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Regime at issue</th>
+                  <th>n</th>
+                  <th>Win rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>NEUTRAL</code> at issue</td>
+                  <td>65</td>
+                  <td>3.1%</td>
+                </tr>
+                <tr>
+                  <td><code>RISK_ON</code> at issue</td>
+                  <td>75</td>
+                  <td>5.3%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            The 6/2 cluster (72 calls) was un-gateable by index alone — even
+            <code>QQQ</code> was <code>RISK_ON</code>; the drawdown came after.
+            <code>SPY</code> never left <code>RISK_ON</code> the whole window;
+            <code>QQQ</code> went <code>NEUTRAL</code> by 6/7; KR flagged
+            <code>NEUTRAL</code> early via parabolic vol (1M +40%, vol 56%).
+          </p>
+          <p>
+            <strong>Conclusion (no overclaim):</strong> the regime gate removes
+            ~46% of the window's losers (the NEUTRAL ones) and stops buying into
+            a developing correction, but the broad index was calm at the 6/2
+            peak. The complementary lever — per-stock overextension — is a
+            planned follow-up stage; recalibration (A) already collapses the
+            overconfidence that made the 6/2 cluster so damaging.
+          </p>
+
+          <div class="section-label">Review Loop</div>
           <ul>
             <li>
-              NEUTRAL at issue: n=65, win 3.1% — the gate suppresses/hardens
-              these.
+              <strong
+                >Fixed (all 3) — <code>aggregate_regime</code> mutated an input
+                verdict.</strong
+              >
+              Now <code>dataclasses.replace</code> returns a copy; test asserts
+              inputs untouched.
             </li>
             <li>
-              RISK_ON at issue: n=75, win 5.3% — the index looked calm when
-              issued; the gate cannot catch these.
+              <strong
+                >Fixed (codex High) — <code>cmd_regime</code> silently dropped a
+                failed proxy</strong
+              >
+              (losing <code>QQQ</code> would blind the US gate to a growth-led
+              drawdown). Missing proxies are now surfaced in the verdict notes.
             </li>
             <li>
-              The 6/2 cluster (72 calls) was un-gateable by index alone — even
-              <code>QQQ</code> was <code>RISK_ON</code>; the drawdown came
-              after. <code>SPY</code> never left <code>RISK_ON</code> the whole
-              window; <code>QQQ</code> went <code>NEUTRAL</code> by 6/7; KR
-              flagged <code>NEUTRAL</code> early via parabolic vol (1M +40%, vol
-              56%).
+              <strong
+                >Fixed (codex+gemini) — insufficient history defaulted to
+                <code>RISK_ON</code>.</strong
+              >
+              Now floored to <code>NEUTRAL</code> with a note.
+            </li>
+            <li>
+              <strong>Fixed — argparser help</strong> now says "worst-of
+              <code>SPY</code>+<code>QQQ</code>".
+            </li>
+            <li>
+              <strong>Fixed — test gaps:</strong> exact realized-vol value, MA
+              precedence, insufficient history, no-mutation, tie-to-first,
+              single-proxy.
+            </li>
+            <li>
+              <strong
+                >Dismissed — threshold flapping/hysteresis (gemini):</strong
+              >
+              day-to-day flapping near a threshold needs persistent state; the
+              gate is consulted once per briefing. Documented as a known
+              limitation.
             </li>
           </ul>
-          <p>
-            <strong>Conclusion (no overclaim):</strong> the regime gate is a
-            partial mitigation — it removes ~46% of the window's losers (the
-            NEUTRAL ones) and stops buying into a developing correction, but the
-            broad index was calm at the 6/2 peak. The complementary lever —
-            per-stock overextension — is a planned follow-up stage;
-            recalibration (A) already collapses the overconfidence that made the
-            6/2 cluster so damaging.
-          </p>
-        </div>
 
-        <div class="section">
-          <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (all 3)</span>
-            <code>aggregate_regime</code> mutated an input verdict. Now
-            <code>dataclasses.replace</code> returns a copy; test asserts inputs
-            untouched.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex High)</span>
-            <code>cmd_regime</code> silently dropped a failed proxy (losing
-            <code>QQQ</code> would blind the US gate to a growth-led drawdown).
-            Missing proxies now surfaced in the verdict notes.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex + gemini)</span>
-            Insufficient history defaulted to <code>RISK_ON</code>. With no
-            MA200 the trend is unknown, so a hard gate must not certify
-            <code>RISK_ON</code>; now floored to <code>NEUTRAL</code> with a
-            note.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Argparser help said default <code>SPY</code> for US; now "worst-of
-            SPY+QQQ".
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Test gaps: exact realized-vol value, MA precedence, insufficient
-            history, no-mutation, tie-first, single-proxy.
-          </div>
-          <div class="review-item">
-            <span class="tag dismissed">Dismissed</span>
-            Threshold flapping/hysteresis (gemini): day-to-day flapping near a
-            threshold needs persistent state; the gate is consulted once per
-            briefing, not intraday. Documented as a known limitation, not
-            implemented.
-          </div>
-        </div>
-
-        <div class="section">
           <div class="section-label">Code Locations</div>
           <ul>
             <li>
@@ -858,29 +908,25 @@
             </li>
             <li>
               <code>.claude/skills/expect/SKILL.md</code> (RULE R1, Step 1
-              fetch), <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE
+              fetch); <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE
               R1, Section 1 fetch).
             </li>
             <li><code>tests/test_regime.py</code>.</li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Retrospective</div>
-          <p>
-            The validation refuted the first instinct ("a regime gate would have
+          <div class="retrospective">
+            The validation refuted the first instinct (a regime gate "would have
             prevented the loss"). The data forced an honest, narrower claim and
             surfaced the real next lever (per-stock overextension). Backfilling
             before wiring paid off.
-          </p>
-        </div>
-      </article>
+          </div>
+        </article>
 
-      <!-- ── Card 4: Overextension Gate ── -->
-      <article class="card">
-        <h3>Overextension Gate</h3>
+        <!-- 4 of 7 -->
+        <article id="overextension-gate">
+          <h3>Overextension Gate</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <p>
             The D-stage validation proved the broad-index regime gate could not
@@ -888,27 +934,27 @@
             semis) were parabolic individual names that reversed while the index
             was calm. A per-stock overextension gate is the missing lever.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <ul>
             <li>
-              New <code>overextension_level</code> (NONE / ELEVATED / EXTREME)
-              on <code>HorizonMetrics</code>, computed by
-              <code>classify_overextension(rsi14, price, ma20)</code> from
-              <code>RSI14</code> and price distance above <code>MA20</code>.
-              Surfaced automatically in <code>horizon-metrics[-batch]</code>.
+              New <code>overextension_level</code> (<code>NONE</code> /
+              <code>ELEVATED</code> / <code>EXTREME</code>) on
+              <code>HorizonMetrics</code>, computed by
+              <code>classify_overextension(rsi14, price, ma20)</code> from RSI14
+              and price distance above MA20. Surfaced automatically in
+              <code>horizon-metrics[-batch]</code>.
             </li>
             <li>
               RULE R2 in <code>/expect</code> + <code>daily-briefing</code>:
-              EXTREME suppresses new BULL (cap WATCH); ELEVATED raises BUY bar
-              +1.0 and trims confidence (cap 0.60).
+              <code>EXTREME</code> suppresses new BULL (cap WATCH);
+              <code>ELEVATED</code> raises the BUY bar +1.0 and trims confidence
+              (cap 0.60).
             </li>
             <li>
-              R1+R2 stacking made explicit: WATCH cap from either wins; BUY-bar
-              raises are additive (NEUTRAL regime + ELEVATED stock = COMPOSITE
-              &ge; 10.0).
+              R1+R2 stacking is explicit: WATCH cap from either wins; BUY-bar
+              raises are additive (<code>NEUTRAL</code> regime +
+              <code>ELEVATED</code> stock yields COMPOSITE &gt;= 10.0).
             </li>
             <li>
               Tests added to
@@ -916,95 +962,89 @@
               contract test pins the new field.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <p>
             Thresholds calibrated on 377 closed BULL by reconstructing each
             prediction's entry-time metrics (truncating each ticker's history to
-            its
-            <code>created_at</code>): EXTREME = <code>RSI14</code> &gt; 75 or
-            price &gt; 15% above <code>MA20</code>; ELEVATED =
-            <code>RSI14</code> &gt; 70 or &gt; 8% above <code>MA20</code>. Pure,
-            network-free classifier.
+            its <code>created_at</code>): <code>EXTREME</code> = RSI14 &gt; 75
+            or price &gt; 15% above MA20; <code>ELEVATED</code> = RSI14 &gt; 70
+            or &gt; 8% above MA20. Pure, network-free classifier.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">
             Validation (entry-time reconstruction, 377 closed BULL)
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>overextension_level at entry</th>
-                <th>n</th>
-                <th>win rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>NONE</td>
-                <td>99</td>
-                <td>53.5%</td>
-              </tr>
-              <tr>
-                <td>ELEVATED</td>
-                <td>79</td>
-                <td>41.8%</td>
-              </tr>
-              <tr>
-                <td>EXTREME</td>
-                <td>199</td>
-                <td>29.1%</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th><code>overextension_level</code> at entry</th>
+                  <th>n</th>
+                  <th>Win rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>NONE</code></td>
+                  <td>99</td>
+                  <td><strong>53.5%</strong></td>
+                </tr>
+                <tr>
+                  <td><code>ELEVATED</code></td>
+                  <td>79</td>
+                  <td>41.8%</td>
+                </tr>
+                <tr>
+                  <td><code>EXTREME</code></td>
+                  <td>199</td>
+                  <td><strong>29.1%</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p>
-            Suppressing EXTREME lifts kept BULL win-rate to
+            Suppressing <code>EXTREME</code> lifts kept BULL win-rate to
             <strong>48.3% (n=178) vs 38.2% overall — +10pp</strong>, with a
             clean monotonic gradient. By RSI alone: RSI&gt;75 won 26.4% (n=125)
-            vs 47.5% at RSI&lt;60. By <code>MA20</code> distance: &gt;15% won
-            29.6% (n=196) vs 66% in the 3–8% band.
+            vs 47.5% at RSI&lt;60. By MA20 distance: &gt;15% won 29.6% (n=196)
+            vs 66% in the 3–8% band.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag noted">Verified (all 3)</span>
-            Code correct: severity ordering, <code>ma20 &le; 0</code>/None
-            guards, RSI-None default, no double-counting with the point table,
-            backward-compatible dataclass field.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex Medium)</span>
-            R1+R2 stacking ambiguity: documented bar raises as additive and
-            WATCH-cap as "either wins".
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (both Low)</span>
-            Stale schema list / unpinned field: added
-            <code>overextension_level</code> to the <code>/expect</code> field
-            list and to the CLI contract test's <code>expected_fields</code>.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Boundary tests: added strict-RSI-boundary and MA20-band tests
-            (avoided float-fragile exact-percent edges after one such test
-            flaked).
-          </div>
-          <div class="review-item">
-            <span class="tag noted">Noted (both)</span>
-            ELEVATED is intentionally mild: RSI 70–75 still earns +0.5 momentum
-            and near-high cycle +1.0, partly offsetting R2's +1.0 bar.
-            Justified: ELEVATED won 41.8% (near break-even), so a soft gate is
-            appropriate; EXTREME (29%) gets the hard suppression.
-          </div>
-        </div>
+          <ul>
+            <li>
+              Code verified correct by all three (severity ordering,
+              ma20&lt;=0/None guards, RSI-None default, no double-counting with
+              the point table, defaulted dataclass field is
+              backward-compatible).
+            </li>
+            <li>
+              <strong>Fixed (codex Medium) — R1+R2 stacking ambiguity:</strong>
+              documented bar raises as additive and WATCH-cap as "either wins".
+            </li>
+            <li>
+              <strong
+                >Fixed (both Low) — stale schema list / unpinned field:</strong
+              >
+              added <code>overextension_level</code> to the
+              <code>/expect</code> field list and to the CLI contract test's
+              <code>expected_fields</code>.
+            </li>
+            <li>
+              <strong>Fixed — boundary tests:</strong> added strict-RSI-boundary
+              and MA20-band tests (avoided float-fragile exact-percent edges
+              after one such test flaked).
+            </li>
+            <li>
+              <strong>Noted — ELEVATED is intentionally mild:</strong> RSI 70–75
+              still earns +0.5 momentum and near-high cycle +1.0, partly
+              offsetting R2's +1.0 bar. Justified: ELEVATED won 41.8% (near
+              break-even), so a soft gate is appropriate; EXTREME (29%) gets the
+              hard suppression.
+            </li>
+          </ul>
 
-        <div class="section">
           <div class="section-label">Code Locations</div>
           <ul>
             <li>
@@ -1016,7 +1056,7 @@
             </li>
             <li>
               <code>.claude/skills/expect/SKILL.md</code> (RULE R2 + field
-              list), <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE
+              list); <code>.claude/skills/daily-briefing/SKILL.md</code> (RULE
               R2).
             </li>
             <li>
@@ -1024,25 +1064,21 @@
               <code>tests/test_cli_integration.py</code>.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Retrospective</div>
-          <p>
+          <div class="retrospective">
             This is the complement the D validation predicted: R1 (market) + R2
             (stock) together address both regime-blind clusters and parabolic
             single names. Reconstructing entry-time metrics from stored
             <code>created_at</code> turned a hunch ("the losers were extended")
             into a calibrated, monotonic threshold.
-          </p>
-        </div>
-      </article>
+          </div>
+        </article>
 
-      <!-- ── Card 5: News Features ── -->
-      <article class="card">
-        <h3>News Features</h3>
+        <!-- 5 of 7 -->
+        <article id="news-features">
+          <h3>News Features</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <p>
             The <code>news</code> signal graded "dead" (~33% win). Root cause:
@@ -1051,37 +1087,32 @@
             hard catalyst. The latest-news pillar needed information, not
             volume.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <ul>
             <li>
-              <code>mcp-market-data/news_features.py</code>: pure feature
-              extractor producing a <code>NewsSignal</code> — deduped
+              <code>mcp-market-data/news_features.py</code> — pure feature
+              extractor producing a <code>NewsSignal</code>: deduped
               <code>unique_count</code>, recency-weighted sentiment (3-day
-              half-life exponential decay), catalyst
-              <code>event_tags</code>
+              half-life exponential decay), catalyst <code>event_tags</code>
               (earnings/guidance/ma/analyst/regulatory_legal/product/leadership/capital),
-              and <code>has_positive_catalyst</code> /
-              <code>has_negative_catalyst</code>
-              flags.
+              and
+              <code>has_positive_catalyst</code> /
+              <code>has_negative_catalyst</code> flags.
             </li>
             <li>
               The <code>news</code> CLI command now emits a
               <code>signal</code> block alongside <code>items</code>.
             </li>
             <li>
-              Both skills score NEWS_SCORE from
+              Both skills score <code>NEWS_SCORE</code> from
               <code>signal</code> (recency-weighted sentiment, deduped volume,
               negative-catalyst hard cap) and feed <code>event_tags</code> into
-              the LLM_CONTEXT debate.
+              the <code>LLM_CONTEXT</code> debate.
             </li>
             <li>16 tests in <code>tests/test_news_features.py</code>.</li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <ul>
             <li>
@@ -1092,73 +1123,67 @@
             </li>
             <li>
               <strong>Dedup:</strong> word-prefix-containment with a 5-word
-              minimum so wire reposts ("…, shares jump") collapse but short
-              generic stubs do not swallow distinct stories.
+              minimum so wire reposts collapse but short generic stubs do not
+              swallow distinct stories.
             </li>
             <li>
               <strong>Matching:</strong> ASCII keywords match on word boundaries
               (<code>\bmiss\b</code> — never "mission"/"twins"/"heartbeat");
-              Korean keywords match as substrings, so KR Naver headlines (no
-              Alpha Vantage sentiment) still yield event tags and catalyst flags
-              (감자/유상증자/실적/소송 …).
+              Korean keywords match as substrings, so KR Naver headlines still
+              yield event tags and catalyst flags (감자/유상증자/실적/소송 ...).
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Validation</div>
           <p>
             Structural/quality improvement — historical per-prediction headlines
-            are not stored, so this is not backfill win-rate validated (stated
-            plainly). Justification is information-quality: dedup removes
-            double-counting, recency weighting de-emphasizes stale news,
-            catalyst tagging separates material events from noise. Whether it
-            lifts the news signal's win rate will be measured forward via weekly
-            calibration. Live checks: US AAPL returned a populated sentiment
-            signal; KR 005930 deduped 8 to 7 headlines.
+            are not stored, so this is <strong>not</strong> backfill win-rate
+            validated (stated plainly). Justification is information-quality:
+            dedup removes double-counting, recency weighting de-emphasises stale
+            news, catalyst tagging separates material events from noise. Live
+            checks: US AAPL returned a populated sentiment signal; KR 005930
+            deduped 8 to 7 headlines.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (both, High)</span>
-            Substring catalyst false positives: "miss"/"halt"/"wins"/"beat"
-            could fire the -2 hard cap on
-            "mission"/"health"/"twins"/"heartbeat". Now ASCII keywords use
-            word-boundary regex and the lists prefer unambiguous phrases
-            ("earnings miss", "trading halt"). Test asserts no false fire.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex, High)</span>
-            Skill drift: removed an unvalidated "+1.0 hard catalyst" row that
-            existed only in <code>/expect</code>; NEWS_SCORE is now identical
-            across both skills (sentiment + volume + negative cap; tags feed LLM
-            only).
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (both, Medium)</span>
-            Dedup over-merge: added the 5-word minimum prefix guard; test proves
-            "Nvidia shares rise" no longer swallows a distinct longer headline.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (both, Medium)</span>
-            Korean blind spot: added Korean keywords to every event category and
-            the catalyst lists, with substring matching for Hangul.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Test gaps: word-boundary, Korean, short-prefix, future-date clamp,
-            two-item bad-date, old-headline decay.
-          </div>
-          <div class="review-item">
-            <span class="tag noted">Noted</span>
-            Recency half-life is hardcoded (3d): exposed as a module constant
-            (<code>RECENCY_HALF_LIFE_DAYS</code>) for future tuning.
-          </div>
-        </div>
+          <ul>
+            <li>
+              <strong
+                >Fixed (both, High) — substring catalyst false
+                positives:</strong
+              >
+              "miss"/"halt"/"wins"/"beat" could fire the -2 hard cap on
+              "mission"/"health"/"twins"/"heartbeat". Now ASCII keywords use
+              word-boundary regex; test asserts no false fire.
+            </li>
+            <li>
+              <strong>Fixed (codex, High) — skill drift:</strong> removed an
+              unvalidated "+1.0 hard catalyst" row that existed only in
+              <code>/expect</code>; <code>NEWS_SCORE</code> is now identical
+              across both skills.
+            </li>
+            <li>
+              <strong>Fixed (both, Medium) — dedup over-merge:</strong> added
+              the 5-word minimum prefix guard; test proves "Nvidia shares rise"
+              no longer swallows a distinct longer headline.
+            </li>
+            <li>
+              <strong>Fixed (both, Medium) — Korean blind spot:</strong> added
+              Korean keywords to every event category and the catalyst lists,
+              with substring matching for Hangul.
+            </li>
+            <li>
+              <strong>Fixed — test gaps:</strong> word-boundary, Korean,
+              short-prefix, future-date clamp, two-item bad-date, old-headline
+              decay.
+            </li>
+            <li>
+              <strong>Noted — recency half-life is hardcoded (3d):</strong>
+              exposed as module constant <code>RECENCY_HALF_LIFE_DAYS</code> for
+              future tuning.
+            </li>
+          </ul>
 
-        <div class="section">
           <div class="section-label">Code Locations</div>
           <ul>
             <li>
@@ -1170,34 +1195,30 @@
             </li>
             <li>
               <code>stock_cli.py</code> — <code>cmd_news</code>
-              <code>signal</code>
-              block.
+              <code>signal</code> block.
             </li>
             <li>
-              <code>.claude/skills/expect/SKILL.md</code> (Step 6),
-              <code>.claude/skills/daily-briefing/SKILL.md</code> (NEWS_SCORE).
+              <code>.claude/skills/expect/SKILL.md</code> (Step 6);
+              <code>.claude/skills/daily-briefing/SKILL.md</code>
+              (<code>NEWS_SCORE</code>).
             </li>
             <li><code>tests/test_news_features.py</code>.</li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Retrospective</div>
-          <p>
+          <div class="retrospective">
             The dead news signal was as much a scoring problem as a data
             problem: dedup + recency + catalyst structure are the information
             the old volume/avg scoring threw away. Honest about validation: this
             one cannot be backfilled, so it ships as a quality improvement to be
             confirmed forward — not dressed up as a measured win.
-          </p>
-        </div>
-      </article>
+          </div>
+        </article>
 
-      <!-- ── Card 6: Component Persistence ── -->
-      <article class="card">
-        <h3>Component Persistence</h3>
+        <!-- 6 of 7 -->
+        <article id="component-persistence">
+          <h3>Component Persistence</h3>
 
-        <div class="section">
           <div class="section-label">Why</div>
           <p>
             Recalibration (A) exposed that logged confidence carries no
@@ -1208,9 +1229,7 @@
             captured per prediction. You cannot learn a blend from data you
             never stored.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">What</div>
           <ul>
             <li>
@@ -1227,12 +1246,12 @@
             </li>
             <li>
               <code>predict create --components '&lt;json&gt;'</code> (rejects
-              malformed/non-object/NaN).
+              malformed/non-object/<code>NaN</code>).
             </li>
             <li>
               <code>metrics.get_component_contribution</code> +
               <code>stock-cli component-contribution</code>: win-rate split per
-              pillar (numeric: positive/zero/negative; categorical: by value).
+              pillar (numeric to positive/zero/negative; categorical by value).
               Empty until components-tagged rows accumulate.
             </li>
             <li>
@@ -1244,9 +1263,7 @@
               CLI-validation tests.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">How</div>
           <p>
             <code>components</code> is one extensible JSON column rather than
@@ -1256,60 +1273,57 @@
             substrate for a learned blend (E2-future) that can restore
             confidence discrimination.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Validation</div>
           <p>
             Forward-looking infrastructure: production has 0 components-tagged
-            closed rows today, so <code>component-contribution</code> is empty
-            until <code>/expect</code> + daily-briefing log new predictions. The
+            closed rows today, so
+            <code>component-contribution</code> is empty until
+            <code>/expect</code> + daily-briefing log new predictions. The
             contribution math is unit-tested on seeded data (positive news 0.8
             win vs negative 0.2). No backfill claim.
           </p>
-        </div>
 
-        <div class="section">
           <div class="section-label">Review Loop</div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (all, High)</span>
-            Full-swap migration data loss:
-            <code>_migrate_schema_if_needed</code> copied a hardcoded column
-            list omitting <code>raw_confidence</code>/<code>components</code>; a
-            drifted pre-v2 DB carrying them would lose them. Now copies the
-            intersection of old and new columns. Regression test added (legacy
-            DB with both columns + no analysis_group_id — values preserved).
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex, Medium)</span>
-            NaN/Infinity accepted by <code>json.loads</code>; now rejected via
-            <code>parse_constant</code> (they would serialize back as
-            non-standard JSON and skew the numeric split).
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (code-reviewer, Medium)</span>
-            Zero vs negative conflation; numeric pillars now split
-            positive/zero/negative.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed (codex, Low)</span>
-            <code>n_with_components</code> counted invalid rows; now counts only
-            successfully-parsed dict rows.
-          </div>
-          <div class="review-item">
-            <span class="tag fixed">Fixed</span>
-            Error handling on <code>cmd_component_contribution</code>;
-            CLI-validation tests for malformed/non-object/NaN components.
-          </div>
-          <div class="review-item">
-            <span class="tag noted">Noted</span>
-            <code>CHECK(json_valid(...))</code> suggestion declined:
-            SQLite-version dependent and the CLI already validates; would add
-            fragility for little gain.
-          </div>
-        </div>
+          <ul>
+            <li>
+              <strong
+                >Fixed (all, High) — full-swap migration data loss:</strong
+              >
+              <code>_migrate_schema_if_needed</code> copied a hardcoded column
+              list omitting <code>raw_confidence</code>/<code>components</code>.
+              Now copies the intersection of old and new columns. Regression
+              test added (legacy DB with both columns + no
+              <code>analysis_group_id</code> — values preserved).
+            </li>
+            <li>
+              <strong>Fixed (codex, Medium) — <code>NaN</code>/Infinity</strong>
+              accepted by <code>json.loads</code>; now rejected via
+              <code>parse_constant</code>.
+            </li>
+            <li>
+              <strong>Fixed (code-reviewer, Medium) — zero vs negative</strong>
+              conflation; numeric pillars now split positive/zero/negative.
+            </li>
+            <li>
+              <strong
+                >Fixed (codex, Low) — <code>n_with_components</code></strong
+              >
+              counted invalid rows; now counts only successfully-parsed dict
+              rows.
+            </li>
+            <li>
+              <strong>Fixed — error handling</strong> on
+              <code>cmd_component_contribution</code>; CLI-validation tests for
+              malformed/non-object/<code>NaN</code> components.
+            </li>
+            <li>
+              <strong>Noted — <code>CHECK(json_valid(...))</code></strong>
+              declined: SQLite-version dependent and the CLI already validates;
+              would add fragility for little gain.
+            </li>
+          </ul>
 
-        <div class="section">
           <div class="section-label">Code Locations</div>
           <ul>
             <li>
@@ -1335,20 +1349,144 @@
               <code>tests/test_recalibration_cli.py</code>.
             </li>
           </ul>
-        </div>
 
-        <div class="section">
           <div class="section-label">Retrospective</div>
-          <p>
-            The review caught a latent data-loss bug in a migration path this
-            change did not touch but did expand the blast radius of — a reminder
+          <div class="retrospective">
+            The review caught a latent data-loss bug in a migration path the
+            change didn't touch but did expand the blast radius of — a reminder
             to audit the full-swap copy whenever a column is added. This stage
             ships no win-rate change by design; it is the data foundation that
             makes the next harmonization stage (learned blend) possible and
             honest.
+          </div>
+        </article>
+
+        <!-- 7 of 7 -->
+        <article id="llm-context-rigor">
+          <h3>LLM Context Rigor</h3>
+
+          <div class="section-label">Why</div>
+          <p>
+            <code>LLM_CONTEXT</code> (the macro/sector/narrative channel) graded
+            weak (~19% win) and is the hardest pillar to harden because it is
+            LLM-judged. We cannot make the judgment better in code, but we can
+            refuse to trust a sloppy one: a strong score with no cited evidence,
+            a one-sided debate, or an out-of-range value.
           </p>
-        </div>
-      </article>
-    </div>
+
+          <div class="section-label">What</div>
+          <ul>
+            <li>
+              <code>mcp-market-data/llm_context.py</code> —
+              <code>validate_llm_context(debate)</code> returns rigor
+              violations; <code>clamp_score</code>;
+              <code>score_from_debate</code>.
+            </li>
+            <li>
+              <code>stock-cli lint-llm-context '&lt;json&gt;'</code> (exit 1 on
+              violations) so <code>/expect</code> can self-gate before trusting
+              the score.
+            </li>
+            <li>
+              Step 5b now structures the bull/bear debate as JSON and lints it;
+              a non-clean lint means dampen the score toward 0.
+            </li>
+            <li>14 tests in <code>tests/test_llm_context.py</code>.</li>
+          </ul>
+
+          <div class="section-label">How — What the Gate Enforces</div>
+          <ul>
+            <li>
+              <code>score</code> in [-5, +3], finite (<code>NaN</code>/Infinity
+              rejected).
+            </li>
+            <li>
+              <code>winner</code> agrees with the score's sign (0 means
+              neutral).
+            </li>
+            <li>
+              A genuine bear case: at least one <code>bear_point</code> with a
+              real (non-blank string) claim.
+            </li>
+            <li>
+              When |score| &gt;= 2.0, the winning side has at least one point
+              with non-blank string evidence and a <code>signal_type</code> in
+              {macro, sector, event, flow, valuation, technical, narrative}.
+            </li>
+          </ul>
+
+          <div class="section-label">Honest Scope</div>
+          <p>
+            This enforces debate shape and discipline, not truth. An LLM could
+            still emit shallow-but-well-formed evidence. That is the right
+            division of labor: the linter blocks structural sloppiness
+            deterministically; the human/second-pass review judges content.
+            Crucially, <code>llm_context</code>'s score is now persisted via
+            H1's <code>--components</code>, so
+            <code>component-contribution</code> will measure whether this pillar
+            actually adds alpha forward — turning "is the LLM channel noise?"
+            into a measured question instead of a guess.
+          </p>
+
+          <div class="section-label">Review Loop</div>
+          <p>
+            Both reviewers called the first cut "ceremony, not rigor" and found
+            concrete bypasses — all fixed:
+          </p>
+          <ul>
+            <li>
+              <strong>Fake bear case</strong> (<code>bear_points: [{}]</code> /
+              <code>[""]</code>) passed — now requires a bear point with a real
+              string claim.
+            </li>
+            <li>
+              <strong>Non-string evidence</strong> (<code>evidence: {}</code>)
+              stringified to truthy and counted as a citation — now only
+              non-blank string evidence qualifies.
+            </li>
+            <li>
+              <strong><code>NaN</code> score</strong> clamped to a max-bullish
+              3.0 — <code>clamp_score</code> now returns <code>None</code> for
+              non-finite and <code>validate</code> flags it.
+            </li>
+            <li>
+              <strong>score==0 winning-side latent bug</strong> — explicit
+              <code>None</code> (no evidence rule at 0).
+            </li>
+            <li>Added tests for every closed bypass + score==0 boundary.</li>
+          </ul>
+
+          <div class="section-label">Code Locations</div>
+          <ul>
+            <li>
+              <code>mcp-market-data/llm_context.py</code> —
+              <code>validate_llm_context</code>, <code>clamp_score</code>,
+              <code>score_from_debate</code>, <code>_point_is_cited</code>,
+              <code>_point_has_claim</code>.
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_lint_llm_context</code> +
+              parser.
+            </li>
+            <li>
+              <code>.claude/skills/expect/SKILL.md</code> — Step 5b rigor gate.
+            </li>
+            <li><code>tests/test_llm_context.py</code>.</li>
+          </ul>
+
+          <div class="section-label">Retrospective</div>
+          <div class="retrospective">
+            The reviewers were right that v1 was satisfiable trivially;
+            tightening the bear-claim and string-evidence checks turned it into
+            a gate that actually bites. The real win for the LLM pillar is
+            measurement (H1) + this discipline gate together: noise gets
+            dampened deterministically, and what survives is now attributable.
+          </div>
+        </article>
+      </div>
+      <!-- /.card-grid -->
+    </main>
+
+    <footer>Stock Expectation — Stage 11 documentation</footer>
   </body>
 </html>
