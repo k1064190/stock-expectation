@@ -103,7 +103,7 @@ from portfolio.evaluator import (
     compute_vs_predictions,
     compute_advice,
 )
-from portfolio.toss_sync import fetch_positions, reconcile
+from portfolio.toss_sync import fetch_toss_positions, reconcile, tossctl_available
 
 
 def _positive_int(value: str) -> int:
@@ -1498,14 +1498,17 @@ def cmd_portfolio_advice(args) -> int:
 
 
 def cmd_portfolio_sync(args) -> int:
-    """Sync portfolio from Toss Securities.
+    """Sync portfolio from Toss Securities via tossctl.
 
-    Fetches current positions via the official Toss Open API (falling back to
-    the tossctl CLI), compares with the local DB, and records synthetic
-    transactions to reconcile differences.
+    Fetches current positions from Toss, compares with local DB,
+    and records synthetic transactions to reconcile differences.
     """
     try:
-        toss_positions, source = fetch_positions(args.source)
+        if not tossctl_available():
+            _print_json({"error": "tossctl is not installed. See README for setup."})
+            return 1
+
+        toss_positions = fetch_toss_positions()
 
         markets = [args.market.upper()] if args.market else ["KR", "US"]
         total_actions = []
@@ -1548,7 +1551,6 @@ def cmd_portfolio_sync(args) -> int:
                 _print_json(
                     {
                         "dry_run": True,
-                        "source": source,
                         "actions": total_actions,
                         "action_count": len(total_actions),
                     }
@@ -1557,7 +1559,6 @@ def cmd_portfolio_sync(args) -> int:
                 _print_json(
                     {
                         "synced": True,
-                        "source": source,
                         "actions": total_actions,
                         "action_count": len(total_actions),
                     }
@@ -1978,21 +1979,12 @@ def build_parser() -> argparse.ArgumentParser:
     pa.set_defaults(func=cmd_portfolio_advice)
 
     # portfolio sync
-    psync = pf_sub.add_parser(
-        "sync", help="Sync from Toss Securities (Open API, tossctl fallback)"
-    )
+    psync = pf_sub.add_parser("sync", help="Sync from Toss Securities via tossctl")
     psync.add_argument(
         "--market",
         default=None,
         choices=["US", "KR", "us", "kr"],
         help="Sync one market only (default: both)",
-    )
-    psync.add_argument(
-        "--source",
-        default="auto",
-        choices=["auto", "toss-api", "tossctl"],
-        help="Data source: auto (Open API if configured, else tossctl), "
-        "toss-api, or tossctl (default: auto)",
     )
     psync.add_argument("--dry-run", action="store_true", help="Preview without writing")
     psync.set_defaults(func=cmd_portfolio_sync)
