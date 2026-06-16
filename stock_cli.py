@@ -77,6 +77,7 @@ from metrics import (
     permutation_test_confidence,
     build_recalibration_map,
     apply_recalibration,
+    recalibrate_confidence,
     get_component_contribution,
 )
 from providers.us import USMarketProvider
@@ -818,16 +819,9 @@ def _recalibrated_confidence(
         confidence is returned unchanged — when there are fewer than
         ``MIN_CLOSED_FOR_RECAL`` closed predictions for the source.
     """
-    n_closed = conn.execute(
-        "SELECT COUNT(*) FROM predictions WHERE status IN ('HIT', 'MISS') AND source = ?",
-        (source,),
-    ).fetchone()[0]
-    if n_closed < MIN_CLOSED_FOR_RECAL:
-        return raw_confidence, False
-    recal_map = build_recalibration_map(conn, source=source)
-    if not recal_map:
-        return raw_confidence, False
-    return apply_recalibration(raw_confidence, recal_map), True
+    return recalibrate_confidence(
+        conn, raw_confidence, source, min_closed=MIN_CLOSED_FOR_RECAL
+    )
 
 
 def cmd_predict_create(args) -> int:

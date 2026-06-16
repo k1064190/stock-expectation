@@ -685,6 +685,45 @@ def get_signal_decay(
     return result
 
 
+RECAL_MIN_CLOSED = 30  # min closed (HIT/MISS) rows before a source's map is trusted
+
+
+def recalibrate_confidence(
+    conn: sqlite3.Connection,
+    raw_confidence: float,
+    source: str,
+    min_closed: int = RECAL_MIN_CLOSED,
+) -> tuple[float, bool]:
+    """Map a raw confidence through the source's isotonic recalibration curve.
+
+    Shared by ``predict create --recalibrate`` and the scheduler's API-mode
+    logger so both honour the same source-scoped recalibration guarantee. The
+    curve is built from *closed* predictions of the same source (a global,
+    all-horizon map — as accurate as per-horizon maps and far more robust at
+    current sample sizes).
+
+    Args:
+        conn: SQLite connection to predictions.db.
+        raw_confidence: The model's raw confidence in [0, 1].
+        source: Prediction source whose history defines the curve.
+        min_closed: Below this many closed rows the map is noise, so this is a
+            no-op (returns the raw confidence, ``applied=False``).
+
+    Returns:
+        ``(confidence_to_store, applied)``.
+    """
+    n_closed = conn.execute(
+        "SELECT COUNT(*) FROM predictions WHERE status IN ('HIT', 'MISS') AND source = ?",
+        (source,),
+    ).fetchone()[0]
+    if n_closed < min_closed:
+        return raw_confidence, False
+    recal_map = build_recalibration_map(conn, source=source)
+    if not recal_map:
+        return raw_confidence, False
+    return apply_recalibration(raw_confidence, recal_map), True
+
+
 def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> dict:
     """Win-rate of closed predictions split by each stored ``components`` pillar.
 

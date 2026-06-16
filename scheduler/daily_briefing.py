@@ -56,7 +56,12 @@ from models import (
     insert_prediction,
     validate_prediction_dict,
 )
-from metrics import get_track_record, get_calibration_report, get_signal_performance
+from metrics import (
+    get_track_record,
+    get_calibration_report,
+    get_signal_performance,
+    recalibrate_confidence,
+)
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from telegram_sender import send_briefing
@@ -807,11 +812,20 @@ def log_predictions(predictions: list[dict]) -> int:
                 )
                 continue
 
+            # Honour the Stage 11 recalibration guarantee in API mode too: map
+            # the model's raw confidence through the source-scoped curve, keep the
+            # raw value in raw_confidence, and persist any component scores. This
+            # mirrors `predict create --recalibrate`, which the CLI-driven modes use.
+            raw_conf = float(p.get("confidence", 0.5))
+            stored_conf, _ = recalibrate_confidence(conn, raw_conf, "LIVE")
+            comps = p.get("components")
             pred = Prediction(
                 ticker=str(p.get("ticker", "")).upper(),
                 market=str(p.get("market", "US")).upper(),
                 direction=str(p.get("direction", "NEUTRAL")).upper(),
-                confidence=float(p.get("confidence", 0.5)),
+                confidence=stored_conf,
+                raw_confidence=raw_conf,
+                components=comps if isinstance(comps, dict) else None,
                 timeframe=str(p.get("timeframe", "1W")),
                 reasoning=str(p.get("reasoning", "")),
                 entry_price=float(p.get("entry_price", 0)),

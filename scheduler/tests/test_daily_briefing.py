@@ -1,18 +1,81 @@
 """Tests for daily briefing prediction parsing."""
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp-prediction-store"))
 
+import daily_briefing
 from daily_briefing import parse_predictions
+from models import get_connection
+
+
+def test_log_predictions_api_mode_recalibrates_and_keeps_raw(monkeypatch):
+    """API-mode logging must apply source-scoped recalibration + keep raw_confidence."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    conn = get_connection(path)
+    # Seed 40 closed LIVE rows pinned at 0.65 confidence, ~30% hit → the curve
+    # pulls 0.65 down toward ~0.30.
+    for i in range(40):
+        conn.execute(
+            """INSERT INTO predictions
+               (id, created_at, ticker, market, direction, confidence, timeframe,
+                reasoning, entry_price, signals_used, source, status, outcome_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                f"s{i}",
+                "2026-05-01T00:00:00+00:00",
+                "T",
+                "US",
+                "BULL",
+                0.65,
+                "1W",
+                "r",
+                100.0,
+                "[]",
+                "LIVE",
+                "HIT" if i % 10 < 3 else "MISS",
+                "2026-05-02T00:00:00+00:00",
+            ),
+        )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(
+        daily_briefing, "get_connection", lambda *a, **k: get_connection(path)
+    )
+
+    logged = daily_briefing.log_predictions(
+        [
+            {
+                "ticker": "NVDA",
+                "market": "US",
+                "direction": "BULL",
+                "confidence": 0.65,
+                "timeframe": "1W",
+                "reasoning": "t",
+                "entry_price": 100.0,
+                "signals_used": ["technical"],
+            }
+        ]
+    )
+    assert logged == 1
+    c2 = get_connection(path)
+    row = c2.execute(
+        "SELECT confidence, raw_confidence FROM predictions WHERE ticker='NVDA'"
+    ).fetchone()
+    c2.close()
+    assert row["raw_confidence"] == 0.65
+    assert row["confidence"] < 0.65  # recalibrated downward
 
 
 def test_parse_single_prediction():
     """Parse a single prediction from a JSON block."""
-    response = '''Here is the analysis.
+    response = """Here is the analysis.
 
 ```json
 [
@@ -31,7 +94,7 @@ def test_parse_single_prediction():
 ]
 ```
 
-That's the pick.'''
+That's the pick."""
 
     preds = parse_predictions(response)
     assert len(preds) == 1
@@ -42,12 +105,12 @@ That's the pick.'''
 
 def test_parse_multiple_predictions():
     """Parse multiple predictions from one JSON block."""
-    response = '''```json
+    response = """```json
 [
   {"ticker": "AAPL", "market": "US", "direction": "BULL", "confidence": 0.65, "timeframe": "1W", "entry_price": 180.0, "reasoning": "test", "signals_used": ["technical"]},
   {"ticker": "005930", "market": "KR", "direction": "BEAR", "confidence": 0.60, "timeframe": "2W", "entry_price": 70000, "reasoning": "test", "signals_used": ["sector"]}
 ]
-```'''
+```"""
 
     preds = parse_predictions(response)
     assert len(preds) == 2
@@ -58,7 +121,7 @@ def test_parse_multiple_predictions():
 
 def test_parse_multiple_json_blocks():
     """Parse predictions spread across multiple JSON blocks."""
-    response = '''US picks:
+    response = """US picks:
 ```json
 [{"ticker": "MSFT", "market": "US", "direction": "BULL", "confidence": 0.70, "timeframe": "1W", "entry_price": 400.0, "reasoning": "test", "signals_used": ["technical"]}]
 ```
@@ -66,7 +129,7 @@ def test_parse_multiple_json_blocks():
 KR picks:
 ```json
 [{"ticker": "000660", "market": "KR", "direction": "BULL", "confidence": 0.68, "timeframe": "2W", "entry_price": 150000, "reasoning": "test", "signals_used": ["cross_market"]}]
-```'''
+```"""
 
     preds = parse_predictions(response)
     assert len(preds) == 2
@@ -81,18 +144,18 @@ def test_parse_no_json_blocks():
 
 def test_parse_invalid_json():
     """Handle malformed JSON gracefully."""
-    response = '''```json
+    response = """```json
 [{"ticker": "AAPL", invalid json here}]
-```'''
+```"""
     preds = parse_predictions(response)
     assert preds == []
 
 
 def test_parse_single_dict():
     """Handle a single dict (not array) in JSON block."""
-    response = '''```json
+    response = """```json
 {"ticker": "GOOG", "market": "US", "direction": "NEUTRAL", "confidence": 0.55, "timeframe": "1W", "entry_price": 170.0, "reasoning": "range-bound", "signals_used": ["technical"]}
-```'''
+```"""
     preds = parse_predictions(response)
     assert len(preds) == 1
     assert preds[0]["ticker"] == "GOOG"
