@@ -87,6 +87,16 @@ class Prediction:
         analysis_group_id: Optional UUID shared by predictions that come
             from the same multi-horizon analysis (e.g. the 4 horizons emitted
             by a single ``/expect MU`` run). Legacy predictions have None.
+        components: Optional dict of the per-pillar contributions behind the
+            call (e.g. {"algo": 7.0, "news": 1.0, "llm_context": -1.5,
+            "overextension": "ELEVATED", "regime": "NEUTRAL"}). Stored as JSON;
+            None for legacy rows. Used to measure each capability's marginal
+            value and to train a future blended confidence.
+        raw_confidence: The model's confidence before recalibration. When
+            ``--recalibrate`` is applied, ``confidence`` holds the recalibrated
+            value and this holds the original; otherwise None. The calibration
+            curve trains on this (falling back to ``confidence``) so it always
+            reflects raw model output, never recalibrated values.
     """
 
     ticker: str
@@ -109,6 +119,8 @@ class Prediction:
     outcome_date: Optional[str] = None
     outcome_return: Optional[float] = None
     analysis_group_id: Optional[str] = None
+    raw_confidence: Optional[float] = None
+    components: Optional[dict] = None
 
 
 DB_PATH = Path(__file__).parent.parent / "data" / "predictions.db"
@@ -121,6 +133,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     market TEXT NOT NULL CHECK(market IN ('US', 'KR')),
     direction TEXT NOT NULL CHECK(direction IN ('BULL', 'BEAR', 'NEUTRAL')),
     confidence REAL NOT NULL CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    raw_confidence REAL,
+    components TEXT,
     timeframe TEXT NOT NULL CHECK(timeframe IN ('1W', '2W', '1M', '3M', '6M', '1Y')),
     reasoning TEXT NOT NULL,
     entry_price REAL NOT NULL,
@@ -229,10 +243,45 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     # ``no such column`` on a legacy DB if we created indexes first.
     _migrate_schema_if_needed(conn)
     _create_schema(conn)
+    # Additive columns for older DBs. Idempotent; run after the full-swap
+    # migration so DBs that have analysis_group_id but predate these still get them.
+    _ensure_raw_confidence_column(conn)
+    _ensure_components_column(conn)
     # Build the UNIQUE dedup index last — after any legacy rows have been
     # copied back by the migration — and self-heal pre-existing OPEN dupes.
     _ensure_open_dedup_index(conn)
     return conn
+
+
+def _ensure_raw_confidence_column(conn: sqlite3.Connection) -> None:
+    """Add the nullable ``raw_confidence`` column if an older DB lacks it.
+
+    ``raw_confidence`` records the model's confidence *before* recalibration, so
+    the calibration curve can always be rebuilt from raw model output even after
+    the ``confidence`` column starts holding recalibrated values. A plain
+    ``ALTER TABLE ADD COLUMN`` suffices — the column is nullable and existing
+    rows read back as NULL (calibration falls back to ``confidence`` for them).
+    Idempotent.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+    if "raw_confidence" not in cols:
+        conn.execute("ALTER TABLE predictions ADD COLUMN raw_confidence REAL")
+        conn.commit()
+
+
+def _ensure_components_column(conn: sqlite3.Connection) -> None:
+    """Add the nullable ``components`` column if an older DB lacks it.
+
+    ``components`` stores a JSON object of the per-pillar contributions behind a
+    prediction (algo / news / llm_context scores, overextension level, regime
+    label). Capturing them makes each capability's marginal value measurable and
+    enables a future learned blend. Nullable; legacy rows read back as NULL.
+    Idempotent.
+    """
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+    if "components" not in cols:
+        conn.execute("ALTER TABLE predictions ADD COLUMN components TEXT")
+        conn.commit()
 
 
 def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
@@ -307,21 +356,20 @@ def _migrate_schema_if_needed(conn: sqlite3.Connection) -> None:
         # ``_create_schema`` docstring for why ``executescript`` is
         # banned here).
         _create_schema(conn)
-        # Copy legacy rows back. ``analysis_group_id`` is NULL —
-        # legacy rows predate the multi-horizon /expect feature.
+        # Copy legacy rows back. ``analysis_group_id`` is NULL — legacy rows
+        # predate the multi-horizon /expect feature. Copy the *intersection* of
+        # legacy and new columns so any additive columns already present on a
+        # drifted DB (raw_confidence, components) are preserved rather than
+        # silently dropped by a hardcoded list.
+        legacy_cols = [
+            row[1] for row in conn.execute("PRAGMA table_info(_predictions_legacy)")
+        ]
+        new_cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+        shared = [c for c in legacy_cols if c in new_cols]
+        col_list = ", ".join(shared)
         conn.execute(
-            """
-            INSERT INTO predictions
-            (id, created_at, ticker, market, direction, confidence,
-             timeframe, reasoning, entry_price, signals_used, source,
-             target_price, stop_price, status, outcome_price,
-             outcome_date, outcome_return)
-            SELECT id, created_at, ticker, market, direction, confidence,
-                   timeframe, reasoning, entry_price, signals_used, source,
-                   target_price, stop_price, status, outcome_price,
-                   outcome_date, outcome_return
-            FROM _predictions_legacy
-            """
+            f"INSERT INTO predictions ({col_list}) "
+            f"SELECT {col_list} FROM _predictions_legacy"
         )
         conn.execute("COMMIT")
     except Exception:
@@ -464,10 +512,11 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
 
     conn.execute(
         """INSERT INTO predictions
-           (id, created_at, ticker, market, direction, confidence, timeframe,
-            reasoning, entry_price, signals_used, source, target_price, stop_price,
-            status, outcome_price, outcome_date, outcome_return, analysis_group_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (id, created_at, ticker, market, direction, confidence, raw_confidence,
+            components, timeframe, reasoning, entry_price, signals_used, source,
+            target_price, stop_price, status, outcome_price, outcome_date,
+            outcome_return, analysis_group_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             pred.id,
             pred.created_at,
@@ -475,6 +524,8 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
             pred.market,
             pred.direction,
             pred.confidence,
+            pred.raw_confidence,
+            json.dumps(pred.components) if pred.components is not None else None,
             pred.timeframe,
             pred.reasoning,
             pred.entry_price,
@@ -622,4 +673,12 @@ def _row_to_prediction(row: sqlite3.Row) -> Prediction:
         outcome_date=row["outcome_date"],
         outcome_return=row["outcome_return"],
         analysis_group_id=row["analysis_group_id"],
+        raw_confidence=(
+            row["raw_confidence"] if "raw_confidence" in row.keys() else None
+        ),
+        components=(
+            json.loads(row["components"])
+            if "components" in row.keys() and row["components"]
+            else None
+        ),
     )

@@ -46,12 +46,14 @@ Always run before scoring, even in single-stock mode:
 ```bash
 bin/stock-cli track-record --days 30
 bin/stock-cli calibration
+bin/stock-cli regime --market US   # and/or --market KR for the market(s) you score
 ```
 
 Surface to yourself:
 - Recent overconfidence buckets (e.g. "0.70-0.80 confidence → 45% actual win rate" → cap output confidence at 0.65 for that band)
 - Per-signal performance (if `news` signal is hitting <50% lately, weight news_score lower until calibration recovers)
 - Open predictions for the same tickers (skip re-prediction; reference the existing one)
+- **Market regime** (`regime` output `label`): the hard BULL gate — see RULE R1 below. Fetch once per run per market and reuse for every candidate in that market.
 
 ### Step 2 — Discovery (Market Scan and ALL modes only)
 
@@ -83,7 +85,7 @@ bin/stock-cli horizon-metrics-batch 005930,000660,035420,005380,051910 --market 
 bin/stock-cli fundamentals-batch    005930,000660,035420,005380,051910 --market KR
 ```
 
-Each `horizon-metrics-batch` row gives you `ma20, ma50, ma200, rsi14, return_1w, return_1m, return_6m, return_1y, pct_from_52w_high, pct_from_52w_low, max_drawdown_1y, cycle_risk_flag`. Use these directly — do not recompute.
+Each `horizon-metrics-batch` row gives you `ma20, ma50, ma200, rsi14, return_1w, return_1m, return_6m, return_1y, pct_from_52w_high, pct_from_52w_low, max_drawdown_1y, cycle_risk_flag, vol_ratio, overextension_level`. Use these directly — do not recompute. `overextension_level` (NONE/ELEVATED/EXTREME) drives RULE R2.
 
 ### Step 4 — News + disclosure fetch (per ticker)
 
@@ -163,6 +165,24 @@ The deterministic ALGO_SCORE rewards stocks that are already trending (full bull
 
 This debate *produces* `LLM_CONTEXT_SCORE`; it does not add a second override channel. The bounded -5.0..+3.0 range and the composite math are unchanged — a more rigorous score is the only output.
 
+**Rigor gate (deterministic).** Structure the debate as JSON and lint it before
+trusting a strong score:
+
+```bash
+bin/stock-cli lint-llm-context '{"score":-3.0,"winner":"bear",
+  "bull_points":[{"claim":"...","evidence":"return_1m=+7%","signal_type":"technical"}],
+  "bear_points":[{"claim":"KOSPI parabolic","evidence":"+25%/22d","signal_type":"macro"}]}'
+```
+
+The linter enforces: score ∈ [-5,+3]; `winner` agrees with the score's sign; a
+real (non-empty) `bear_points` always present; and when **|score| ≥ 2.0** the
+winning side has ≥1 point with non-empty `evidence` and a `signal_type` in
+{macro, sector, event, flow, valuation, technical, narrative}. If the lint is
+not clean, **dampen the score toward 0** until it is — a strong score with no
+cited, typed evidence is exactly the noise that made `llm_context` underperform.
+Pass the final score into Step 9's `--components` so its marginal value is
+measured (`component-contribution`).
+
 **Scoring rubric** (anchors — pick the nearest):
 
 | Score | Anchor | Example |
@@ -200,24 +220,30 @@ Interpolate between anchors (e.g., -2.5 is allowed and common).
 
 ### Step 6 — Compute the news score (deterministic point table)
 
-**NEWS_SCORE — sums to a max of +3.0, can be hard-capped negative.** Sentiment buckets are mutually exclusive:
+**NEWS_SCORE — sums to a max of +3.0, can be hard-capped negative.** Read the
+`signal` block in the `news` output (deduped, recency-weighted) — do **not**
+re-derive these from raw `items`. Sentiment buckets are mutually exclusive and
+use `signal.recency_weighted_sentiment` (fresh headlines dominate a week-old
+blip); if it is null (no AV score — KR or US without key), Sentiment = 0.
 
 | Component | Bucket (evaluate in order) | Points |
 |---|---|---|
-| **Sentiment** (US, Alpha Vantage `sentiment_score` available) | average across items > +0.15 | +2.0 |
-| | 0 < avg ≤ +0.15 | +1.0 |
-| | -0.15 ≤ avg ≤ 0 | -1.0 |
-| | avg < -0.15 | -2.0 |
-| **Sentiment** (no AV score — KR market or US without key) | n/a | 0 |
-| **Headline volume** | ≥ 3 items returned in `--since-days 7` | +1.0 |
+| **Sentiment** (`signal.recency_weighted_sentiment` available) | > +0.15 | +2.0 |
+| | 0 < rw ≤ +0.15 | +1.0 |
+| | -0.15 ≤ rw ≤ 0 | -1.0 |
+| | rw < -0.15 | -2.0 |
+| **Sentiment** (null) | n/a | 0 |
+| **Headline volume** | `signal.unique_count` ≥ 3 (deduped) | +1.0 |
 | | else | 0 |
 
 Then apply hard caps **after** summing the above:
 
-- **Negative keyword scan.** If any headline contains a case-insensitive match for any of: `bankrupt`, `fraud`, `lawsuit`, `downgrade`, `SEC investigation`, `recall`, `delist` → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
+- **Negative catalyst.** If `signal.has_negative_catalyst` is true (the module
+  scans for bankrupt/fraud/lawsuit/downgrade/investigation/recall/delist/guidance
+  cut/etc.) → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
 - **KR disclosure flag.** If any disclosure `report_nm` contains: 감자, 유상증자, 관리종목, 거래정지, 상장폐지 → set `NEWS_SCORE = min(NEWS_SCORE, -2)`.
 
-Hard caps override even strongly positive sentiment — that is the whole point of the cap.
+Hard caps override even strongly positive sentiment — that is the whole point of the cap. Pass `signal.event_tags` into Step 5b: a hard catalyst (earnings/guidance/M&A/regulatory) is exactly the kind of specific, dated fact the LLM_CONTEXT bear/bull debate should weigh.
 
 Max positive sum: 2 + 1 = **3.0**. Floor without hard caps: -2 + 0 = -2.0. With a hard cap firing: **-2.0** (caps clamp, they don't stack).
 
@@ -237,6 +263,43 @@ Label mapping (contiguous half-open ranges — every score lands in exactly one 
 ```
 
 Round COMPOSITE to one decimal in the output.
+
+**RULE R1 — Hard regime gate (applies to BULL labels/horizons before logging).**
+Read the `regime` verdict (Step 1) for the candidate's market and apply:
+- **RISK_OFF** (`label == "RISK_OFF"`): do **not** issue new BUY or log BULL
+  horizons. Cap the label at WATCH and resolve would-be BULL horizons to
+  NEUTRAL. Emit "⚠️ REGIME RISK_OFF — new longs gated" in the per-stock detail.
+- **NEUTRAL**: raise the BUY bar from 8.0 to **9.0** (a NEUTRAL regime demands a
+  stronger setup) and trim logged confidence one extra step (cap at 0.60). Emit
+  "⚠️ REGIME NEUTRAL — higher bar".
+- **RISK_ON**: no change.
+
+Rationale: backfilled over the June 2026 drawdown, BULL calls issued while the
+worse-of-SPY/QQQ (US) or KODEX 200 (KR) regime was NEUTRAL/RISK_OFF won only
+~3%; the gate suppresses or hardens exactly those. It is a market-level gate —
+per-stock overextension is RULE R2. The gate does **not** raise the bar for
+BEAR/NEUTRAL calls (those already clear RULE C3).
+
+**RULE R2 — Per-stock overextension gate (parabolic/blow-off entries).** Read
+`overextension_level` from the candidate's `horizon-metrics` row:
+- **EXTREME**: do **not** issue BUY or log BULL horizons — cap the label at
+  WATCH, resolve would-be BULL horizons to NEUTRAL. Emit "⚠️ OVEREXTENDED
+  (EXTREME)".
+- **ELEVATED**: raise the BUY bar by +1.0 (BUY needs COMPOSITE ≥ 9.0) and trim
+  logged confidence one step (cap 0.60). Emit "⚠️ OVEREXTENDED (ELEVATED)".
+- **NONE**: no change.
+
+Rationale: on 377 closed BULL, entries with RSI14 > 75 won 26% (vs 47% at
+RSI < 60) and entries > 15% above MA20 won 30% (vs 66% in the 3–8% band). A
+blow-off entry is a strong anti-signal that the broad regime gate (R1) cannot
+see.
+
+**R1 + R2 stacking (explicit):** apply both gates cumulatively.
+- A WATCH cap from *either* rule wins: if R1 is RISK_OFF **or** R2 is EXTREME,
+  the label is WATCH (no BULL logged), full stop.
+- The BUY-bar raises are **additive**: base 8.0, +1.0 if R1 NEUTRAL, +1.0 if R2
+  ELEVATED → e.g. NEUTRAL regime **and** ELEVATED stock requires COMPOSITE ≥ 10.0.
+- Confidence caps take the **minimum** of the applicable caps (each is 0.60 here).
 
 Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
 
@@ -284,7 +347,7 @@ Direction = BULL / BEAR / NEUTRAL. Confidence ∈ [0.50, 0.85] using the 4-signa
 
 **BEAR edge bar (RULE C3 — higher bar for downside calls):** Our measured BEAR hit rate is ~6% vs ~61% for BULL — the system cannot reliably forecast declines. Therefore a BEAR horizon may only be logged when **all** of: (a) ≥3-signal alignment, (b) macro/cycle confirmation present (`LLM_CONTEXT_SCORE ≤ −2.0` **or** `cycle_risk_flag == True`), and (c) reward:risk ≥ 2.0. Otherwise emit NEUTRAL instead of BEAR. Note: under `--source LIVE` the prediction store **hard-rejects BEAR rows** (they error out), so for scheduler/cron runs always resolve a would-be BEAR to NEUTRAL rather than attempting to save it.
 
-Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Recalibrate confidence first:** apply the `recalibration_map` from the Step 1 calibration call to your raw confidence before saving (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6:
+Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Pass your raw confidence and add `--recalibrate`** — the CLI maps it through the isotonic recalibration curve deterministically before storing (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6. Do **not** hand-apply the map yourself; the flag does it consistently (and is a safe no-op until ≥30 closed predictions of that source exist):
 
 ```bash
 GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")
@@ -295,10 +358,18 @@ bin/stock-cli predict create \
   --entry-price 130.50 --target-price 138 --stop-price 125 \
   --reasoning "RSI 62, MA20+7.3%, Finnhub sentiment +0.21, no earnings risk" \
   --signals technical,news,momentum \
+  --components '{"algo":7.0,"news":1.0,"llm_context":-1.5,"overextension":"NONE","regime":"RISK_ON"}' \
+  --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
 
-`--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `cycle`, `valuation`, `mean_reversion`, `disclosure`, `llm_context`. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
+Always pass `--components` with the per-pillar contributions for this call
+(`algo` = ALGO_SCORE, `news` = NEWS_SCORE, `llm_context` = LLM_CONTEXT_SCORE,
+`overextension` = the R2 level, `regime` = the R1 label). It is stored for
+capability-contribution analysis (`bin/stock-cli component-contribution`) and a
+future blended confidence — so the three capabilities can be measured separately.
+
+The JSON output echoes `raw_confidence` and `recalibration_applied` so you can confirm the transform. `--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `disclosure`, `llm_context`. **Do not record `cycle`, `valuation`, or `mean_reversion`** — these are graded statistically dead (0% hit rate) and only pollute per-signal calibration; route any such qualitative read through `LLM_CONTEXT_SCORE` instead. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
 
 Generate a fresh `GROUP_ID` for each stock — never reuse across tickers.
 

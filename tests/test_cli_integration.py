@@ -413,6 +413,8 @@ def test_horizon_metrics_batch_returns_expected_fields():
         "vol_5d_avg",
         "vol_50d_avg",
         "vol_ratio",
+        # Overextension gate (RULE R2) — /expect + daily-briefing read this.
+        "overextension_level",
     }
     # If any of the pinned tickers errored, the contract is not actually
     # exercised — fail the test rather than silently pass.

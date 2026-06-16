@@ -205,7 +205,9 @@ def render_markdown(report_date: str, windows: list[dict]) -> str:
     if tr["brier_score"] is not None:
         lines.append(f"- Brier score: **{tr['brier_score']:.3f}** (lower is better)")
     if tr["avg_return"] is not None:
-        lines.append(f"- Average return: **{tr['avg_return']:+.2%}**")
+        # outcome_return is stored as percentage points (e.g. -11.68 == -11.68%),
+        # so format with a literal "%"; the "%" spec would multiply by 100.
+        lines.append(f"- Average return: **{tr['avg_return']:+.2f}%**")
     lines.append(f"- Current streak: **{tr['current_streak']:+d}**")
     if primary["overconfident_buckets"]:
         lines.append(
@@ -233,7 +235,7 @@ def render_markdown(report_date: str, windows: list[dict]) -> str:
             + f" | Brier: "
             + (f"{tr['brier_score']:.3f}" if tr["brier_score"] is not None else "n/a")
             + f" | Avg return: "
-            + (f"{tr['avg_return']:+.2%}" if tr["avg_return"] is not None else "n/a")
+            + (f"{tr['avg_return']:+.2f}%" if tr["avg_return"] is not None else "n/a")
         )
         lines.append("")
 

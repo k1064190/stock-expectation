@@ -77,10 +77,15 @@ from metrics import (
     permutation_test_confidence,
     build_recalibration_map,
     apply_recalibration,
+    recalibrate_confidence,
+    get_component_contribution,
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
+from regime import aggregate_regime, compute_regime, compute_realized_vol
+from news_features import summarize_news
+from llm_context import validate_llm_context, score_from_debate
 
 from portfolio.db import (
     get_connection as pf_get_connection,
@@ -392,6 +397,75 @@ def cmd_horizon_metrics_batch(args) -> int:
         return 1
 
 
+# Default liquid index proxies for the market-regime gate. US uses both the
+# broad market (SPY) and the tech/growth proxy (QQQ) because the June 2026
+# drawdown was growth-led — SPY stayed calm while QQQ broke down — and the gate
+# takes the more risk-off of the two.
+REGIME_INDEX = {"US": ["SPY", "QQQ"], "KR": ["069500"]}  # KR: KODEX 200 ETF
+
+
+def _regime_for_proxy(provider, ticker, market, days):
+    """Fetch one index proxy and compute its RegimeVerdict, or None if no data."""
+    bars = provider.get_price_history(ticker, days=days)
+    if not bars:
+        return None
+    bar_dicts = [asdict(b) for b in bars]
+    metrics = compute_horizon_metrics(bars=bar_dicts, ticker=ticker, market=market)
+    closes = [b["close"] for b in bar_dicts if b.get("close") is not None]
+    return compute_regime(metrics, compute_realized_vol(closes))
+
+
+def cmd_regime(args) -> int:
+    """Classify the current market regime (RISK_ON / NEUTRAL / RISK_OFF).
+
+    Fetches ~400 calendar days for each index proxy of the market (SPY + QQQ for
+    US, KODEX 200 for KR; override with ``--index``), computes each one's
+    HorizonMetrics + 20-day realized volatility via ``compute_regime``, and
+    aggregates to the most risk-off verdict. This is the hard gate the /expect
+    and daily-briefing skills consult before issuing new BULL calls. Read-only;
+    JSON output.
+
+    Args:
+        args: Parsed CLI arguments with market, optional index, days.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    try:
+        market = args.market.upper()
+        proxies = [args.index] if args.index else REGIME_INDEX.get(market)
+        if not proxies:
+            _print_json({"error": f"no default index for market {market}"})
+            return 1
+        provider = _get_provider(market)
+        verdicts = []
+        missing = []
+        for t in proxies:
+            v = _regime_for_proxy(provider, t, market, args.days)
+            (verdicts if v is not None else missing).append(v if v is not None else t)
+        if not verdicts:
+            _print_json(
+                {"error": f"No price data for index proxies {proxies} on {market}"}
+            )
+            return 1
+        verdict = aggregate_regime(verdicts)
+        if missing:
+            # A dropped proxy weakens the gate (e.g. losing QQQ blinds it to a
+            # growth-led drawdown). Don't certify RISK_ON on a partial proxy set —
+            # the /expect hard gate would then re-enable longs in exactly the
+            # case the worse-of gate exists to catch. Floor to NEUTRAL and flag.
+            note = f"⚠️ regime computed without proxies {missing} (no data)"
+            if verdict.label == "RISK_ON":
+                verdict.label = "NEUTRAL"
+                note += " — floored RISK_ON to NEUTRAL"
+            verdict.notes.append(note)
+        _print_json(asdict(verdict))
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 def cmd_news(args) -> int:
     """Fetch recent news headlines for a ticker.
 
@@ -411,13 +485,16 @@ def cmd_news(args) -> int:
         )
         market = args.market.upper()
         ticker_display = args.ticker.upper() if market == "US" else args.ticker.zfill(6)
+        now = datetime.now()
+        signal = summarize_news(items, asof_date=now.date().isoformat())
         _print_json(
             {
                 "ticker": ticker_display,
                 "market": market,
-                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "generated_at": now.isoformat(timespec="seconds"),
                 "since_days": args.since_days,
                 "count": len(items),
+                "signal": asdict(signal),
                 "items": [asdict(n) for n in items],
             }
         )
@@ -714,6 +791,39 @@ def cmd_graph_theme_winners(args) -> int:
 # ---------------------------------------------------------------------------
 
 
+# Minimum closed (HIT/MISS) predictions of a source before its recalibration
+# curve is trustworthy enough to apply live. Below this the isotonic map is
+# fit on too few outcomes to be anything but noise, so --recalibrate is a no-op.
+MIN_CLOSED_FOR_RECAL = 30
+
+
+def _recalibrated_confidence(
+    conn, raw_confidence: float, source: str
+) -> tuple[float, bool]:
+    """Map a raw confidence through the source's isotonic recalibration curve.
+
+    The curve is built from *closed* (HIT/MISS) predictions of the same source
+    so live confidences are calibrated against realised accuracy rather than the
+    model's near-constant raw output. A global (all-horizon) map is used: the
+    backfill A/B found it as accurate as per-horizon maps and far more robust on
+    the current sample size.
+
+    Args:
+        conn: SQLite connection to predictions.db.
+        raw_confidence: The model's raw confidence in [0, 1].
+        source: Prediction source (LIVE/BACKTEST/INTERACTIVE) whose history
+            defines the calibration curve.
+
+    Returns:
+        (confidence_to_store, applied). ``applied`` is False — and the raw
+        confidence is returned unchanged — when there are fewer than
+        ``MIN_CLOSED_FOR_RECAL`` closed predictions for the source.
+    """
+    return recalibrate_confidence(
+        conn, raw_confidence, source, min_closed=MIN_CLOSED_FOR_RECAL
+    )
+
+
 def cmd_predict_create(args) -> int:
     """Create a new prediction."""
     try:
@@ -729,25 +839,68 @@ def cmd_predict_create(args) -> int:
 
         signals = [s.strip() for s in args.signals.split(",")] if args.signals else []
 
-        pred = Prediction(
-            ticker=args.ticker.upper(),
-            market=args.market.upper(),
-            direction=args.direction.upper(),
-            confidence=args.confidence,
-            timeframe=args.timeframe,
-            reasoning=args.reasoning,
-            entry_price=args.entry_price,
-            signals_used=signals,
-            source=args.source.upper(),
-            target_price=args.target_price,
-            stop_price=args.stop_price,
-            analysis_group_id=args.analysis_group_id,
-        )
+        components = None
+        if args.components:
+            try:
+                # Reject non-finite numbers — the NaN/Infinity literals (via
+                # parse_constant) and ordinary float tokens that overflow to inf
+                # like 1e999 (via parse_float). Either would serialize back out
+                # as non-standard JSON and skew the positive/negative split.
+                def _no_nan(_tok):
+                    raise ValueError(f"non-finite number in --components: {_tok}")
+
+                def _finite_float(_tok):
+                    v = float(_tok)
+                    if v in (float("inf"), float("-inf")):
+                        raise ValueError(f"non-finite number in --components: {_tok}")
+                    return v
+
+                components = json.loads(
+                    args.components, parse_constant=_no_nan, parse_float=_finite_float
+                )
+            except (json.JSONDecodeError, ValueError) as exc:
+                _print_json({"error": f"--components is not valid JSON: {exc}"})
+                return 1
+            if not isinstance(components, dict):
+                _print_json({"error": "--components must be a JSON object"})
+                return 1
 
         conn = get_connection()
         try:
+            raw_confidence = args.confidence
+            recal_applied = False
+            stored_confidence = raw_confidence
+            if args.recalibrate:
+                stored_confidence, recal_applied = _recalibrated_confidence(
+                    conn, raw_confidence, args.source.upper()
+                )
+
+            pred = Prediction(
+                ticker=args.ticker.upper(),
+                market=args.market.upper(),
+                direction=args.direction.upper(),
+                confidence=stored_confidence,
+                # Always persist the model's raw confidence so the calibration
+                # curve trains on raw output, never on recalibrated values.
+                raw_confidence=raw_confidence,
+                timeframe=args.timeframe,
+                reasoning=args.reasoning,
+                entry_price=args.entry_price,
+                signals_used=signals,
+                source=args.source.upper(),
+                target_price=args.target_price,
+                stop_price=args.stop_price,
+                analysis_group_id=args.analysis_group_id,
+                components=components,
+            )
+
             insert_prediction(conn, pred)
-            _print_json(asdict(pred))
+            out = asdict(pred)
+            if args.recalibrate:
+                # Surface the transform so the caller/log can see what happened.
+                out["raw_confidence"] = round(raw_confidence, 4)
+                out["recalibration_applied"] = recal_applied
+            _print_json(out)
             return 0
         finally:
             conn.close()
@@ -818,22 +971,86 @@ def cmd_track_record(args) -> int:
             source=args.source,
             days=args.days,
         )
-        _print_json(
-            {
-                "period_days": args.days,
-                "market": args.market or "ALL",
-                "timeframe": args.timeframe or "ALL",
-                "total_predictions": record.total,
-                "wins": record.wins,
-                "losses": record.losses,
-                "expired": record.expired,
-                "win_rate": record.win_rate,
-                "avg_return_pct": record.avg_return,
-                "current_streak": record.current_streak,
-                "brier_score": record.brier_score,
-            }
-        )
+        out = {
+            "period_days": args.days,
+            "market": args.market or "ALL",
+            "timeframe": args.timeframe or "ALL",
+            "source": args.source or "ALL",
+            "total_predictions": record.total,
+            "wins": record.wins,
+            "losses": record.losses,
+            "expired": record.expired,
+            "win_rate": record.win_rate,
+            "avg_return_pct": record.avg_return,
+            "current_streak": record.current_streak,
+            "brier_score": record.brier_score,
+        }
+        # When sources are blended, break out per-source: LIVE (real cron/skill
+        # performance) and INTERACTIVE (manual deep-dives) are NOT comparable —
+        # they cover different periods and selection, so the blended win rate
+        # misleads. See docs/stage-11/leakage-audit.md.
+        if args.source is None:
+            out["by_source"] = {}
+            for src in ("LIVE", "INTERACTIVE", "BACKTEST"):
+                r = get_track_record(
+                    conn,
+                    market=args.market,
+                    timeframe=args.timeframe,
+                    source=src,
+                    days=args.days,
+                )
+                if r.total:
+                    out["by_source"][src] = {
+                        "total": r.total,
+                        "win_rate": r.win_rate,
+                        "brier_score": r.brier_score,
+                    }
+        _print_json(out)
         return 0
+    finally:
+        conn.close()
+
+
+def cmd_lint_llm_context(args) -> int:
+    """Lint a structured LLM_CONTEXT debate for rigor (range, sign, evidence).
+
+    Returns 0 when clean, 1 when issues are found (so a skill or CI can gate on
+    it). Echoes the clamped score and any violations as JSON.
+
+    Args:
+        args: Parsed CLI arguments with ``debate`` (a JSON string).
+
+    Returns:
+        0 if the debate passes all rigor checks, 1 otherwise.
+    """
+    try:
+        # ValueError (not just JSONDecodeError) covers oversized integer literals
+        # that exceed Python's int-string digit limit — a hostile debate must get
+        # the JSON error response, not an uncaught traceback.
+        debate = json.loads(args.debate)
+    except (json.JSONDecodeError, ValueError) as exc:
+        _print_json({"error": f"debate is not valid JSON: {exc}"})
+        return 1
+    issues = validate_llm_context(debate)
+    _print_json(
+        {
+            "clean": not issues,
+            "clamped_score": score_from_debate(debate),
+            "issues": issues,
+        }
+    )
+    return 0 if not issues else 1
+
+
+def cmd_component_contribution(args) -> int:
+    """Show win-rate by each stored per-pillar component (algo/news/llm/gates)."""
+    conn = get_connection()
+    try:
+        _print_json(get_component_contribution(conn, min_count=args.min_count))
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
     finally:
         conn.close()
 
@@ -1445,6 +1662,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_horizon_metrics_batch)
 
+    # --- regime ---
+    p = sub.add_parser(
+        "regime",
+        help="Classify market regime RISK_ON/NEUTRAL/RISK_OFF (hard BULL gate)",
+    )
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--index",
+        default=None,
+        help="Index proxy ticker (default: worst-of SPY+QQQ for US, 069500 for KR)",
+    )
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of index history to fetch (default 400)",
+    )
+    p.set_defaults(func=cmd_regime)
+
     # --- news ---
     p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")
     p.add_argument("ticker", help="Stock ticker (US: NVDA, KR: 005930)")
@@ -1580,6 +1816,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="UUID linking predictions from the same multi-horizon analysis",
     )
+    pc.add_argument(
+        "--components",
+        default=None,
+        help=(
+            "JSON object of per-pillar contributions, e.g. "
+            '\'{"algo":7.0,"news":1.0,"llm_context":-1.5,'
+            '"overextension":"ELEVATED","regime":"NEUTRAL"}\'. Stored for '
+            "capability-contribution analysis and future blended confidence."
+        ),
+    )
+    pc.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help=(
+            "Map the raw --confidence through the isotonic recalibration curve "
+            "(built from closed predictions of the same source) before storing, "
+            "so logged confidence reflects observed accuracy. No-op until enough "
+            "closed predictions exist."
+        ),
+    )
     pc.set_defaults(func=cmd_predict_create)
 
     pl = predict_sub.add_parser("list", help="List predictions")
@@ -1635,6 +1891,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restrict calibration buckets to a single horizon (default: all)",
     )
     cal.set_defaults(func=cmd_calibration)
+
+    # --- component-contribution ---
+    cc = sub.add_parser(
+        "component-contribution",
+        help="Win-rate split by each stored per-pillar component (algo/news/llm/gates)",
+    )
+    cc.add_argument(
+        "--min-count",
+        type=int,
+        default=8,
+        help="Minimum closed rows in a bucket to report it (default 8)",
+    )
+    cc.set_defaults(func=cmd_component_contribution)
+
+    # --- lint-llm-context ---
+    lc = sub.add_parser(
+        "lint-llm-context",
+        help="Lint a structured LLM_CONTEXT debate JSON for rigor (range/sign/evidence)",
+    )
+    lc.add_argument(
+        "debate", help="JSON debate object {score, winner, bull_points, bear_points}"
+    )
+    lc.set_defaults(func=cmd_lint_llm_context)
 
     # --- portfolio ---
     pf = sub.add_parser("portfolio", help="Portfolio tracking and evaluation")

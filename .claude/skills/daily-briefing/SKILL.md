@@ -78,6 +78,8 @@ bin/stock-cli disclosure 005930 --since-days 14   # KR only — 감자/유상증
 bin/stock-cli predict list --status OPEN --limit 30
 bin/stock-cli track-record --days 30
 bin/stock-cli calibration
+bin/stock-cli regime --market US    # 하드 BULL 게이트 — Section 4 라벨 규칙 참조
+bin/stock-cli regime --market KR
 ```
 
 ### 2. 포트폴리오 상태 수집 (필수 단계)
@@ -139,6 +141,27 @@ bin/stock-cli portfolio risk --market US
 
 `/expect` 스킬과 **동일한** 결정론적 포인트 테이블 사용 (sync 유지 필수):
 
+**RULE R1 — 하드 레짐 게이트 (BULL 라벨/horizon 로깅 전 적용).** Section 1의 `regime`
+출력(`label`)을 해당 종목의 시장에 적용:
+- **RISK_OFF**: 신규 BUY/BULL 로깅 금지. 라벨은 WATCH로 캡, BULL horizon은 NEUTRAL로 해소.
+  "⚠️ REGIME RISK_OFF" 표기.
+- **NEUTRAL**: BUY 기준선 8.0 → **9.0** 상향 + 로깅 confidence 한 단계 추가 트림(0.60 캡).
+- **RISK_ON**: 변경 없음.
+
+근거: 2026년 6월 조정장 백필에서, worse-of-SPY/QQQ(US)·KODEX 200(KR) 레짐이 NEUTRAL/RISK_OFF인
+동안 발행된 BULL은 ~3%만 적중 — 게이트가 바로 그 구간을 억제/강화한다. 시장 단위 게이트이며,
+개별 종목 과열은 RULE R2가 처리.
+
+**RULE R2 — 개별 종목 과열 게이트 (포물선/blow-off 진입).** `horizon-metrics`의
+`overextension_level` 사용:
+- **EXTREME**: 신규 BUY/BULL 로깅 금지 — WATCH 캡, BULL horizon은 NEUTRAL 해소. "⚠️ OVEREXTENDED (EXTREME)".
+- **ELEVATED**: BUY 기준선 +1.0 상향(COMPOSITE ≥ 9.0) + confidence 한 단계 트림(0.60 캡). "⚠️ OVEREXTENDED (ELEVATED)".
+- **NONE**: 변경 없음.
+
+근거: closed BULL 377건에서 진입 시 RSI14>75는 26% 적중(RSI<60은 47%), MA20 대비 +15% 초과는
+30% 적중(3~8% 구간은 66%). blow-off 진입은 레짐 게이트(R1)가 못 보는 강한 역신호. R1(시장)과
+R2(종목)은 함께 적용 — 둘 중 하나라도 BULL을 WATCH로 막으면 WATCH 유지.
+
 **ALGO_SCORE (max +8.0)** — `horizon-metrics-batch` 결과로 산정:
 - Trend: MA20>MA50>MA200 → +3.0 | MA20>MA50 only → +1.0 | full bear → -1.0 | else 0
 - Momentum: RSI14 ∈ [50,70] → +1.5 | [30,50) → +0.5 | >70 → +0.5 | <30 → -0.5
@@ -146,11 +169,12 @@ bin/stock-cli portfolio risk --market US
 - Volume: `vol_ratio` > 1.3 → +1.0 | else 0
 - Cycle: `pct_from_52w_high` ≥ -10% → +1.0 | `max_drawdown_1y` ≤ -25% → -1.0 | else 0
 
-**NEWS_SCORE (max +3.0)** — `news` + `disclosure` 결과로:
-- Sentiment (US AV): >+0.15 → +2.0 | 0~+0.15 → +1.0 | -0.15~0 → -1.0 | <-0.15 → -2.0
-- Headline volume: 7일 ≥3건 → +1.0 | else 0
-- Hard cap: 부정 키워드(bankrupt, fraud, lawsuit, downgrade, recall, delist) → cap -2.0
+**NEWS_SCORE (max +3.0)** — `news` 출력의 `signal` 블록(중복 제거·최신 가중) + `disclosure`로:
+- Sentiment: `signal.recency_weighted_sentiment` 사용 — >+0.15 → +2.0 | 0~+0.15 → +1.0 | -0.15~0 → -1.0 | <-0.15 → -2.0 | null → 0
+- Headline volume: `signal.unique_count` ≥3 → +1.0 | else 0
+- Hard cap: `signal.has_negative_catalyst` true → cap -2.0
 - Hard cap: KR 공시 감자/유상증자/관리종목/거래정지/상장폐지 → cap -2.0
+- `signal.event_tags`(earnings/guidance/ma/regulatory 등)는 Section 4의 LLM_CONTEXT 논쟁 입력으로 전달
 
 **LLM_CONTEXT_SCORE (range -5.0 ~ +3.0)** — 매크로/내러티브 컨텍스트 (모멘텀 편향 보정):
 
@@ -201,13 +225,20 @@ bin/stock-cli predict create \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
+  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","regime":"NEUTRAL"}' \
   --source LIVE \
+  --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
 
+`--components`는 항상 해당 콜의 pillar별 기여도(algo/news/llm_context 점수 + overextension 레벨 +
+regime 라벨)를 담아 전달 — `bin/stock-cli component-contribution`로 세 능력의 기여를 따로 측정하고
+향후 blended confidence 학습에 사용.
+
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용
-- **재보정 적용**: `bin/stock-cli calibration` 출력의 `recalibration_map`을 raw confidence에 적용해 등록 (예: 과신 구간 0.62 → ~0.50). 관측 정확도를 반영하기 위함.
+- **재보정 적용**: raw confidence를 그대로 넘기고 `--recalibrate` 플래그를 추가하면 CLI가 isotonic recalibration 곡선으로 결정론적으로 매핑해 저장한다 (예: 과신 구간 0.62 → ~0.50). 직접 손으로 매핑하지 말 것 — 플래그가 일관되게 처리하며, 해당 source의 closed 예측이 30건 미만이면 안전하게 no-op. JSON 출력의 `raw_confidence`/`recalibration_applied`로 확인.
+- **죽은 시그널 금지**: `cycle`, `valuation`, `mean_reversion`은 적중률 0%로 판정되어 signals_used에 기록하지 말 것 (calibration 오염). 해당 정성 신호는 `LLM_CONTEXT_SCORE`로 반영.
 - 최소 2개 signal 명시 (signals_used). `llm_context` 시그널은 `LLM_CONTEXT_SCORE`가 0이 아닐 때만 포함 (주별 calibration이 이 시그널 단독 측정)
 - KR 종목 기본 timeframe 1M (유동성 낮음 고려)
 - US 종목 기본 timeframe 1W

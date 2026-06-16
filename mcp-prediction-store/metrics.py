@@ -494,8 +494,14 @@ def get_calibration_report(
         params.append(timeframe)
 
     where = " AND ".join(conditions)
+    # Calibrate on RAW model confidence: once --recalibrate is in use the
+    # ``confidence`` column holds recalibrated values, so training the curve on
+    # it would feed recalibrated output back as input (a recursive loop that
+    # collapses the map's domain). ``raw_confidence`` preserves the original;
+    # COALESCE falls back to ``confidence`` for legacy/non-recalibrated rows.
     rows = conn.execute(
-        f"SELECT confidence, status FROM predictions WHERE {where}",
+        f"SELECT COALESCE(raw_confidence, confidence) AS confidence, status "
+        f"FROM predictions WHERE {where}",
         params,
     ).fetchall()
 
@@ -677,6 +683,106 @@ def get_signal_decay(
         )
     result.sort(key=lambda s: s.signal)
     return result
+
+
+RECAL_MIN_CLOSED = 30  # min closed (HIT/MISS) rows before a source's map is trusted
+
+
+def recalibrate_confidence(
+    conn: sqlite3.Connection,
+    raw_confidence: float,
+    source: str,
+    min_closed: int = RECAL_MIN_CLOSED,
+) -> tuple[float, bool]:
+    """Map a raw confidence through the source's isotonic recalibration curve.
+
+    Shared by ``predict create --recalibrate`` and the scheduler's API-mode
+    logger so both honour the same source-scoped recalibration guarantee. The
+    curve is built from *closed* predictions of the same source (a global,
+    all-horizon map — as accurate as per-horizon maps and far more robust at
+    current sample sizes).
+
+    Args:
+        conn: SQLite connection to predictions.db.
+        raw_confidence: The model's raw confidence in [0, 1].
+        source: Prediction source whose history defines the curve.
+        min_closed: Below this many closed rows the map is noise, so this is a
+            no-op (returns the raw confidence, ``applied=False``).
+
+    Returns:
+        ``(confidence_to_store, applied)``.
+    """
+    n_closed = conn.execute(
+        "SELECT COUNT(*) FROM predictions WHERE status IN ('HIT', 'MISS') AND source = ?",
+        (source,),
+    ).fetchone()[0]
+    if n_closed < min_closed:
+        return raw_confidence, False
+    recal_map = build_recalibration_map(conn, source=source)
+    if not recal_map:
+        return raw_confidence, False
+    return apply_recalibration(raw_confidence, recal_map), True
+
+
+def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> dict:
+    """Win-rate of closed predictions split by each stored ``components`` pillar.
+
+    Reads ``predictions.components`` (JSON) on closed (HIT/MISS) rows. Numeric
+    pillars (algo / news / llm_context scores) split into ``positive`` vs
+    ``non_positive`` contribution; categorical pillars (overextension, regime)
+    group by value. This quantifies each capability's *marginal* value — e.g.
+    "does a positive news contribution actually raise the hit rate?" — and is the
+    measurement substrate for a future blended confidence.
+
+    Args:
+        conn: SQLite connection.
+        min_count: Minimum closed rows in a bucket for it to be reported.
+
+    Returns:
+        ``{"n_with_components": int, "pillars": {pillar: {bucket: {"n", "wins",
+        "win_rate"}}}}``. Empty pillars until enough components-tagged rows
+        accumulate (the column is new).
+    """
+    import json
+
+    rows = conn.execute(
+        "SELECT components, status FROM predictions "
+        "WHERE status IN ('HIT', 'MISS') AND components IS NOT NULL"
+    ).fetchall()
+
+    buckets: dict[str, dict[str, list[int]]] = {}
+    n_valid = 0
+    for r in rows:
+        try:
+            comp = json.loads(r["components"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(comp, dict):
+            continue
+        n_valid += 1
+        win = 1 if r["status"] == "HIT" else 0
+        for k, v in comp.items():
+            if isinstance(v, bool):
+                label = str(v)
+            elif isinstance(v, (int, float)):
+                # Separate zero (neutral / not-applicable) from a true headwind.
+                label = "positive" if v > 0 else "negative" if v < 0 else "zero"
+            else:
+                label = str(v)
+            slot = buckets.setdefault(k, {}).setdefault(label, [0, 0])
+            slot[0] += win
+            slot[1] += 1
+
+    pillars: dict[str, dict] = {}
+    for pillar, labs in buckets.items():
+        reported = {
+            label: {"n": t, "wins": w, "win_rate": round(w / t, 3)}
+            for label, (w, t) in labs.items()
+            if t >= min_count
+        }
+        if reported:
+            pillars[pillar] = reported
+    return {"n_with_components": n_valid, "pillars": pillars}
 
 
 def _isotonic_nondecreasing(
