@@ -12,12 +12,45 @@ import subprocess
 from datetime import datetime, timezone
 from typing import Optional
 
+from . import toss_api
 from .models import Position
 
 
 def tossctl_available() -> bool:
     """Check if tossctl binary is on PATH."""
     return shutil.which("tossctl") is not None
+
+
+def fetch_positions(source: str = "auto") -> tuple[list[dict], str]:
+    """Fetch Toss positions, preferring the official Open API.
+
+    Args:
+        source: "auto" (Open API if credentials are set, else tossctl),
+            "toss-api" (force the official Open API), or "tossctl"
+            (force the legacy CLI).
+
+    Returns:
+        Tuple of (positions, source_used) where source_used is
+        "toss-api" or "tossctl".
+
+    Raises:
+        RuntimeError: If the requested source is unavailable, or if neither
+            source is available under "auto".
+    """
+    if source == "toss-api":
+        return toss_api.fetch_toss_positions_api(), "toss-api"
+    if source == "tossctl":
+        return fetch_toss_positions(), "tossctl"
+
+    # auto
+    if toss_api.toss_api_configured():
+        return toss_api.fetch_toss_positions_api(), "toss-api"
+    if tossctl_available():
+        return fetch_toss_positions(), "tossctl"
+    raise RuntimeError(
+        "Toss credentials not set (TOSS_CLIENT_ID/TOSS_CLIENT_SECRET) "
+        "and tossctl is not installed."
+    )
 
 
 def fetch_toss_positions() -> list[dict]:
