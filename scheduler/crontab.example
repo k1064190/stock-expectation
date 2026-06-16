@@ -86,11 +86,6 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # and rolls state/calibration-trend.json (last 12 weeks).
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
 
-# Toss session auth check — daily 07:30 KST
-# Detects Toss session expiry (~weekly) and sends Telegram alert. Transition
-# alert fires once; reminder repeats every 24h while invalid until re-auth.
-30 7 * * * cd $PROJECT && uv run python scheduler/toss_auth_check.py >> $LOG_DIR/toss_auth_check.log 2>&1
-
 # === Anthropic API mode (alternative) ===
 # Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
 # 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1

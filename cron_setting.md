@@ -11,7 +11,6 @@ Installed on **2026-05-11 by Claude Code session**. Documents the active schedul
 | Tue-Sat 00:00 | `scheduler/daily_briefing.py --market US` | codex-cli | US mid-session briefing |
 | Daily 06:00 | `scheduler/outcome_tracker.py` | pure-Python | Judge previous day's HIT/MISS/EXPIRED |
 | Sunday 22:00 | `scheduler/weekly_calibration.py` | pure-Python | Weekly calibration report + 12-week trend |
-| Daily 07:30 | `scheduler/toss_auth_check.py` | pure-Python | Toss session expiry alert |
 
 System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=Asia/Seoul` defensively so a host migration to a different TZ won't silently shift the schedule.
 
@@ -22,7 +21,6 @@ System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=As
 - **US mid-session briefing Tue-Sat 00:00:** Captures the US regular session after the open while mapping Mon-Fri US trading days to Tue-Sat KST.
 - **Outcome tracker daily 06:00 (incl. weekends):** Runs after the US close so Friday closes are judged Saturday morning rather than waiting to Monday. Weekend runs are cheap (KR/US markets closed → most predictions stay open).
 - **Weekly calibration Sunday 22:00:** End-of-week reflection time before next week's trading. Pure Python read from `predictions.db`, writes report + trend JSON. No LLM cost.
-- **Toss auth check daily 07:30:** Sends an alert if the Toss session has expired before trading workflows need it.
 
 ## Mode choice — codex-cli (not API)
 
@@ -93,9 +91,6 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 
 # Weekly calibration aggregator — Sunday 22:00 KST
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
-
-# Toss session auth check — daily 07:30 KST
-30 7 * * * cd $PROJECT && uv run python scheduler/toss_auth_check.py >> $LOG_DIR/toss_auth_check.log 2>&1
 ```
 
 ## How the cron environment differs from your shell

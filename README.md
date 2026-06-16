@@ -404,7 +404,6 @@ crontab scheduler/crontab.example
 | 21:00 월-금 | `daily_briefing.py --market US --mode codex-cli` | US 시장 브리핑 (프리마켓 전) |
 | 00:00 화-토 | `daily_briefing.py --market US --mode codex-cli` | US 장중 브리핑 |
 | 06:00 매일 | `outcome_tracker.py` | 오픈 예측 결과 판정 |
-| 07:30 매일 | `toss_auth_check.py` | Toss 세션 만료 알림 |
 | 22:00 일요일 | `weekly_calibration.py` | 주간 캘리브레이션 + 트렌드 저장 |
 
 ### 자동화 모드 비교
