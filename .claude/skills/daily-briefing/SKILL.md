@@ -89,12 +89,12 @@ bin/stock-cli regime --market KR
 **2-1. Toss 동기화 (idempotent, 실패해도 briefing 계속):**
 
 ```bash
-# Toss → 로컬 DB 동기화. tossctl이 설치 + 인증된 호스트에서만 동작.
-# 미설치/미인증/네트워크 실패 시 stderr에 경고만 남기고 0이 아닌 exit 반환 — 무시하고 계속.
+# Toss → 로컬 DB 동기화. TOSS_CLIENT_ID/TOSS_CLIENT_SECRET가 있으면 공식 Open API,
+# 없으면 tossctl로 폴백. 실패 시 stderr에 경고만 남기고 0이 아닌 exit 반환 — 무시하고 계속.
 bin/stock-cli portfolio sync 2>&1 | tail -5
 ```
 
-위 명령이 실패해도 (예: tossctl 부재, 인증 만료) 기존 DB는 그대로 사용. briefing은 절대 중단하지 않는다.
+위 명령이 실패해도 (예: 자격증명/네트워크 실패, tossctl 폴백 미인증) 기존 DB는 그대로 사용. briefing은 절대 중단하지 않는다.
 
 **2-2. 포지션 + 평가 데이터 수집:**
 
