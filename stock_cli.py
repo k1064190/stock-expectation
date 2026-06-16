@@ -450,10 +450,14 @@ def cmd_regime(args) -> int:
         verdict = aggregate_regime(verdicts)
         if missing:
             # A dropped proxy weakens the gate (e.g. losing QQQ blinds it to a
-            # growth-led drawdown), so make the gap explicit rather than silent.
-            verdict.notes.append(
-                f"⚠️ regime computed without proxies {missing} (no data)"
-            )
+            # growth-led drawdown). Don't certify RISK_ON on a partial proxy set —
+            # the /expect hard gate would then re-enable longs in exactly the
+            # case the worse-of gate exists to catch. Floor to NEUTRAL and flag.
+            note = f"⚠️ regime computed without proxies {missing} (no data)"
+            if verdict.label == "RISK_ON":
+                verdict.label = "NEUTRAL"
+                note += " — floored RISK_ON to NEUTRAL"
+            verdict.notes.append(note)
         _print_json(asdict(verdict))
         return 0
     except Exception as e:
@@ -1026,8 +1030,11 @@ def cmd_lint_llm_context(args) -> int:
         0 if the debate passes all rigor checks, 1 otherwise.
     """
     try:
+        # ValueError (not just JSONDecodeError) covers oversized integer literals
+        # that exceed Python's int-string digit limit — a hostile debate must get
+        # the JSON error response, not an uncaught traceback.
         debate = json.loads(args.debate)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         _print_json({"error": f"debate is not valid JSON: {exc}"})
         return 1
     issues = validate_llm_context(debate)

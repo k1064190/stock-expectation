@@ -245,6 +245,49 @@ def test_cli_rejects_overflow_components():
     assert stock_cli.cmd_predict_create(_create_args(components='{"news": 1e999}')) == 1
 
 
+def test_regime_floors_risk_on_when_default_proxy_missing(monkeypatch):
+    import io
+    from contextlib import redirect_stdout
+    from regime import RegimeVerdict
+
+    monkeypatch.setattr(stock_cli, "_get_provider", lambda m: object())
+
+    def fake_proxy(provider, ticker, market, days):
+        if ticker == "SPY":
+            return RegimeVerdict(
+                market="US",
+                index_ticker="SPY",
+                label="RISK_ON",
+                score=0,
+                components={},
+                realized_vol_annual=0.1,
+                notes=[],
+            )
+        return None  # QQQ "unavailable"
+
+    monkeypatch.setattr(stock_cli, "_regime_for_proxy", fake_proxy)
+    args = types.SimpleNamespace(market="US", index=None, days=400)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        assert stock_cli.cmd_regime(args) == 0
+    out = json.loads(buf.getvalue())
+    assert out["label"] == "NEUTRAL"  # not certified RISK_ON on a partial proxy set
+    assert any("floored" in n for n in out["notes"])
+
+
+def test_lint_llm_context_handles_oversized_int_json(capsys=None):
+    import io
+    from contextlib import redirect_stdout
+
+    huge = "1" * 5000  # exceeds Python's int-string digit limit → ValueError
+    args = types.SimpleNamespace(debate='{"score": ' + huge + "}")
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = stock_cli.cmd_lint_llm_context(args)
+    assert rc == 1
+    assert "error" in json.loads(buf.getvalue())  # clean JSON error, no traceback
+
+
 # One below the module threshold, expressed via the constant so the test tracks
 # any future change to MIN_CLOSED_FOR_RECAL.
 MIN_BELOW = stock_cli.MIN_CLOSED_FOR_RECAL - 1
