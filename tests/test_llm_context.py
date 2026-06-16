@@ -156,6 +156,20 @@ def test_nan_score_flagged_and_not_clamped():
     assert clamp_score(float("inf")) is None
 
 
+def test_oversized_integer_score_does_not_crash():
+    huge = 10**400  # too large to convert to float
+    issues = validate_llm_context(
+        {
+            "score": huge,
+            "winner": "neutral",
+            "bull_points": [],
+            "bear_points": [{"claim": "r"}],
+        }
+    )
+    assert any("finite" in i for i in issues)  # flagged, not crashed
+    assert score_from_debate({"score": huge}) is None
+
+
 def test_score_zero_neutral_ok_and_nonneutral_rejected():
     ok = {
         "score": 0.0,

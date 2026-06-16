@@ -156,6 +156,27 @@ def test_load_closed_uses_raw_confidence_baseline():
     assert backfill_eval.load_closed(c2)[0]["confidence"] == 0.6
 
 
+def test_load_closed_legacy_db_without_raw_confidence_column():
+    # A legacy DB the read-only harness never migrates lacks raw_confidence.
+    # load_closed must introspect and fall back to plain confidence, not crash.
+    c = sqlite3.connect(":memory:")
+    c.row_factory = sqlite3.Row
+    c.execute(
+        """CREATE TABLE predictions (
+            id TEXT, created_at TEXT, confidence REAL, status TEXT,
+            outcome_return REAL, outcome_date TEXT, source TEXT,
+            timeframe TEXT, direction TEXT, signals_used TEXT
+        )"""
+    )
+    c.execute(
+        "INSERT INTO predictions VALUES "
+        "('a','2026-05-01',0.6,'HIT',NULL,'2026-05-02','LIVE','1W','BULL','[]')"
+    )
+    c.commit()
+    rows = backfill_eval.load_closed(c)
+    assert len(rows) == 1 and rows[0]["confidence"] == 0.6
+
+
 def test_eval_recalibration_timeframe_filters_scored_rows():
     c = _conn()
     _insert(

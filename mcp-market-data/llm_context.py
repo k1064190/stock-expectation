@@ -38,11 +38,27 @@ def clamp_score(score: float) -> Optional[float]:
 
     NaN/Infinity must not pass through — ``min``/``max`` would let NaN surface as
     a max-bullish 3.0, which a caller reading the score (not the lint status)
-    could trust.
+    could trust. Oversized integers (hundreds of digits) are also rejected: they
+    would raise OverflowError on the float conversion.
     """
-    if not math.isfinite(score):
+    if not _is_finite_number(score):
         return None
-    return max(LLM_CONTEXT_MIN, min(LLM_CONTEXT_MAX, score))
+    return max(LLM_CONTEXT_MIN, min(LLM_CONTEXT_MAX, float(score)))
+
+
+def _is_finite_number(value: object) -> bool:
+    """True when ``value`` is a real, finite number (handles huge-int overflow).
+
+    ``math.isfinite`` raises OverflowError on an int too large to convert to
+    float, so a malformed debate with a giant integer score must be caught here
+    rather than crashing the linter.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _nonempty_str(value: object) -> bool:
@@ -99,8 +115,8 @@ def validate_llm_context(debate: dict) -> list[str]:
     if not isinstance(score, (int, float)) or isinstance(score, bool):
         issues.append("score must be a number")
         score = None
-    elif not math.isfinite(score):
-        issues.append("score must be finite (NaN/Infinity not allowed)")
+    elif not _is_finite_number(score):
+        issues.append("score must be finite (NaN/Infinity/oversized not allowed)")
         score = None
     elif not LLM_CONTEXT_MIN <= score <= LLM_CONTEXT_MAX:
         issues.append(
@@ -146,6 +162,6 @@ def validate_llm_context(debate: dict) -> list[str]:
 def score_from_debate(debate: dict) -> Optional[float]:
     """Return the clamped score from a debate, or None if it has no numeric score."""
     score = debate.get("score") if isinstance(debate, dict) else None
-    if isinstance(score, (int, float)) and not isinstance(score, bool):
-        return clamp_score(float(score))
-    return None
+    # clamp_score handles finiteness (incl. oversized-int overflow) and returns
+    # None for anything it can't represent.
+    return clamp_score(score) if _is_finite_number(score) else None

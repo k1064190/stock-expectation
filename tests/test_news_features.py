@@ -150,6 +150,22 @@ def test_dedup_keeps_distinct_short_headlines():
     assert len(out) == 2  # short stub must not swallow the longer distinct story
 
 
+def test_catalyst_detected_on_deduped_longer_variant():
+    # Shorter headline first, then a longer dup that appends the hard catalyst.
+    # Dedup keeps the shorter, but the catalyst scan must still see "guidance cut".
+    items = [
+        FakeItem("Acme shares fall after weak quarter results", "2026-06-16", -0.2),
+        FakeItem(
+            "Acme shares fall after weak quarter results, guidance cut",
+            "2026-06-16",
+            -0.3,
+        ),
+    ]
+    sig = summarize_news(items, asof_date="2026-06-16")
+    assert sig.unique_count == 1  # deduped
+    assert sig.has_negative_catalyst is True  # catalyst still caught
+
+
 # --- recency edge cases ---------------------------------------------------- #
 def test_future_dated_clamps_to_full_weight():
     items = [FakeItem("Acme guides higher", "2026-06-20", 0.5)]  # after asof

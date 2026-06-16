@@ -329,18 +329,25 @@ def summarize_news(items: list, asof_date: str) -> NewsSignal:
             used.add(h)
             kept.append(it)
 
+    # Catalysts / event tags are scanned over ALL headlines, not just the
+    # deduped survivors: a hard catalyst ("…, guidance cut") may live only on a
+    # longer variant that dedup drops in favour of a shorter first-seen title.
+    # Missing it would silently disarm the NEWS_SCORE hard cap.
     tags: set[str] = set()
     pos_cat = neg_cat = False
-    sent_vals: list[float] = []
-    weighted_num = weighted_den = 0.0
-    for it in kept:
-        h = getattr(it, "headline", "") or ""
+    for h in headlines:
         tags.update(classify_event(h))
         hl = h.lower()
         if any(_contains(hl, k) for k in NEGATIVE_CATALYSTS):
             neg_cat = True
         if any(_contains(hl, k) for k in POSITIVE_CATALYSTS):
             pos_cat = True
+
+    # Sentiment is aggregated over the deduped survivors only, so reposts don't
+    # double-count toward the recency-weighted average.
+    sent_vals: list[float] = []
+    weighted_num = weighted_den = 0.0
+    for it in kept:
         s = getattr(it, "sentiment_score", None)
         if s is not None:
             sent_vals.append(s)

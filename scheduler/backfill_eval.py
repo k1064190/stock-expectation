@@ -136,12 +136,20 @@ def load_closed(
     if source:
         where.append("source = ?")
         params.append(source)
+    # Use the RAW model confidence as the baseline: once --recalibrate is in use,
+    # ``confidence`` holds recalibrated values, so reading it directly would make
+    # the "raw" arm already-recalibrated and double-apply the map. COALESCE
+    # matches the production calibration path. But the harness opens the DB
+    # read-only and never runs the additive migration, so a legacy DB may lack
+    # the column entirely — introspect and fall back to plain confidence.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+    conf_expr = (
+        "COALESCE(raw_confidence, confidence)"
+        if "raw_confidence" in cols
+        else "confidence"
+    )
     sql = (
-        # Use the RAW model confidence as the baseline: once --recalibrate is in
-        # use, ``confidence`` holds recalibrated values, so reading it directly
-        # would make the "raw" arm already-recalibrated and double-apply the map
-        # in the recalibrated arm. COALESCE matches the production calibration path.
-        "SELECT id, created_at, COALESCE(raw_confidence, confidence) AS confidence, "
+        f"SELECT id, created_at, {conf_expr} AS confidence, "
         "status, outcome_return, source, timeframe, direction, signals_used "
         "FROM predictions WHERE "
         + " AND ".join(where)
