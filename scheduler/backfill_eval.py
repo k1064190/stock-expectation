@@ -137,8 +137,13 @@ def load_closed(
         where.append("source = ?")
         params.append(source)
     sql = (
-        "SELECT id, created_at, confidence, status, outcome_return, source, "
-        "timeframe, direction, signals_used FROM predictions WHERE "
+        # Use the RAW model confidence as the baseline: once --recalibrate is in
+        # use, ``confidence`` holds recalibrated values, so reading it directly
+        # would make the "raw" arm already-recalibrated and double-apply the map
+        # in the recalibrated arm. COALESCE matches the production calibration path.
+        "SELECT id, created_at, COALESCE(raw_confidence, confidence) AS confidence, "
+        "status, outcome_return, source, timeframe, direction, signals_used "
+        "FROM predictions WHERE "
         + " AND ".join(where)
         + " ORDER BY outcome_date ASC, created_at ASC, id ASC"
     )
@@ -214,6 +219,11 @@ def eval_recalibration(
     """
     if not 0.0 < oos_fraction < 1.0:
         raise ValueError(f"oos_fraction must be in (0, 1), got {oos_fraction}")
+    # Restrict the whole A/B to the chosen horizon so the train slice, the map,
+    # AND the scored test slice are all that horizon — otherwise a "1W" report
+    # would train a 1W map but score raw/recal Brier across every horizon.
+    if timeframe is not None:
+        rows = [r for r in rows if r["timeframe"] == timeframe]
     n = len(rows)
     if n < 2:
         return _metrics(rows), _metrics(rows), 0, n

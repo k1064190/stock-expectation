@@ -69,23 +69,29 @@ def aggregate_regime(verdicts: list[RegimeVerdict]) -> RegimeVerdict:
     The June 2026 drawdown was tech-led: SPY stayed calm while QQQ and the
     growth names broke down. Gating on the broad index alone would miss that, so
     the US gate evaluates both SPY and QQQ and takes the more risk-off verdict.
-    Ties resolve to the highest-scoring verdict in input order.
+
+    Selection is by **label severity first, then score**. Score alone is not
+    enough: a proxy floored to NEUTRAL for insufficient history keeps score 0,
+    so a different proxy at score 1 (RISK_ON) would otherwise win and let the
+    gate certify RISK_ON against a proxy that explicitly refused to. Severity
+    ordering preserves that floor. Ties resolve to input order (max() is stable).
 
     Args:
         verdicts: One RegimeVerdict per index proxy (must be non-empty).
 
     Returns:
-        The verdict with the maximum risk-off score, annotated with every
-        proxy's score in ``proxy_scores``.
+        The most risk-off verdict (by label severity, then score), annotated
+        with every proxy's score in ``proxy_scores``.
 
     Raises:
         ValueError: If ``verdicts`` is empty.
     """
     if not verdicts:
         raise ValueError("aggregate_regime requires at least one verdict")
-    worst = max(verdicts, key=lambda v: v.score)
+    severity = {"RISK_OFF": 2, "NEUTRAL": 1, "RISK_ON": 0}
+    worst = max(verdicts, key=lambda v: (severity.get(v.label, 0), v.score))
     # Return a copy so the input verdicts are never mutated (they may be logged
-    # or reused by the caller). max() is stable, so ties resolve to input order.
+    # or reused by the caller).
     return replace(worst, proxy_scores={v.index_ticker: v.score for v in verdicts})
 
 

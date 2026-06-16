@@ -30,8 +30,8 @@ def _conn() -> sqlite3.Connection:
     c.row_factory = sqlite3.Row
     c.execute(
         """CREATE TABLE predictions (
-            id TEXT, created_at TEXT, confidence REAL, status TEXT,
-            outcome_return REAL, outcome_date TEXT, source TEXT,
+            id TEXT, created_at TEXT, confidence REAL, raw_confidence REAL,
+            status TEXT, outcome_return REAL, outcome_date TEXT, source TEXT,
             timeframe TEXT, direction TEXT, signals_used TEXT
         )"""
     )
@@ -43,13 +43,14 @@ def _insert(c, rows):
     for i, r in enumerate(rows):
         c.execute(
             """INSERT INTO predictions
-               (id, created_at, confidence, status, outcome_return, outcome_date,
-                source, timeframe, direction, signals_used)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, created_at, confidence, raw_confidence, status, outcome_return,
+                outcome_date, source, timeframe, direction, signals_used)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 r.get("id", f"id{i}"),
                 r.get("created_at", "2026-05-01T00:00:00+00:00"),
                 r["confidence"],
+                r.get("raw_confidence"),
                 r["status"],
                 r.get("outcome_return"),
                 r.get("outcome_date", f"2026-05-{(i % 27) + 1:02d}T00:00:00+00:00"),
@@ -140,6 +141,39 @@ def test_load_closed_source_filter():
         ],
     )
     assert len(backfill_eval.load_closed(c, source="LIVE")) == 1
+
+
+def test_load_closed_uses_raw_confidence_baseline():
+    # A recalibrated row: stored confidence 0.25, raw_confidence 0.65. The
+    # baseline the harness scores must be the RAW 0.65 (COALESCE), not 0.25.
+    c = _conn()
+    _insert(c, [{"confidence": 0.25, "raw_confidence": 0.65, "status": "MISS"}])
+    rows = backfill_eval.load_closed(c)
+    assert rows[0]["confidence"] == 0.65
+    # Legacy row (raw_confidence NULL) falls back to confidence.
+    c2 = _conn()
+    _insert(c2, [{"confidence": 0.6, "status": "HIT"}])
+    assert backfill_eval.load_closed(c2)[0]["confidence"] == 0.6
+
+
+def test_eval_recalibration_timeframe_filters_scored_rows():
+    c = _conn()
+    _insert(
+        c,
+        [
+            {"confidence": 0.65, "status": "MISS", "timeframe": "1W", "id": f"w{i}"}
+            for i in range(10)
+        ]
+        + [
+            {"confidence": 0.65, "status": "HIT", "timeframe": "1M", "id": f"m{i}"}
+            for i in range(10)
+        ],
+    )
+    rows = backfill_eval.load_closed(c)
+    _, _, n_tr, n_te = backfill_eval.eval_recalibration(
+        rows, oos_fraction=0.3, timeframe="1W"
+    )
+    assert n_tr + n_te == 10  # only the 1W rows are split/scored, not all 20
 
 
 # --------------------------------------------------------------------------- #

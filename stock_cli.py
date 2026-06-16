@@ -844,13 +844,22 @@ def cmd_predict_create(args) -> int:
         components = None
         if args.components:
             try:
-                # Reject NaN/Infinity — they are not valid JSON and would later
-                # serialize back out as non-standard tokens and skew the
-                # numeric positive/negative split.
+                # Reject non-finite numbers — the NaN/Infinity literals (via
+                # parse_constant) and ordinary float tokens that overflow to inf
+                # like 1e999 (via parse_float). Either would serialize back out
+                # as non-standard JSON and skew the positive/negative split.
                 def _no_nan(_tok):
                     raise ValueError(f"non-finite number in --components: {_tok}")
 
-                components = json.loads(args.components, parse_constant=_no_nan)
+                def _finite_float(_tok):
+                    v = float(_tok)
+                    if v in (float("inf"), float("-inf")):
+                        raise ValueError(f"non-finite number in --components: {_tok}")
+                    return v
+
+                components = json.loads(
+                    args.components, parse_constant=_no_nan, parse_float=_finite_float
+                )
             except (json.JSONDecodeError, ValueError) as exc:
                 _print_json({"error": f"--components is not valid JSON: {exc}"})
                 return 1

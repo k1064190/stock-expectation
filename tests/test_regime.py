@@ -188,6 +188,22 @@ def test_aggregate_single_proxy():
     assert agg.proxy_scores == {"SPY": v.score}
 
 
+def test_aggregate_neutral_floor_beats_higher_scoring_risk_on():
+    # Proxy A: insufficient history → floored NEUTRAL with score 0.
+    floored = compute_regime(
+        _metrics(ma50=None, ma200=None, return_1m=None, pct_from_52w_high=None),
+        realized_vol_annual=None,
+    )
+    floored.index_ticker = "QQQ"
+    assert floored.label == "NEUTRAL" and floored.score == 0
+    # Proxy B: a mild RISK_ON at score 1.
+    mild = compute_regime(_metrics(), realized_vol_annual=0.22)  # +1 vol → score 1
+    mild.index_ticker = "SPY"
+    assert mild.label == "RISK_ON" and mild.score == 1
+    # Severity-first selection keeps the NEUTRAL floor, not the score-1 RISK_ON.
+    assert aggregate_regime([mild, floored]).label == "NEUTRAL"
+
+
 def test_aggregate_empty_raises():
     with pytest.raises(ValueError):
         aggregate_regime([])

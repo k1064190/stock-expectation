@@ -240,6 +240,11 @@ def test_cli_rejects_nan_components():
     assert stock_cli.cmd_predict_create(_create_args(components='{"news": NaN}')) == 1
 
 
+def test_cli_rejects_overflow_components():
+    # 1e999 overflows to inf via parse_float — must be rejected, not stored.
+    assert stock_cli.cmd_predict_create(_create_args(components='{"news": 1e999}')) == 1
+
+
 # One below the module threshold, expressed via the constant so the test tracks
 # any future change to MIN_CLOSED_FOR_RECAL.
 MIN_BELOW = stock_cli.MIN_CLOSED_FOR_RECAL - 1
