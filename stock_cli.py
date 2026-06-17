@@ -82,7 +82,7 @@ from metrics import (
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
-from indicators import compute_horizon_metrics
+from indicators import compute_horizon_metrics, compute_atr
 from regime import aggregate_regime, compute_regime, compute_realized_vol
 from sector_rs import (
     US_BENCHMARK,
@@ -111,6 +111,7 @@ from portfolio.evaluator import (
     compute_vs_predictions,
     compute_advice,
 )
+from portfolio.exit_manager import compute_exit_actions
 from portfolio.toss_sync import fetch_positions, reconcile
 
 
@@ -1749,6 +1750,85 @@ def cmd_portfolio_advice(args) -> int:
         return 1
 
 
+def cmd_portfolio_exit_check(args) -> int:
+    """Advisory exit/trim/add/watch/hold check per holding.
+
+    Mirrors :func:`cmd_portfolio_advice` but layers ATR chandelier trailing
+    stops, R:R take-profit, and linked-prediction thesis invalidation via
+    :func:`portfolio.exit_manager.compute_exit_actions`. Provider failures
+    degrade gracefully (the affected ticker downgrades to WATCH).
+    """
+    try:
+        conn = pf_get_connection()
+        try:
+            pf = get_portfolio_for_market(conn, args.market)
+            if pf is None:
+                _print_json({"error": f"No portfolio for market {args.market}"})
+                return 1
+            positions = compute_positions(conn, pf.id)
+            provider = _get_provider(args.market)
+
+            current_prices: dict = {}
+            metrics_by_ticker: dict = {}
+            atr_by_ticker: dict = {}
+            for pos in positions:
+                bars = provider.get_price_history(pos.ticker, days=300)
+                if not bars:
+                    continue
+                current_prices[pos.ticker] = bars[-1].close
+                bar_dicts = [asdict(b) for b in bars]
+                metrics = compute_horizon_metrics(
+                    bars=bar_dicts, ticker=pos.ticker, market=args.market.upper()
+                )
+                # ~22-bar swing high for the chandelier high-watermark (fixed
+                # lookback — see references/exit_rules.md for the caveat).
+                swing_high = max(b.high for b in bars[-22:])
+                metrics_by_ticker[pos.ticker] = {
+                    "current_price": metrics.current_price,
+                    "ma20": metrics.ma20,
+                    "ma50": metrics.ma50,
+                    "ma200": metrics.ma200,
+                    "rsi14": metrics.rsi14,
+                    "overextension_level": metrics.overextension_level,
+                    "swing_high_22": swing_high,
+                }
+                atr = compute_atr(bar_dicts, period=14)
+                if atr is not None:
+                    atr_by_ticker[pos.ticker] = atr
+
+            # Linked OPEN predictions, keyed by ticker.
+            open_predictions_by_ticker: dict = {}
+            pred_conn = get_connection()
+            try:
+                for pos in positions:
+                    preds = db_list_predictions(
+                        pred_conn,
+                        market=args.market.upper(),
+                        ticker=pos.ticker,
+                        limit=20,
+                    )
+                    open_predictions_by_ticker[pos.ticker] = [asdict(p) for p in preds]
+            finally:
+                pred_conn.close()
+
+            result = compute_exit_actions(
+                positions,
+                current_prices=current_prices,
+                metrics_by_ticker=metrics_by_ticker,
+                atr_by_ticker=atr_by_ticker,
+                open_predictions_by_ticker=open_predictions_by_ticker,
+                atr_mult=args.atr_mult,
+                tp_rr=args.tp_rr,
+            )
+            _print_json({"portfolio": pf.name, "market": pf.market, **result})
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 def cmd_portfolio_sync(args) -> int:
     """Sync portfolio from Toss Securities.
 
@@ -2275,6 +2355,25 @@ def build_parser() -> argparse.ArgumentParser:
     pa = pf_sub.add_parser("advice", help="Trading advice signals")
     pa.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     pa.set_defaults(func=cmd_portfolio_advice)
+
+    pec = pf_sub.add_parser(
+        "exit-check",
+        help="Advisory exit/trim/add check (ATR trailing stop + R:R + thesis)",
+    )
+    pec.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    pec.add_argument(
+        "--atr-mult",
+        type=float,
+        default=3.0,
+        help="Chandelier ATR multiplier (default 3.0)",
+    )
+    pec.add_argument(
+        "--tp-rr",
+        type=float,
+        default=2.0,
+        help="Take-profit R-multiple threshold (default 2.0)",
+    )
+    pec.set_defaults(func=cmd_portfolio_exit_check)
 
     # portfolio sync
     psync = pf_sub.add_parser(
