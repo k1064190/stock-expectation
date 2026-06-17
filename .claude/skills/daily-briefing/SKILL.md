@@ -233,6 +233,12 @@ Cron 브리핑의 후보는 더 이상 모멘텀 단일 스트림이 아니다.
 + `setup_type`(base_pivot/pullback/rs_leader/pre_earnings/momentum)를 포함한다.
 주간 calibration이 이 태그로 스트림별 적중률을 추적한다.
 
+**호라이즌 규칙 (백테스트 근거)**: PRE-SURGE 픽(base/pullback/rs_leader)은 **1M 이상**에 conviction을
+둔다 — base/pullback 셋업은 전개에 수 주가 걸려, 1W 호라이즌에서는 약 60%가 목표 미달로 만료(dead money,
+as-of 백테스트)되지만 1M에서는 만료 ~11%로 모멘텀과 대등하다. MOMENTUM 픽은 1W도 무방.
+즉 pre-surge는 모멘텀을 "이긴다"기보다 퍼널이 못 보던 **다양성**을 더하는 가산 스트림이며, 과열 캡(store
+게이트)이 실증된 핵심 개선이다.
+
 ### 5. 예측 등록 (각 종목별)
 
 BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).

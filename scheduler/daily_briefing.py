@@ -452,6 +452,7 @@ Rules:
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
 - COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
 - Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
+- HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W.
 - Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick
 - Use --source LIVE --recalibrate (this is the automated scheduler, not interactive)
 
@@ -525,6 +526,7 @@ Rules:
 - GATE R2 (overextension): horizon-metrics `overextension_level` EXTREME → WATCH only; ELEVATED → raise the bar + trim.
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
 - COMPONENTS (mandatory): every `predict create` passes `--components` JSON with the pillar scores AND `"overextension"` AND `"return_1m"` (decimal) AND `"discovery_source"` AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly.
+- HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W. (KR default is already 1M.)
 - Consider won/dollar impact on exporters
 - Cross-market: US 반도체·AI·auto-tech 모멘텀은 KR 반도체·전장·SW 통합사로
   통상 1일 지연 전이된다. 위 'Active Themes' 블록이 비어있지 않다면 거기에

@@ -350,6 +350,13 @@ def test_live_bull_without_components_is_allowed(db_conn):
     assert get_prediction(db_conn, pred.id) is not None
 
 
+def test_live_bull_boolean_trailing_return_is_not_treated_as_parabolic(db_conn):
+    """A bool in return_1m must not slip through the int/float check (bool<:int)."""
+    pred = _bull("FFF", {"overextension": "NONE", "return_1m": True})
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
 def test_interactive_bull_extreme_is_allowed(db_conn):
     """Only LIVE is gated — INTERACTIVE may log an overextended BULL deliberately."""
     p = _pred(ticker="EEE", direction="BULL", source="INTERACTIVE")

@@ -54,12 +54,22 @@ additive blend + cohort tagging**.
 
 ## Ship-gate status & decision
 
-The WT-A.3 ship gate (pre-surge − momentum hit-rate CI lower-bound > 0) **did not pass** (1W delta
-+8.9pp, CI [-1.0,+18.3]). Per that result and Doctor Cho's choice, this stage ships as **additive +
-tagged**, NOT a momentum replacement, and the production-cron promotion of the blend remains gated:
-the **store-level overextension gate is the proven, independently-justified win** (it removes the
-worst parabolic tail); the pre-surge stream is added for diversification + forward cohort
-measurement via the new components tags.
+The WT-A.3 ship gate (EXPIRED-aware) **did not pass**: at 1W pre-surge is conclusively worse
+(−13.3pp, dead-money expiry 60% vs 33%), and at 1M the cohorts are tied (−1.9pp, CI spans 0). So
+this stage ships as **additive + tagged**, NOT a momentum replacement: the **store-level
+overextension gate is the proven, independently-justified win** (removes the parabolic tail), and
+pre-surge is kept for diversification + forward measurement — but **anchored at 1M+** (a base needs
+weeks; at 1W it just expires). The prompts/SKILL now encode that horizon rule.
+
+## Review loop
+
+- **code-reviewer-pro** (A.2 diff): 0 critical, 1 warning — `isinstance(trailing,(int,float))` lets a
+  `bool` slip through (`True>0.20` would falsely gate). **Fixed** (`and not isinstance(trailing,bool)`)
+  + added `test_live_bull_boolean_trailing_return_is_not_treated_as_parabolic`. Integration checks
+  (both modes wired, imports clean, error path safe) passed.
+- **gemini -m pro**: substantive review landed on WT-A.3 (the EXPIRED gate P0, actioned there); its
+  effect on A.2 is the corrected ship-gate framing + the 1M-horizon rule above.
+- Outcome: 1 warning fixed + tested; suggestions (dual-gate error detail) noted, low priority.
 
 ## INTEGRATION TODO (post-merge)
 

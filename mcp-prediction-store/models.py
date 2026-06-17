@@ -489,7 +489,11 @@ def _check_overextension_gate(pred: Prediction) -> None:
     overext = pred.components.get("overextension")
     trailing = pred.components.get("return_1m")
     parabolic = (
-        isinstance(trailing, (int, float)) and trailing > GATE_PARABOLIC_RETURN_1M
+        isinstance(trailing, (int, float))
+        and not isinstance(
+            trailing, bool
+        )  # bool is an int subclass — reject True/False
+        and trailing > GATE_PARABOLIC_RETURN_1M
     )
     if overext == "EXTREME" or parabolic:
         detail = (
