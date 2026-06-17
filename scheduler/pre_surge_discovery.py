@@ -181,6 +181,11 @@ def _detect_pullback(metrics, closes: list[float], volumes: list[float]):
         return None
     if metrics.overextension_level == "EXTREME":
         return None
+    # Apply the shared parabolic cap: a name already up >20% over the trailing
+    # month is a momentum chase even if it has dipped near its MAs — keep it out
+    # of the pre-surge stream (it belongs to momentum, subject to the store gate).
+    if metrics.return_1m is not None and metrics.return_1m >= PARABOLIC_RETURN_1M:
+        return None
     rsi = metrics.rsi14
     if rsi is None or not (PULLBACK_RSI_LOW <= rsi <= PULLBACK_RSI_HIGH):
         return None

@@ -54,6 +54,16 @@ the blended funnel (WT-A.2) and the as-of validation harness (WT-A.3).
   C (rs_leader) — modest 5d moves, not parabolic chases. KR returned defensive/value pullbacks
   (SK텔레콤, KT&G, …). Both markets exit 0.
 
+## Review loop
+
+- **code-reviewer-pro**: clean — math (window slicing, ddof, non-overlapping windows), never-raise,
+  backward-compatible Candidate extension, look-ahead-safe pure scorer all verified; 0 findings.
+- **gemini -m pro**: NONE.
+- **codex -m gpt-5.5 (1 P1, actioned)**: the pullback detector didn't apply the shared 20% trailing
+  parabolic cap, so an already-run name pulling back near its MAs (not EXTREME) could be emitted as
+  pre-surge — added a `return_1m >= PARABOLIC_RETURN_1M` guard to `_detect_pullback`.
+- Outcome: 1 codex P1 fixed; reviews otherwise clean.
+
 ## Retrospective
 
 - What went well: reusing the existing HorizonMetrics + universe enumeration kept the new module
