@@ -14,6 +14,12 @@ The function NEVER raises. Any missing input downgrades the affected rule and
 falls back to WATCH rather than guessing a HOLD. TRIM/EXIT are advisory only —
 this module never mutates predictions and never records trades.
 
+Positions are LONG holdings, so the linked-prediction rules are direction-aware:
+only a BULL prediction supplies the long stop / target / R:R and a MISS-based
+thesis invalidation. A BEAR linked prediction is a *contradiction signal*
+surfaced via the ``flags`` field (and nudged to WATCH) — never a long-stop
+source and never a forced EXIT/TRIM on a healthy long.
+
 All numeric outputs are JSON-serializable. Percentages (``pnl_pct``) are
 human-readable percents (e.g. 9.09 for +9.09%); overextension follows the
 :mod:`indicators` convention of decimals internally but is passed in already
@@ -127,9 +133,14 @@ def _evaluate_position(
             overextension_level, swing_high_22). May be empty.
         atr: Average True Range for the ticker, or None.
         pred: Latest OPEN linked prediction dict, or None. This is the
-            ``linked_prediction`` surfaced in the result.
+            ``linked_prediction`` surfaced in the result. Direction matters:
+            because a position is a LONG, only a BULL link feeds the long
+            stop / target / R:R; a BEAR link is treated as a contradiction
+            signal (flag + WATCH), never a long-stop source.
         latest_pred: Latest prediction overall (any status), used only for the
-            thesis-invalidation EXIT (status==MISS). May equal ``pred``.
+            thesis-invalidation EXIT (status==MISS). A MISS invalidates the
+            long only when its direction is BULL — a BEAR MISS (price rose) is
+            bullish for the long and never forces EXIT. May equal ``pred``.
         atr_mult: Chandelier ATR multiplier.
         tp_rr: Take-profit R-multiple threshold.
 
@@ -172,19 +183,33 @@ def _evaluate_position(
     stack_broke = ma20 is not None and ma50 is not None and ma20 < ma50
 
     # Linked-prediction summary (advisory; never mutated).
+    #
+    # Direction matters: a position is a LONG holding, so only a BULL linked
+    # prediction's stop/target/R:R map onto the long. A BEAR linked prediction
+    # is a contradiction *signal* (the thesis says price should fall) — its
+    # stop sits ABOVE entry and its target BELOW, so feeding it into the long
+    # stop / target / R:R / MISS logic is nonsensical. We therefore only pull
+    # pred_stop/pred_target from a BULL link and flag a BEAR link separately.
     linked = None
     pred_stop = None
+    pred_is_bull = False
+    bear_contradiction = False
     if pred is not None:
-        pred_stop = _num(pred.get("stop_price"))
-        pred_target = _num(pred.get("target_price"))
+        pred_dir = str(pred.get("direction", "")).upper()
+        pred_is_bull = pred_dir == "BULL"
+        bear_contradiction = pred_dir == "BEAR"
+        pred_target = None
         rr_progress = None
-        if (
-            price is not None
-            and pred_stop is not None
-            and pred_target is not None
-            and (pred_target - pred_stop) != 0
-        ):
-            rr_progress = (price - pred_stop) / (pred_target - pred_stop)
+        if pred_is_bull:
+            pred_stop = _num(pred.get("stop_price"))
+            pred_target = _num(pred.get("target_price"))
+            if (
+                price is not None
+                and pred_stop is not None
+                and pred_target is not None
+                and (pred_target - pred_stop) != 0
+            ):
+                rr_progress = (price - pred_stop) / (pred_target - pred_stop)
         linked = {
             "id": pred.get("id"),
             "direction": pred.get("direction"),
@@ -203,6 +228,11 @@ def _evaluate_position(
             )
 
     triggered: list[str] = []
+    flags: list[str] = []
+    if bear_contradiction:
+        flags.append(
+            "linked OPEN prediction is BEAR — thesis contradicts the long (관망 신호)"
+        )
 
     # ---- helpers for the no-data fallback -------------------------------- #
     # We have enough to evaluate the trend rules only when we have a price AND
@@ -219,6 +249,7 @@ def _evaluate_position(
             "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
             "action": action,
             "triggered_rules": triggered,
+            "flags": flags,
             "atr": atr,
             "trailing_stop": (
                 round(trailing_stop, 4) if trailing_stop is not None else None
@@ -235,10 +266,18 @@ def _evaluate_position(
         return _result("WATCH")
 
     # ---- RULE 1: EXIT (hardest risk-off) -------------------------------- #
+    # pred_stop is populated only for a BULL link (see above), so a BEAR link
+    # can never trigger a long-stop EXIT here.
     if pred_stop is not None and price < pred_stop:
         triggered.append(f"price {price} < linked stop {pred_stop} (EXIT)")
-    if latest_pred is not None and str(latest_pred.get("status", "")).upper() == "MISS":
-        triggered.append("linked prediction status==MISS (thesis invalidated)")
+    # A MISS only invalidates the LONG when the missed thesis was BULL. A BEAR
+    # MISS means price ROSE — bullish for the long — so it must NOT force EXIT.
+    if (
+        latest_pred is not None
+        and str(latest_pred.get("status", "")).upper() == "MISS"
+        and str(latest_pred.get("direction", "")).upper() == "BULL"
+    ):
+        triggered.append("linked BULL prediction status==MISS (thesis invalidated)")
     if ma200 is not None and price < ma200:
         triggered.append(f"close {price} below MA200 {round(ma200, 2)}")
     if trailing_stop is not None and price < trailing_stop:
@@ -271,10 +310,9 @@ def _evaluate_position(
         return _result("WATCH")
 
     # ---- RULE 3: ADD (pyramid into strength) ---------------------------- #
-    bull_ok = pred is None or str(pred.get("direction", "")).upper() == "BULL"
-    bear_contradicts = pred is not None and str(pred.get("direction", "")).upper() == (
-        "BEAR"
-    )
+    # A BULL or absent link is add-friendly; a BEAR link contradicts the long
+    # and blocks the pyramid (it is a contradiction signal, not a stop source).
+    bull_ok = pred is None or pred_is_bull
     add_ready = (
         overext == "NONE"
         and rsi14 is not None
@@ -283,11 +321,20 @@ def _evaluate_position(
         and pnl_pct is not None
         and 0.0 <= pnl_pct <= ADD_PNL_MAX_PCT
         and bull_ok
-        and not bear_contradicts
+        and not bear_contradiction
     )
     if add_ready:
         triggered.append("trend intact, modest gain, no contradiction (ADD)")
         return _result("ADD")
+
+    # ---- RULE 4/5: WATCH on a BEAR contradiction ------------------------ #
+    # A BEAR linked thesis never forces EXIT/TRIM on a long (those are handled
+    # above and gated on BULL), but it is a genuine contradiction. With no
+    # risk-off or take-profit trigger, surface it as WATCH rather than a silent
+    # HOLD so the operator reviews the conflicting thesis.
+    if bear_contradiction:
+        triggered.append("BEAR linked thesis contradicts the long (WATCH)")
+        return _result("WATCH")
 
     # ---- RULE 5: HOLD (trend intact, nothing triggered) ----------------- #
     # If the trend backbone is intact (above MA200, no trailing breach) we
@@ -382,6 +429,7 @@ def compute_exit_actions(
                     "pnl_pct": None,
                     "action": "WATCH",
                     "triggered_rules": [f"evaluation error: {e}"],
+                    "flags": [],
                     "atr": None,
                     "trailing_stop": None,
                     "ma_status": {},

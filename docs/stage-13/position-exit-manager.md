@@ -65,3 +65,44 @@ end with a concrete EXIT / TRIM / ADD / WATCH / HOLD per position.
   while the position still has real downside risk.
 - Tests: `442 passed, 23 deselected` (full non-network suite);
   `90 passed, 6 skipped` for the targeted ATR + exit-manager set.
+
+## Review loop
+
+- **code-reviewer-pro:** clean — no blocking findings on the original stage diff.
+- **codex (gpt-5.5) + gemini (pro):** surfaced three actionable items missed by
+  the first pass:
+  - **P0 — direction-awareness (both reviewers).** The exit rules applied
+    BULL/long logic to a linked prediction's stop/target/MISS regardless of
+    direction. A BEAR-linked prediction has its stop ABOVE entry and a BEAR
+    MISS means price ROSE (bullish for a long), so the original code would
+    spuriously EXIT a healthy long on the BEAR stop and "invalidate" the long
+    on a BEAR MISS.
+  - **P1 — prediction lookup (codex).** `cmd_portfolio_exit_check` used one
+    mixed-status `limit=20` query that could drop the relevant OPEN thesis.
+  - **P0/P1 — per-ticker robustness (both).** The per-ticker price/metric
+    fetch loop was unwrapped, so one provider failure aborted the whole
+    command.
+
+### What was fixed
+
+- **Direction-awareness** (`portfolio/exit_manager.py`): only a **BULL** linked
+  OPEN prediction now supplies `pred_stop`/`pred_target`/`rr_progress`/
+  `effective_stop`. A BEAR link is a *contradiction signal* — surfaced in a new
+  `flags` field and nudged to WATCH, never a long-stop EXIT or TRIM. The
+  MISS-invalidation EXIT now fires only when the latest-overall prediction is
+  BULL. Six new direction-aware tests cover: BEAR stop-above-entry → no EXIT,
+  BEAR → no TRIM on a profitable long, BEAR → WATCH+flag, BEAR MISS → no EXIT,
+  and BULL stop/MISS regressions still fire. `flags` was added to all result
+  shapes (normal + never-raise fallback) and `test_action_entry_has_all_fields`.
+- **Prediction lookup** (`stock_cli.py`): replaced the single `limit=20` query
+  with two `limit=1` queries — latest `status="OPEN"` (for stop/target/R:R) and
+  latest-overall (for the MISS check) — deduped by id, consistent with how
+  `exit_manager` links.
+- **Per-ticker robustness** (`stock_cli.py`): each ticker's fetch/compute is now
+  wrapped in try/except; a failure records the error, clears any partial state
+  for that ticker (so it degrades to WATCH), and the error note is appended to
+  that holding's `triggered_rules` rather than crashing the command.
+
+- Tests after fixes: `96 passed, 6 skipped` for
+  `portfolio/tests/test_exit_manager.py mcp-market-data/tests`; full
+  `portfolio/tests` non-network suite `96 passed`.

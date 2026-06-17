@@ -1771,43 +1771,66 @@ def cmd_portfolio_exit_check(args) -> int:
             current_prices: dict = {}
             metrics_by_ticker: dict = {}
             atr_by_ticker: dict = {}
+            fetch_errors: dict = {}
             for pos in positions:
-                bars = provider.get_price_history(pos.ticker, days=300)
-                if not bars:
-                    continue
-                current_prices[pos.ticker] = bars[-1].close
-                bar_dicts = [asdict(b) for b in bars]
-                metrics = compute_horizon_metrics(
-                    bars=bar_dicts, ticker=pos.ticker, market=args.market.upper()
-                )
-                # ~22-bar swing high for the chandelier high-watermark (fixed
-                # lookback — see references/exit_rules.md for the caveat).
-                swing_high = max(b.high for b in bars[-22:])
-                metrics_by_ticker[pos.ticker] = {
-                    "current_price": metrics.current_price,
-                    "ma20": metrics.ma20,
-                    "ma50": metrics.ma50,
-                    "ma200": metrics.ma200,
-                    "rsi14": metrics.rsi14,
-                    "overextension_level": metrics.overextension_level,
-                    "swing_high_22": swing_high,
-                }
-                atr = compute_atr(bar_dicts, period=14)
-                if atr is not None:
-                    atr_by_ticker[pos.ticker] = atr
+                # Each ticker's fetch/compute is isolated: one provider failure
+                # must degrade that holding to WATCH, not abort the command.
+                try:
+                    bars = provider.get_price_history(pos.ticker, days=300)
+                    if not bars:
+                        continue
+                    current_prices[pos.ticker] = bars[-1].close
+                    bar_dicts = [asdict(b) for b in bars]
+                    metrics = compute_horizon_metrics(
+                        bars=bar_dicts, ticker=pos.ticker, market=args.market.upper()
+                    )
+                    # ~22-bar swing high for the chandelier high-watermark (fixed
+                    # lookback — see references/exit_rules.md for the caveat).
+                    swing_high = max(b.high for b in bars[-22:])
+                    metrics_by_ticker[pos.ticker] = {
+                        "current_price": metrics.current_price,
+                        "ma20": metrics.ma20,
+                        "ma50": metrics.ma50,
+                        "ma200": metrics.ma200,
+                        "rsi14": metrics.rsi14,
+                        "overextension_level": metrics.overextension_level,
+                        "swing_high_22": swing_high,
+                    }
+                    atr = compute_atr(bar_dicts, period=14)
+                    if atr is not None:
+                        atr_by_ticker[pos.ticker] = atr
+                except Exception as e:  # degrade this holding to WATCH
+                    fetch_errors[pos.ticker] = str(e)
+                    current_prices.pop(pos.ticker, None)
+                    metrics_by_ticker.pop(pos.ticker, None)
+                    atr_by_ticker.pop(pos.ticker, None)
 
-            # Linked OPEN predictions, keyed by ticker.
+            # Linked predictions, keyed by ticker. The exit_manager links to the
+            # latest OPEN prediction for stop/target/R:R and the latest-overall
+            # for the MISS thesis-invalidation check, so we query both
+            # separately to avoid a mixed-status limit window dropping the
+            # relevant OPEN thesis.
             open_predictions_by_ticker: dict = {}
             pred_conn = get_connection()
             try:
                 for pos in positions:
-                    preds = db_list_predictions(
+                    latest_open = db_list_predictions(
+                        pred_conn,
+                        status="OPEN",
+                        market=args.market.upper(),
+                        ticker=pos.ticker,
+                        limit=1,
+                    )
+                    latest_overall = db_list_predictions(
                         pred_conn,
                         market=args.market.upper(),
                         ticker=pos.ticker,
-                        limit=20,
+                        limit=1,
                     )
-                    open_predictions_by_ticker[pos.ticker] = [asdict(p) for p in preds]
+                    combined = {p.id: p for p in (*latest_open, *latest_overall)}
+                    open_predictions_by_ticker[pos.ticker] = [
+                        asdict(p) for p in combined.values()
+                    ]
             finally:
                 pred_conn.close()
 
@@ -1820,6 +1843,15 @@ def cmd_portfolio_exit_check(args) -> int:
                 atr_mult=args.atr_mult,
                 tp_rr=args.tp_rr,
             )
+            # Annotate holdings whose data fetch failed so the WATCH downgrade
+            # carries the underlying error rather than a bare "no price" note.
+            if fetch_errors:
+                for action in result.get("actions", []):
+                    err = fetch_errors.get(action.get("ticker"))
+                    if err:
+                        action.setdefault("triggered_rules", []).append(
+                            f"데이터 조회 실패 (data fetch error): {err}"
+                        )
             _print_json({"portfolio": pf.name, "market": pf.market, **result})
             return 0
         finally:

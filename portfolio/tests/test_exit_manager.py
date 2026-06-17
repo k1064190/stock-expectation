@@ -110,6 +110,7 @@ def test_action_entry_has_all_fields():
         "ma_status",
         "overextension_level",
         "linked_prediction",
+        "flags",
         "reason_ko_hint",
     ):
         assert key in a, f"missing field: {key}"
@@ -406,6 +407,107 @@ def test_linked_prediction_picks_latest_by_created_at():
     )
     a = _action(result)
     assert a["linked_prediction"]["id"] == "new"
+
+
+# --------------------------------------------------------------------------- #
+# Direction-awareness — positions are LONG; only a BULL link feeds long rules
+# --------------------------------------------------------------------------- #
+def test_bear_link_stop_above_entry_does_not_force_exit():
+    # A BEAR thesis sets stop ABOVE entry (110) and target below. On a healthy
+    # long at 110 the old code did `price < pred_stop` → spurious EXIT. The
+    # long must NOT be force-exited by a BEAR stop.
+    metrics = _HEALTHY_METRICS_BY()
+    metrics["NVDA"]["ma200"] = 50.0  # keep MA200/trailing from firing
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 110.0},
+        metrics,
+        {"NVDA": 2.0},
+        {"NVDA": [_pred(direction="BEAR", stop=130.0, target=80.0)]},
+    )
+    a = _action(result)
+    assert a["action"] != "EXIT"
+    # BEAR link must not be surfaced as a long stop.
+    assert a["linked_prediction"]["stop"] is None
+
+
+def test_bear_link_does_not_trim_profitable_long():
+    # Same BEAR link but with a big gain — must not be coerced into a TRIM by a
+    # BEAR target/stop. (No R:R derived from a BEAR link.)
+    metrics = _HEALTHY_METRICS_BY()
+    metrics["NVDA"]["ma200"] = 50.0
+    metrics["NVDA"]["swing_high_22"] = 122.0  # trailing 122-6=116 < price 120
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 120.0},
+        metrics,
+        {"NVDA": 2.0},
+        {"NVDA": [_pred(direction="BEAR", stop=130.0, target=80.0)]},
+    )
+    a = _action(result)
+    assert a["action"] not in {"EXIT", "TRIM"}
+    assert a["linked_prediction"]["rr_progress"] is None
+
+
+def test_bear_link_surfaces_watch_with_flag():
+    # A BEAR thesis on a healthy long is a contradiction signal → WATCH + flag,
+    # never a silent HOLD/ADD.
+    metrics = _HEALTHY_METRICS_BY()
+    metrics["NVDA"]["ma200"] = 50.0
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 110.0},
+        metrics,
+        {"NVDA": 2.0},
+        {"NVDA": [_pred(direction="BEAR", stop=130.0, target=80.0)]},
+    )
+    a = _action(result)
+    assert a["action"] == "WATCH"
+    assert any("BEAR" in f for f in a["flags"])
+
+
+def test_bear_miss_does_not_invalidate_long():
+    # A BEAR MISS means price ROSE — bullish for the long. Must NOT force EXIT.
+    metrics = _HEALTHY_METRICS_BY()
+    metrics["NVDA"]["ma200"] = 50.0
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 110.0},
+        metrics,
+        {"NVDA": 2.0},
+        {"NVDA": [_pred(direction="BEAR", status="MISS", stop=130.0, target=80.0)]},
+    )
+    a = _action(result)
+    assert a["action"] != "EXIT"
+    assert not any("MISS" in r for r in a["triggered_rules"])
+
+
+def test_bull_link_still_exits_below_stop():
+    # Regression: a BULL link still supplies the long stop and EXITs below it.
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 91.0},
+        _HEALTHY_METRICS_BY(),
+        {"NVDA": 4.0},
+        {"NVDA": [_pred(direction="BULL", stop=92.0)]},
+    )
+    a = _action(result)
+    assert a["action"] == "EXIT"
+    assert any("stop" in r.lower() for r in a["triggered_rules"])
+
+
+def test_bull_miss_still_invalidates_long():
+    # Regression: a BULL MISS (price fell through stop) still invalidates.
+    result = _run(
+        [_pos(avg=100.0)],
+        {"NVDA": 110.0},
+        _HEALTHY_METRICS_BY(),
+        {"NVDA": 4.0},
+        {"NVDA": [_pred(direction="BULL", status="MISS")]},
+    )
+    a = _action(result)
+    assert a["action"] == "EXIT"
+    assert any("MISS" in r for r in a["triggered_rules"])
 
 
 def _HEALTHY_METRICS_BY():
