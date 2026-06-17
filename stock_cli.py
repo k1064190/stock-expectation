@@ -40,6 +40,9 @@ from typing import Optional
 
 # Add provider and store paths
 PROJECT_ROOT = Path(__file__).parent
+# Project root itself so `import scheduler.*` (watchlist monitor/store) resolves
+# — scheduler is a source package, not an installed one.
+sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-memory-store"))
@@ -2048,6 +2051,87 @@ def cmd_portfolio_sync(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Watchlist commands (delayed / EOD-ish trigger alerts)
+# ---------------------------------------------------------------------------
+
+
+def cmd_watch_add(args) -> int:
+    """Add a saved watchlist row with explicit trigger levels."""
+    try:
+        from scheduler.watchlist_store import get_connection as wl_get_connection
+        from scheduler.watchlist_store import add_watch
+
+        conn = wl_get_connection()
+        try:
+            watch_id = add_watch(
+                conn,
+                ticker=args.ticker,
+                market=args.market,
+                direction=args.direction,
+                entry_low=args.entry_low,
+                entry_high=args.entry_high,
+                stop=args.stop,
+                target=args.target,
+                reentry=args.reentry,
+                note=args.note,
+            )
+            _print_json({"added": True, "id": watch_id})
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_watch_remove(args) -> int:
+    """Remove a saved watchlist row by id."""
+    try:
+        from scheduler.watchlist_store import get_connection as wl_get_connection
+        from scheduler.watchlist_store import remove_watch
+
+        conn = wl_get_connection()
+        try:
+            removed = remove_watch(conn, args.id)
+            _print_json({"removed": removed, "id": args.id})
+            return 0 if removed else 1
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_watch_list(args) -> int:
+    """List the unified watchlist (saved + open predictions + positions)."""
+    try:
+        from dataclasses import asdict as _asdict
+        from scheduler.watchlist_store import load_unified_watchlist
+
+        targets = load_unified_watchlist(market=args.market)
+        _print_json({"watchlist": [_asdict(t) for t in targets]})
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_watch_check(args) -> int:
+    """Run one monitor pass and print the JSON of fired triggers."""
+    try:
+        from scheduler.watchlist_monitor import run_monitor
+
+        summary = run_monitor(
+            market=args.market, force=args.force, dry_run=args.dry_run
+        )
+        _print_json(summary)
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+# ---------------------------------------------------------------------------
 # Argparse setup
 # ---------------------------------------------------------------------------
 
@@ -2573,6 +2657,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     psync.add_argument("--dry-run", action="store_true", help="Preview without writing")
     psync.set_defaults(func=cmd_portfolio_sync)
+
+    # watch — delayed/EOD-ish trigger alerts for a saved watchlist + open
+    # predictions + portfolio positions.
+    watch = sub.add_parser(
+        "watch", help="Watchlist trigger alerts (delayed/EOD, not real-time)"
+    )
+    watch_sub = watch.add_subparsers(dest="watch_command", required=True)
+
+    wa = watch_sub.add_parser("add", help="Add a saved watch with trigger levels")
+    wa.add_argument("--ticker", required=True)
+    wa.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    wa.add_argument(
+        "--direction", default="BULL", choices=["BULL", "BEAR", "bull", "bear"]
+    )
+    wa.add_argument("--entry-low", type=float, default=None)
+    wa.add_argument("--entry-high", type=float, default=None)
+    wa.add_argument("--stop", type=float, default=None)
+    wa.add_argument("--target", type=float, default=None)
+    wa.add_argument("--reentry", type=float, default=None)
+    wa.add_argument("--note", default=None)
+    wa.set_defaults(func=cmd_watch_add)
+
+    wr = watch_sub.add_parser("remove", help="Remove a saved watch by id")
+    wr.add_argument("id", type=int)
+    wr.set_defaults(func=cmd_watch_remove)
+
+    wl = watch_sub.add_parser(
+        "list", help="List the unified watchlist (saved + predictions + positions)"
+    )
+    wl.add_argument("--market", default=None, choices=["US", "KR", "us", "kr"])
+    wl.set_defaults(func=cmd_watch_list)
+
+    wc = watch_sub.add_parser(
+        "check", help="Run one monitor pass; prints fired triggers as JSON"
+    )
+    wc.add_argument("--market", default=None, choices=["US", "KR", "us", "kr"])
+    wc.add_argument("--force", action="store_true", help="Ignore the market-hours gate")
+    wc.add_argument(
+        "--dry-run", action="store_true", help="Evaluate but send no Telegram"
+    )
+    wc.set_defaults(func=cmd_watch_check)
 
     return parser
 

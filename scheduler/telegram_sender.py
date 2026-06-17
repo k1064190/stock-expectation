@@ -160,17 +160,108 @@ def send_alert(
     Returns:
         True if sent successfully.
     """
-    emoji = {
-        "TARGET": "🎯",
-        "STOP": "⚠️",
-        "EXPIRED": "⏰",
-        "HIT": "✅",
-        "MISS": "❌",
-    }.get(alert_type, "📊")
+    emoji = _ALERT_EMOJI.get(alert_type, "📊")
 
     name_suffix = f" {name}" if name else ""
     text = f"{emoji} *{alert_type}* | {ticker}{name_suffix} ({market})\n{message}"
     return send_message(text)
+
+
+# Trigger-type → emoji map shared by send_alert and send_watch_alert. ENTRY and
+# REENTRY are watchlist-monitor trigger types; TARGET/STOP overlap with the
+# prediction outcome alerts.
+_ALERT_EMOJI = {
+    "TARGET": "🎯",
+    "STOP": "⚠️",
+    "EXPIRED": "⏰",
+    "HIT": "✅",
+    "MISS": "❌",
+    "ENTRY": "📥",
+    "REENTRY": "🔁",
+}
+
+# Korean labels for watchlist trigger types in the alert body.
+_WATCH_TRIGGER_KR = {
+    "ENTRY": "진입 구간 도달",
+    "STOP": "손절가 도달",
+    "TARGET": "목표가 도달",
+    "REENTRY": "재진입 신호",
+}
+
+
+def send_watch_alert(
+    ticker: str,
+    market: str,
+    trigger_type: str,
+    price: float,
+    target=None,
+    name: str = "",
+) -> bool:
+    """Send a Korean watchlist trigger alert (delayed / EOD-ish).
+
+    The watchlist monitor evaluates triggers against the latest CLOSE, not a
+    live tick, so the message states the price is 지연/종가 기준 ("delayed /
+    close-based") to avoid implying real-time execution.
+
+    Args:
+        ticker: Stock ticker.
+        market: "US" or "KR".
+        trigger_type: "ENTRY", "STOP", "TARGET", or "REENTRY".
+        price: Latest close price that triggered the alert.
+        target: Optional object carrying entry_low/entry_high/stop/target/
+            reentry/direction attributes (a WatchTarget) used to print the
+            relevant level alongside the trigger. None omits the level line.
+        name: Optional company name shown next to the ticker.
+
+    Returns:
+        True if sent successfully.
+    """
+    emoji = _ALERT_EMOJI.get(trigger_type, "📊")
+    kr_label = _WATCH_TRIGGER_KR.get(trigger_type, trigger_type)
+    name_suffix = f" {name}" if name else ""
+
+    level_line = ""
+    if target is not None:
+        level = _watch_level_for(target, trigger_type)
+        if level is not None:
+            level_line = f"\n기준선: {level}"
+
+    text = (
+        f"{emoji} *{kr_label}* | {ticker}{name_suffix} ({market})\n"
+        f"현재가(지연/종가 기준): {price:.2f}{level_line}"
+    )
+    return send_message(text)
+
+
+def _watch_level_for(target, trigger_type: str) -> Optional[str]:
+    """Return a human-readable level string for a watch trigger, or None.
+
+    Args:
+        target: An object with entry_low/entry_high/stop/target/reentry attrs.
+        trigger_type: The fired trigger type.
+
+    Returns:
+        A formatted level (e.g. "100.00–105.00" for ENTRY) or None when the
+        relevant level is absent.
+    """
+    if trigger_type == "ENTRY":
+        low = getattr(target, "entry_low", None)
+        high = getattr(target, "entry_high", None)
+        if low is not None and high is not None:
+            if low == high:
+                return f"{low:.2f}"
+            return f"{low:.2f}–{high:.2f}"
+        return None
+    if trigger_type == "STOP":
+        stop = getattr(target, "stop", None)
+        return f"{stop:.2f}" if stop is not None else None
+    if trigger_type == "TARGET":
+        tgt = getattr(target, "target", None)
+        return f"{tgt:.2f}" if tgt is not None else None
+    if trigger_type == "REENTRY":
+        re = getattr(target, "reentry", None)
+        return f"{re:.2f}" if re is not None else None
+    return None
 
 
 def _split_message(text: str) -> list[str]:

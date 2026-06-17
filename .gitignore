@@ -15,6 +15,12 @@ venv/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+# Watchlist monitor DB (covered by data/*.db, listed for clarity)
+data/watchlist.db
+
+# Watchlist monitor dedup/cooldown state (runtime, not tracked)
+state/
+state/watchlist_alerts.json
 
 # Sector-rotation RS snapshots (regenerated per run by `stock-cli sector-rs --write`)
 data/sector_rs_us.json
