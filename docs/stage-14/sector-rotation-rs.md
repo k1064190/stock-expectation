@@ -100,6 +100,13 @@ file exists.
 No standalone backtest harness was built. Sector-cohort validation will reuse
 `scheduler/asof_backtest.py` after merge (per the stage constraint).
 
+## Review loop
+
+- **code-reviewer-pro**: clean — RS/breadth/stage math, NEUTRAL floor, atomic per-market write, and
+  the strict `apply_sector_boost({})` no-op all verified; 0 findings (1 optional doc nit).
+- **codex -m gpt-5.5**: NONE.
+- Outcome: no changes required.
+
 ## Retrospective
 
 - Reusing `HorizonMetrics` end-to-end (including the overextension field) kept
