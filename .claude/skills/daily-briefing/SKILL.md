@@ -239,6 +239,16 @@ as-of 백테스트)되지만 1M에서는 만료 ~11%로 모멘텀과 대등하�
 즉 pre-surge는 모멘텀을 "이긴다"기보다 퍼널이 못 보던 **다양성**을 더하는 가산 스트림이며, 과열 캡(store
 게이트)이 실증된 핵심 개선이다.
 
+**섹터 로테이션 부스트 (WT-C)**: 브리핑은 discovery 전에 `sector-rs --write`로
+`data/sector_rs_<market>.json`를 갱신하고, `assemble_blended_candidates(sector_verdicts=...)`로
+후보 정렬에 섹터 가중치(FAVOR/EARLY ×1.3 … AVOID/LATE ×0.6, 경계됨)를 반영한다. 파일이 없으면
+strict no-op. 후보 블록에 `sector=FAVOR` 등으로 표기되니 추천 thesis에 인용 가능.
+
+**RULE R3 — 이벤트 리스크 게이트 (WT-D)**: 프롬프트의 `## Event Risk` 블록 참조. 후보 티커에 대해
+`evaluate_gate`(어닝/매크로, fail-open, 시장당 1회 fetch)를 호출해 주입한다. 어닝 ≤2 거래일 → WATCH 캡
+(신규 BULL 금지), 어닝/매크로 trim → confidence 한 단계 인하 (R1/R2 위에 stacking). KR은 per-ticker
+어닝 피드가 없어 **매크로 전용**(US FOMC/CPI). `gate_unavailable`(FMP 키 없음/실패)이면 R3는 0으로 처리.
+
 ### 5. 예측 등록 (각 종목별)
 
 BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).
