@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 15 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aa8b4;
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --border: #e0dedd;
+        --text: #1a1a1a;
+        --text-muted: #6b6b6b;
+        --text-light: #9a9a9a;
+        --node-filled-muted: #9dbec8;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        font-size: 15px;
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      header .title-block h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      header .title-block p {
+        font-size: 0.825rem;
+        color: var(--text-muted);
+        margin-top: 0.1rem;
+      }
+
+      header nav[aria-label="Language"] {
+        font-size: 0.825rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      header nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      header nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline strip ── */
+      nav[aria-label="Stage timeline"] {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .timeline-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .timeline-connector {
+        width: 2rem;
+        height: 2px;
+        background: var(--border);
+        flex-shrink: 0;
+      }
+
+      .timeline-node {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .timeline-node.filled-muted {
+        background: var(--node-filled-muted);
+        border: 2px solid var(--node-filled-muted);
+        color: #ffffff;
+      }
+
+      .timeline-node.accent {
+        background: var(--accent);
+        border: 2px solid var(--accent);
+        color: #ffffff;
+      }
+
+      .timeline-label {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        margin-top: 0.35rem;
+        white-space: nowrap;
+      }
+
+      .timeline-item.current .timeline-label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 0.5rem;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .stage-summary {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        margin-bottom: 1.75rem;
+        font-style: italic;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.75rem 2rem;
+        margin-bottom: 1.5rem;
+      }
+
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      .card-section {
+        margin-bottom: 1.25rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+      }
+
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text);
+        line-height: 1.65;
+      }
+
+      .card-section ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .card-section ul li {
+        font-size: 0.9rem;
+        color: var(--text);
+        line-height: 1.6;
+        padding-left: 1.1rem;
+        position: relative;
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--text-light);
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding: 0;
+      }
+
+      .card-section .code-list li {
+        padding: 0.2rem 0;
+        padding-left: 0;
+        margin-bottom: 0;
+      }
+
+      .card-section .code-list li::before {
+        display: none;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border: 1px solid #e4e3e0;
+        border-radius: 3px;
+        padding: 0.1em 0.4em;
+        color: var(--text);
+        word-break: break-all;
+      }
+
+      .card-section.retrospective p {
+        font-style: italic;
+        color: var(--text-muted);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        main {
+          padding: 1.25rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1rem;
+        }
+        nav[aria-label="Stage timeline"] {
+          padding: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="title-block">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">EN | <a href="index.ko.html">한국어</a></nav>
+    </header>
+
+    <nav aria-label="Stage timeline">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">0</div>
+          <div class="timeline-label">Stage 0</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">1</div>
+          <div class="timeline-label">Stage 1</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">2</div>
+          <div class="timeline-label">Stage 2</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">3</div>
+          <div class="timeline-label">Stage 3</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">4</div>
+          <div class="timeline-label">Stage 4</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted" style="font-size: 0.55rem">
+            4.1
+          </div>
+          <div class="timeline-label">Stage 4.1</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">5</div>
+          <div class="timeline-label">Stage 5</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">6</div>
+          <div class="timeline-label">Stage 6</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">7</div>
+          <div class="timeline-label">Stage 7</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">8</div>
+          <div class="timeline-label">Stage 8</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">9</div>
+          <div class="timeline-label">Stage 9</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">11</div>
+          <div class="timeline-label">Stage 11</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item current">
+          <div class="timeline-node accent">15</div>
+          <div class="timeline-label">Stage 15</div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section>
+        <div class="stage-heading">
+          <h2>Stage 15</h2>
+        </div>
+        <p class="stage-summary">
+          Introduces a deterministic, fail-open event-risk gate (R3) that blocks
+          or trims entries when a dated catalyst — earnings print or high-impact
+          macro event — falls within the entry window.
+        </p>
+
+        <article class="card">
+          <h3>Catalyst Event Gate</h3>
+
+          <div class="card-section">
+            <h4>Why</h4>
+            <p>
+              The /expect score (ALGO + NEWS + LLM_CONTEXT) and its R1 (regime)
+              and R2 (overextension) gates are all state-based — none of them
+              can see a dated binary event. A technically strong,
+              macro-confirmed setup is still a bad entry if the next trading day
+              is an earnings print or a Fed decision: the outcome is a coin-flip
+              gap, not the thesis. R3 closes that blind spot with a
+              deterministic, fail-open event-risk gate.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <h4>What</h4>
+            <ul>
+              <li>
+                Unified forward catalyst timeline merging two FMP calendars:
+                <code>/earning_calendar</code> (per-ticker earnings, US-listed
+                only) and <code>/economic_calendar</code> (market-wide
+                high-impact macro: FOMC / CPI / NFP).
+              </li>
+              <li>
+                RULE R3 gate (EventGate): per-ticker earnings cap/trim (US) + a
+                market-wide macro trim (US + KR). KR is macro-only — it consumes
+                the US macro stream (transmits via FX / SOXL) but gets no
+                per-ticker earnings cap (FMP has no forward KR EPS feed).
+              </li>
+              <li>
+                CLI:
+                <code
+                  >bin/stock-cli catalyst timeline TICKERS --market {US,KR}
+                  [--days 14] [--include-macro]</code
+                >
+                and
+                <code>bin/stock-cli catalyst gate TICKERS --market {US,KR}</code
+                >.
+              </li>
+              <li>
+                New catalyst-event-gate skill documenting the timeline
+                structure, the R3 rule table, the CLI, the KR-vs-US matrix, and
+                R1+R2+R3 stacking.
+              </li>
+              <li>
+                /expect wiring: a Step 4 catalyst gate fetch, RULE R3 in the
+                Step 7 gate section, and the ALGO 'Earnings event' row now fed
+                by R3.
+              </li>
+              <li>
+                R3 thresholds (trading days): earnings td &lt;= 2 caps label to
+                WATCH; 2 &lt; td &lt;= 5 trims confidence 0.05; td &gt; 5 none.
+                High-impact FOMC/CPI/NFP within td &lt;= 2 trims macro_trim 0.05
+                across every pick in the market.
+              </li>
+              <li>
+                Stacking: a WATCH cap from R1/R2/R3 wins the label; confidence
+                is pulled down by the strictest cap then the R3 trims; R3 never
+                raises the BUY bar (only R1/R2 do).
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>How</h4>
+            <ul>
+              <li>
+                Pure core is stdlib-only and fetcher-injectable, so the entire
+                R3 logic tests offline: <code>build_timeline</code> /
+                <code>evaluate_gate</code> accept optional
+                <code>fetch_earnings</code> / <code>fetch_macro</code> callables
+                (default to the real httpx FMP wrappers; tests pass stubs).
+              </li>
+              <li>
+                <code>trading_days_between</code> counts Mon–Fri boundaries
+                crossed (same-day = 0, weekend-aware). Holidays are
+                intentionally ignored — documented caveat; the only effect is
+                making an event look ~1 day farther away, the safe direction for
+                a fail-open risk gate.
+              </li>
+              <li>
+                Quota protection: <code>evaluate_gate</code> / the CLI fetch the
+                earnings + macro windows once per call and iterate all tickers
+                in memory (FMP free tier is 250/day). KR skips the earnings
+                fetch entirely.
+              </li>
+              <li>
+                FAIL-OPEN mirrors the rest of mcp-market-data: missing
+                <code>FMP_API_KEY</code> or any fetch exception yields a neutral
+                <code>EventGate(gate_unavailable=True)</code> with zero
+                caps/trims; CLI still exits 0.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>Code Locations</h4>
+            <ul class="code-list">
+              <li>
+                <code>mcp-market-data/events.py</code> — CatalystEvent,
+                EventGate, trading_days_between, build_timeline, evaluate_gate,
+                thresholds, and the thin _fetch_earnings_window /
+                _fetch_macro_window httpx wrappers.
+              </li>
+              <li>
+                <code>stock_cli.py</code> — cmd_catalyst_timeline,
+                cmd_catalyst_gate, _catalyst_tickers, the catalyst nested
+                subparser, events import.
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_events.py</code> — 17 offline
+                tests (stubbed fetchers).
+              </li>
+              <li>
+                <code>.claude/skills/catalyst-event-gate/SKILL.md</code> — new
+                skill doc.
+              </li>
+              <li>
+                <code>.claude/skills/expect/SKILL.md</code> — Step 4 fetch, Step
+                5 ALGO row, Step 7 RULE R3 + R1+R2+R3 stacking.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section retrospective">
+            <h4>Retrospective</h4>
+            <p>
+              Went well: fetcher injection made the whole R3 ruleset testable
+              offline (17 green tests, no network); fail-open + single-fetch
+              quota guard fell out cleanly from copying the existing us.py
+              provider contract. Carry forward: KR is structurally macro-only
+              until a forward KR EPS feed exists; the holiday-naive
+              <code>trading_days_between</code> would need a market holiday
+              calendar if R3 is ever used for hard date math.
+            </p>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
