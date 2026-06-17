@@ -16,6 +16,10 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 
+# Sector-rotation RS snapshots (regenerated per run by `stock-cli sector-rs --write`)
+data/sector_rs_us.json
+data/sector_rs_kr.json
+
 # IDE
 .idea/
 .vscode/

@@ -777,3 +777,139 @@ def _fill_us_names(cands: list[Candidate]) -> list[Candidate]:
         if not c.name:
             c.name = static_names.get(c.ticker, "")
     return cands
+
+
+# ---------------------------------------------------------------------------
+# Sector-rotation boost (consumes data/sector_rs_{market}.json)
+# ---------------------------------------------------------------------------
+
+# Bounded sort-multiplier map keyed by the (verdict, stage) tuple, falling back
+# to a verdict-only multiplier. Tuned to nudge — never dominate — the existing
+# momentum/volume ranking: a strong rotate-in sector gets a 1.3x lift, a
+# rotate-out/late-extreme sector a 0.6x haircut, and NEUTRAL/unknown is exactly
+# 1.0 so the boost is a strict no-op when verdicts are absent.
+_FAVOR_EARLY_MULT = 1.3
+_ROTATING_IN_MULT = 1.15
+_NEUTRAL_MULT = 1.0
+_ROTATING_OUT_MULT = 0.8
+_AVOID_LATE_MULT = 0.6
+
+
+def _sector_multiplier(verdict: Optional[str], stage: Optional[str]) -> float:
+    """Bounded ranking multiplier for a candidate's sector verdict/stage.
+
+    Args:
+        verdict: One of FAVOR / ROTATING_IN / ROTATING_OUT / AVOID / NEUTRAL,
+            or None when the candidate's sector is unknown.
+        stage: EARLY / MID / LATE, or None.
+
+    Returns:
+        A multiplier in [0.6, 1.3]. Unknown verdict (None) or NEUTRAL maps to
+        exactly 1.0 so an absent sector map leaves ranking byte-identical.
+    """
+    v = (verdict or "").upper()
+    s = (stage or "").upper()
+    if v == "FAVOR" and s == "EARLY":
+        return _FAVOR_EARLY_MULT
+    if v == "FAVOR":
+        # FAVOR at MID stage still deserves a lift, just below FAVOR+EARLY.
+        return _ROTATING_IN_MULT
+    if v == "ROTATING_IN":
+        return _ROTATING_IN_MULT
+    if v == "AVOID":
+        return _AVOID_LATE_MULT
+    if v == "ROTATING_OUT":
+        # A late-stage rotate-out is the most punitive (cohort topping out).
+        return _AVOID_LATE_MULT if s == "LATE" else _ROTATING_OUT_MULT
+    return _NEUTRAL_MULT
+
+
+def _load_sector_verdicts(market: str) -> dict:
+    """Read ``data/sector_rs_{market}.json`` into a ticker -> verdict map.
+
+    Maps every ticker the screener knows about — each sector's constituents
+    *and* its proxy ETF — to ``{"verdict": str, "stage": str, "sector": str}``
+    so a discovered candidate can be matched by ticker alone (the Candidate
+    dataclass has no sector field).
+
+    Never-raise: a missing file, malformed JSON, or unexpected shape collapses
+    to ``{}`` (a no-op for ``apply_sector_boost``). The briefing must never
+    crash for lack of a sector map.
+
+    Args:
+        market: "US" or "KR" (case-insensitive).
+
+    Returns:
+        ``{ticker: {"verdict", "stage", "sector"}}``. Empty dict on any failure
+        or when the file is absent/stale.
+    """
+    market_key = (market or "").lower()
+    path = PROJECT_ROOT / "data" / f"sector_rs_{market_key}.json"
+    if not path.exists():
+        return {}
+    try:
+        import json
+
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception as exc:  # noqa: BLE001 — never block the briefing on the map
+        logger.warning("sector_rs map read failed for %s: %s", market_key, exc)
+        return {}
+
+    sectors = payload.get("sectors") if isinstance(payload, dict) else None
+    if not isinstance(sectors, list):
+        return {}
+
+    out: dict[str, dict] = {}
+    for entry in sectors:
+        if not isinstance(entry, dict):
+            continue
+        verdict = entry.get("verdict")
+        stage = entry.get("stage")
+        sector = entry.get("sector")
+        info = {"verdict": verdict, "stage": stage, "sector": sector}
+        etf = entry.get("etf")
+        if isinstance(etf, str) and etf:
+            out[etf] = info
+        constituents = entry.get("constituents") or []
+        if isinstance(constituents, list):
+            for tk in constituents:
+                if isinstance(tk, str) and tk:
+                    out[tk] = info
+    return out
+
+
+def apply_sector_boost(candidates: list[Candidate], verdicts: dict) -> dict[str, float]:
+    """Stamp each candidate's sector verdict/stage and return a multiplier map.
+
+    Mutates each ``Candidate`` in place, setting ``sector_verdict`` and
+    ``sector_stage`` from the ticker -> verdict lookup, and returns a
+    ``{ticker: multiplier}`` map the caller folds into its ranking sort.
+
+    No-op contract: when ``verdicts`` is empty (no sector map on disk), every
+    candidate's fields are left untouched and every multiplier is exactly 1.0,
+    so the downstream ranking is byte-identical to the pre-sector behaviour.
+
+    Args:
+        candidates: Discovered candidates (mutated in place).
+        verdicts: Output of :func:`_load_sector_verdicts` — a ticker ->
+            ``{"verdict", "stage", "sector"}`` map.
+
+    Returns:
+        ``{ticker: multiplier}`` for every candidate, in [0.6, 1.3]. Tickers
+        whose sector is unknown map to 1.0.
+    """
+    multipliers: dict[str, float] = {}
+    if not verdicts:
+        # Strict no-op: leave Candidate fields untouched and return all-1.0.
+        return {c.ticker: 1.0 for c in candidates}
+
+    for c in candidates:
+        info = verdicts.get(c.ticker)
+        if info is None:
+            multipliers[c.ticker] = 1.0
+            continue
+        c.sector_verdict = info.get("verdict")
+        c.sector_stage = info.get("stage")
+        multipliers[c.ticker] = _sector_multiplier(c.sector_verdict, c.sector_stage)
+    return multipliers
