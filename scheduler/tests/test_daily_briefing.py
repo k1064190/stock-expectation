@@ -159,3 +159,43 @@ def test_parse_single_dict():
     preds = parse_predictions(response)
     assert len(preds) == 1
     assert preds[0]["ticker"] == "GOOG"
+
+
+# ---------------------------------------------------------------------------
+# Event-gate (RULE R3) prompt block — WT-D briefing integration
+# ---------------------------------------------------------------------------
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp-market-data"))
+from events import EventGate  # noqa: E402
+from daily_briefing import _format_event_gate_for_prompt  # noqa: E402
+
+
+def test_event_gate_block_unavailable_renders_zero_note():
+    gate = EventGate(asof="2026-06-18", market="US", gate_unavailable=True)
+    out = _format_event_gate_for_prompt(gate)
+    assert "unavailable" in out and "zero" in out
+
+
+def test_event_gate_block_renders_watch_and_macro():
+    gate = EventGate(
+        asof="2026-06-18",
+        market="US",
+        by_ticker={
+            "AMD": {"cap_label": "WATCH", "confidence_trim": 0.0,
+                    "next_earnings_date": "2026-06-19", "trading_days_until": 1},
+            "NVDA": {"cap_label": None, "confidence_trim": 0.0,
+                     "next_earnings_date": None, "trading_days_until": None},
+        },
+        macro_trim=0.05,
+        macro_events=[{"name": "FOMC", "event_date": "2026-06-18", "trading_days_until": 1}],
+    )
+    out = _format_event_gate_for_prompt(gate)
+    assert "MACRO trim 0.05" in out
+    assert "AMD" in out and "WATCH cap" in out
+    assert "NVDA" not in out  # no cap/trim → not listed
+
+
+def test_event_gate_block_no_risk_note():
+    gate = EventGate(asof="2026-06-18", market="US", by_ticker={"NVDA": {"cap_label": None, "confidence_trim": 0.0, "next_earnings_date": None, "trading_days_until": None}})
+    out = _format_event_gate_for_prompt(gate)
+    assert "no imminent earnings/macro risk" in out

@@ -96,6 +96,7 @@ liquidity, but ALL FOUR horizons must be reported in the narrative.
 - GATE R1 (regime): if KR regime is RISK_OFF, log NO new BULL (cap WATCH); if NEUTRAL, raise the BUY bar + trim confidence
 - GATE R2 (overextension): `overextension_level` EXTREME → WATCH only, never BULL; ELEVATED → raise the bar + trim
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL
+- GATE R3 (event risk): see the `## Event Risk` block. KR is macro-only (no per-ticker earnings feed) — a market-wide macro trim (US FOMC/CPI) shaves every pick's confidence; unavailable → treat as zero.
 - COMPONENTS: every logged prediction must carry `overextension`, `return_1m` (decimal), `discovery_source`, `setup_type` — the store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m > 0.20
 - Prefer the PRE-SURGE candidates (not yet extended); treat MOMENTUM names as BUY only when the gates above pass
 - Always consider won/dollar impact on export companies

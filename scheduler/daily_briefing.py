@@ -70,6 +70,8 @@ from blended_funnel import (
     assemble_blended_candidates,
     format_blended_for_prompt,
 )
+from candidate_discovery import _load_sector_verdicts
+from events import evaluate_gate
 from theme_clusterer import (
     backfill_news_counts,
     cluster_news,
@@ -87,6 +89,96 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 # Token budget: cap feedback loop at ~10% of total prompt
 MAX_TRACK_RECORD_CHARS = 800
+
+
+# ---------------------------------------------------------------------------
+# Sector-rotation + catalyst-event-gate integration (WT-C / WT-D wiring)
+# ---------------------------------------------------------------------------
+
+
+def _sector_verdicts_for(market: str) -> dict:
+    """Refresh the sector-RS snapshot for ``market`` and load its verdict map.
+
+    Best-effort: shells out to ``stock-cli sector-rs --write`` to regenerate
+    ``data/sector_rs_<market>.json`` so the boost reflects today's rotation,
+    then loads it via :func:`_load_sector_verdicts`. Both steps fail-open — a
+    refresh failure or absent file simply yields ``{}`` (a strict no-op for the
+    blend's sector boost), so the briefing never blocks on sector data.
+
+    Args:
+        market: "US" or "KR".
+
+    Returns:
+        ``{ticker: {"verdict", "stage", "sector"}}`` or ``{}`` on any failure.
+    """
+    try:
+        import subprocess
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "stock_cli.py"),
+                "sector-rs",
+                "--market",
+                market,
+                "--write",
+            ],
+            capture_output=True,
+            timeout=240,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 — never block the briefing on the refresh
+        logger.warning("sector snapshot refresh failed for %s: %s", market, exc)
+    return _load_sector_verdicts(market)
+
+
+def _format_event_gate_for_prompt(gate) -> str:
+    """Render the R3 event-risk gate as a prompt block (fail-open).
+
+    Args:
+        gate: An :class:`events.EventGate`.
+
+    Returns:
+        A markdown block listing the market-wide macro trim and any per-ticker
+        earnings caps/trims, or an "unavailable" line when the gate failed open.
+    """
+    lines = ["## Event Risk (RULE R3 — earnings / macro)"]
+    if getattr(gate, "gate_unavailable", False):
+        lines.append("  (event gate unavailable — treat all R3 caps/trims as zero)")
+        return "\n".join(lines)
+    if gate.macro_trim:
+        names = ", ".join(
+            f"{e.get('name')} ({e.get('event_date')}, {e.get('trading_days_until')}td)"
+            for e in (gate.macro_events or [])
+        )
+        lines.append(
+            f"  - MACRO trim {gate.macro_trim} on every pick: {names or 'imminent high-impact macro'}"
+        )
+    flagged = False
+    for tkr, v in (gate.by_ticker or {}).items():
+        cap, trim = v.get("cap_label"), v.get("confidence_trim")
+        if not cap and not trim:
+            continue
+        flagged = True
+        ed, td = v.get("next_earnings_date"), v.get("trading_days_until")
+        action = "WATCH cap" if cap else f"trim {trim}"
+        lines.append(f"  - {tkr}: earnings {ed} ({td}td) → {action}")
+    if not gate.macro_trim and not flagged:
+        lines.append("  - no imminent earnings/macro risk among candidates")
+    return "\n".join(lines)
+
+
+def _event_gate_block(market: str, tickers: list[str]) -> str:
+    """Compute and render the R3 event-gate block for the candidate tickers."""
+    try:
+        asof = datetime.now().strftime("%Y-%m-%d")
+        gate = evaluate_gate(asof, tickers, market)
+        return _format_event_gate_for_prompt(gate)
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 — evaluate_gate is fail-open; belt-and-braces
+        logger.warning("event gate failed for %s: %s", market, exc)
+        return "## Event Risk (RULE R3 — earnings / macro)\n  (event gate unavailable)"
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +201,9 @@ def fetch_us_market_data() -> str:
         anything — never raises.
     """
     us = USMarketProvider()
-    picks, anchors = assemble_blended_candidates("US", provider=us)
+    picks, anchors = assemble_blended_candidates(
+        "US", provider=us, sector_verdicts=_sector_verdicts_for("US")
+    )
     cands = picks + anchors
     # Guard the second batch fetch (yfinance can raise on transient
     # network/auth failures). The function "never raises" per docstring,
@@ -133,6 +227,8 @@ def fetch_us_market_data() -> str:
     lines = [
         "## US Market Data\n",
         format_blended_for_prompt(picks, anchors, "US"),
+        "",
+        _event_gate_block("US", [c.ticker for c in picks]),
         "",
         format_themes_for_prompt(themes),
         "",
@@ -173,7 +269,9 @@ def fetch_kr_market_data() -> str:
         Falls back to anchors-only if PyKRX fails — never raises.
     """
     kr = KoreanMarketProvider()
-    picks, anchors = assemble_blended_candidates("KR", provider=kr)
+    picks, anchors = assemble_blended_candidates(
+        "KR", provider=kr, sector_verdicts=_sector_verdicts_for("KR")
+    )
     cands = picks + anchors
     bars_by_ticker = kr.get_price_history_batch([c.ticker for c in cands], days=10)
 
@@ -184,6 +282,8 @@ def fetch_kr_market_data() -> str:
     lines = [
         "## Korean Market Data\n",
         format_blended_for_prompt(picks, anchors, "KR"),
+        "",
+        _event_gate_block("KR", [c.ticker for c in picks]),
         "",
         format_themes_for_prompt(themes),
         "",
@@ -405,13 +505,16 @@ def build_claude_code_prompt(market: str) -> str:
 
     if market == "US":
         us_provider = USMarketProvider()
-        picks, anchors = assemble_blended_candidates("US", provider=us_provider)
+        picks, anchors = assemble_blended_candidates(
+            "US", provider=us_provider, sector_verdicts=_sector_verdicts_for("US")
+        )
         us_candidates = picks + anchors
         us_news = fetch_news_for_candidates(us_candidates, days=7, provider=us_provider)
         backfill_news_counts(us_candidates, us_news)
         us_themes = cluster_news(us_news, min_cluster_size=3)
         candidate_block = format_blended_for_prompt(picks, anchors, "US")
         themes_block = format_themes_for_prompt(us_themes)
+        event_gate_block = _event_gate_block("US", [c.ticker for c in picks])
         ticker_csv = ",".join(c.ticker for c in us_candidates) or "SPY,QQQ,DIA"
         return f"""Generate a US market daily briefing for {today}.
 
@@ -427,6 +530,8 @@ ONLY from this list — do not add new tickers on your own judgment.
 {candidate_block}
 
 {themes_block}
+
+{event_gate_block}
 
 Specifically:
 1. Fetch each candidate's price/volume:
@@ -451,6 +556,7 @@ Rules:
 - GATE R1 (regime): run `bin/stock-cli regime --market US`. RISK_OFF → log NO new BULL (cap WATCH); NEUTRAL → raise the BUY bar (composite ≥ 9.0) and trim confidence one step.
 - GATE R2 (overextension): from horizon-metrics `overextension_level` — EXTREME → WATCH only, never BULL; ELEVATED → raise the BUY bar + trim confidence.
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
+- GATE R3 (event risk): see the `## Event Risk` block above. A ticker with `WATCH cap` (earnings ≤2 trading days) → WATCH only, never a new BULL; an earnings/macro `trim` shaves confidence one step (stacks under R1/R2). Cite the earnings date + trading-days-until in the reasoning. If the block says unavailable, treat R3 as zero.
 - COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
 - Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
 - HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W.
@@ -477,13 +583,16 @@ every section to the Predictions Logged table."""
 
     else:  # KR
         kr_provider = KoreanMarketProvider()
-        picks, anchors = assemble_blended_candidates("KR", provider=kr_provider)
+        picks, anchors = assemble_blended_candidates(
+            "KR", provider=kr_provider, sector_verdicts=_sector_verdicts_for("KR")
+        )
         kr_candidates = picks + anchors
         kr_news = fetch_news_for_candidates(kr_candidates, days=7, provider=kr_provider)
         backfill_news_counts(kr_candidates, kr_news)
         kr_themes = cluster_news(kr_news, min_cluster_size=3)
         candidate_block = format_blended_for_prompt(picks, anchors, "KR")
         themes_block = format_themes_for_prompt(kr_themes)
+        event_gate_block = _event_gate_block("KR", [c.ticker for c in picks])
         ticker_csv = ",".join(c.ticker for c in kr_candidates) or "005930,000660"
         return f"""Generate a Korean market daily briefing for {today}.
 
@@ -496,6 +605,8 @@ Follow the `daily-briefing` and `korean-market-analysis` skills in
 슬롯이 아니다. LLM은 이 목록 안에서만 분석/추천하라 — 새 종목 추가 금지.
 
 {candidate_block}
+
+{event_gate_block}
 
 {themes_block}
 
@@ -526,6 +637,7 @@ Rules:
 - GATE R1 (regime): run `bin/stock-cli regime --market KR`. RISK_OFF → log NO new BULL (cap WATCH); NEUTRAL → raise the BUY bar + trim confidence.
 - GATE R2 (overextension): horizon-metrics `overextension_level` EXTREME → WATCH only; ELEVATED → raise the bar + trim.
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
+- GATE R3 (event risk): see the `## Event Risk` block above. KR is macro-only (no per-ticker earnings feed) — a market-wide macro trim (US FOMC/CPI) shaves every pick's confidence; if the block says unavailable, treat R3 as zero.
 - COMPONENTS (mandatory): every `predict create` passes `--components` JSON with the pillar scores AND `"overextension"` AND `"return_1m"` (decimal) AND `"discovery_source"` AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly.
 - HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W. (KR default is already 1M.)
 - Consider won/dollar impact on exporters

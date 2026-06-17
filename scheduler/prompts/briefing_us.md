@@ -102,6 +102,7 @@ Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M, Cycle=1Y.
 - GATE R1 (regime): if the market regime is RISK_OFF, log NO new BULL (cap WATCH); if NEUTRAL, raise the BUY bar and trim confidence one step
 - GATE R2 (overextension): `overextension_level` EXTREME → WATCH only, never BULL; ELEVATED → raise the bar + trim confidence
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL
+- GATE R3 (event risk): see the `## Event Risk` block in the market data. A ticker with a `WATCH cap` (earnings within ≤2 trading days) → WATCH only, never a new BULL; an earnings/macro `trim` shaves confidence one step (stacks under R1/R2). Cite the earnings date + days-until in the reasoning. Unavailable → treat as zero.
 - COMPONENTS: every logged prediction must carry its `overextension`, `return_1m` (decimal), `discovery_source` (presurge/momentum) and `setup_type` — the store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m > 0.20
 - Prefer the PRE-SURGE candidates (not yet extended); treat MOMENTUM names as BUY only when the gates above pass
 - Be specific about price levels, not vague ("should go up")
