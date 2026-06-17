@@ -245,6 +245,12 @@ def _load_prediction_targets(market: Optional[str], db_path: Path) -> list[Watch
         if market:
             query += " AND market = ?"
             params = (market.upper(),)
+        # Newest first so the (ticker, market) dedup in load_unified_watchlist
+        # keeps the latest prediction's levels — an older/arbitrary prediction
+        # must not mask the current one. predictions.id is a UUID (not
+        # chronological), so rowid DESC is the insertion-order tiebreaker for the
+        # rare same-created_at case.
+        query += " ORDER BY created_at DESC, rowid DESC"
         rows = conn.execute(query, params).fetchall()
     finally:
         conn.close()

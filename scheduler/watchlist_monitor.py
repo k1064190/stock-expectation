@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -53,16 +54,21 @@ logging.basicConfig(
 logger = logging.getLogger("watchlist_monitor")
 
 KR_TZ = ZoneInfo("Asia/Seoul")
+US_TZ = ZoneInfo("America/New_York")
 
 # Korean regular session in KST.
 KR_OPEN = time(9, 0)
 KR_CLOSE = time(15, 30)
-# US regular session expressed in KST. US 09:30-16:00 ET maps to roughly
-# 22:30-05:00 KST during EDT (the common case); EST shifts an hour later. We
-# use a slightly generous 22:30-05:00 window so the monitor stays awake across
-# both DST regimes — this is an EOD-ish alerter, so a loose window is fine.
-US_OPEN_KST = time(22, 30)
-US_CLOSE_KST = time(5, 0)
+# US regular session in EXCHANGE-LOCAL time (America/New_York), which makes the
+# gate DST-aware automatically: 09:30-16:00 ET maps to ~22:30-05:00 KST under
+# EDT and ~23:30-06:00 KST under EST. A KST-fixed window mishandled the EST
+# post-close (16:00 ET = 06:00 KST), skipping the post-close EOD run.
+US_OPEN_ET = time(9, 30)
+US_CLOSE_ET = time(16, 0)
+# Post-close EOD grace: this is a delayed/close-based alerter, so a run shortly
+# after the 16:00 ET close should still fire against the final close rather than
+# be gated out. Keep the session "open" for this long past the close.
+US_POST_CLOSE_GRACE = timedelta(minutes=30)
 
 # Entry-zone band for non-saved sources (prediction/position) that carry a
 # single entry price rather than an explicit low/high zone: +/-1% around entry.
@@ -89,41 +95,40 @@ TRIGGER_LABELS_KR = {
 
 
 def is_market_open(market: str, now: datetime) -> bool:
-    """Return whether ``market`` is in its regular session at KST ``now``.
+    """Return whether ``market`` is in its regular session at ``now``.
 
-    Weekday-only (Mon-Fri in KST). The US window wraps past midnight, so an
-    open session spans the previous KST evening into the early morning; we treat
-    any time at/after the US open OR before the US close as in-session, and
-    require a weekday on whichever calendar day the session belongs to.
+    Weekday-only (Mon-Fri in the exchange's local calendar). Each market is
+    evaluated in its EXCHANGE-LOCAL timezone so the gate is DST-aware: KR in
+    Asia/Seoul, US in America/New_York. The US session therefore tracks the real
+    16:00 ET close across both EDT and EST instead of a fixed KST window.
 
     Args:
         market: "US" or "KR".
-        now: Timezone-aware datetime; converted to KST internally.
+        now: Timezone-aware datetime; converted to the exchange tz internally.
 
     Returns:
-        True if the market's regular session is currently open.
+        True if the market's regular session is currently open (plus a short
+        post-close EOD grace for the US session).
     """
-    kst = now.astimezone(KR_TZ)
-    t = kst.time()
-    weekday = kst.weekday()  # Mon=0 .. Sun=6
-
     if market.upper() == "KR":
-        if weekday >= 5:  # Sat/Sun
+        kst = now.astimezone(KR_TZ)
+        if kst.weekday() >= 5:  # Sat/Sun
             return False
-        return KR_OPEN <= t <= KR_CLOSE
+        return KR_OPEN <= kst.time() <= KR_CLOSE
 
     if market.upper() == "US":
-        # US session runs evening KST → next morning KST. The evening portion
-        # (>= 22:30) belongs to that weekday; the morning portion (< 05:00)
-        # belongs to the prior US trading day, i.e. the previous KST weekday.
-        if t >= US_OPEN_KST:
-            return weekday < 5  # evening start, must be a KST weekday
-        if t < US_CLOSE_KST:
-            # Early morning: the session opened the previous KST day. Mon
-            # morning KST (weekday 0) is Sun evening US — market closed. So
-            # require the *previous* KST day to be a weekday: Tue-Sat morning.
-            return 1 <= weekday <= 5
-        return False
+        et = now.astimezone(US_TZ)
+        if et.weekday() >= 5:  # Sat/Sun in ET
+            return False
+        # RTH 09:30-16:00 ET (inclusive close), plus a post-close EOD grace so a
+        # run shortly after the close still reads the final close. Compared as
+        # full datetimes (not bare times) so the grace is robust even if it ever
+        # spills past midnight.
+        session_start = datetime.combine(et.date(), US_OPEN_ET, tzinfo=US_TZ)
+        session_end = (
+            datetime.combine(et.date(), US_CLOSE_ET, tzinfo=US_TZ) + US_POST_CLOSE_GRACE
+        )
+        return session_start <= et <= session_end
 
     return False
 
@@ -235,17 +240,31 @@ def load_state(path: Path = STATE_PATH) -> dict:
 
 
 def save_state(state: dict, path: Path = STATE_PATH) -> None:
-    """Atomically write the dedup state (temp file + os.replace).
+    """Atomically write the dedup state (unique temp file + os.replace).
+
+    Each call allocates a UNIQUE same-directory temp file via tempfile.mkstemp
+    so two overlapping monitor runs can't clobber a shared ``.tmp`` path or make
+    ``os.replace`` fail. The replace is atomic on the same filesystem.
 
     Args:
         state: State dict to persist.
         path: Destination path.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+    except BaseException:
+        # On any failure, don't leave the unique temp file behind.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _state_key(target: WatchTarget, trigger_type: str) -> str:
@@ -416,6 +435,12 @@ def run_monitor(
             for trigger_type in ("ENTRY", "STOP", "TARGET", "REENTRY"):
                 key = _state_key(target, trigger_type)
                 is_sat = trigger_type in satisfied
+                # Snapshot the entry BEFORE should_fire consumes the edge, so a
+                # later send FAILURE can roll the edge back and the next run
+                # retries instead of being suppressed.
+                prior = dict(
+                    state.get(key, {"last_state": False, "last_alert_iso": None})
+                )
                 if should_fire(state, key, is_sat, now):
                     summary["fired"] += 1
                     summary["triggers"].append(
@@ -427,23 +452,36 @@ def run_monitor(
                             "source": target.source,
                             "direction": target.direction,
                             "target": target,
+                            "_state_key": key,
+                            "_prior": prior,
                         }
                     )
 
-    # Prune stale keys and persist (even in dry-run we keep state accurate so a
-    # subsequent real run doesn't double-fire; dry-run only suppresses sends).
+    # Deliver BEFORE persisting the edge consumption: one focused Korean message
+    # per trigger, or a single batched digest when more than 3 fire. Suppressed
+    # entirely in dry-run. A failed send must NOT consume the rising edge, so we
+    # roll back the edge/cooldown state for any fired trigger that wasn't
+    # delivered — leaving it armed for the next run to retry.
+    if not dry_run:
+        delivered_keys = _deliver(summary["triggers"])
+        for t in summary["triggers"]:
+            if t["_state_key"] not in delivered_keys:
+                state[t["_state_key"]] = t["_prior"]
+
+    # Prune stale keys and persist. In dry-run we keep state accurate (fired
+    # edges committed) so a subsequent real run doesn't double-fire; dry-run
+    # only suppresses sends. After delivery, only successfully-delivered edges
+    # remain consumed.
     _prune_state(state, live_prefixes)
     save_state(state, state_path)
 
-    # Deliver: one focused Korean message per trigger, or a single batched
-    # digest when more than 3 fire. Suppressed entirely in dry-run.
-    if not dry_run:
-        _deliver(summary["triggers"])
-
-    # The carried WatchTarget objects are an internal delivery detail; strip
-    # them so the returned summary stays JSON-serializable (CLI prints it).
+    # The carried WatchTarget objects and internal bookkeeping keys are a
+    # delivery detail; strip them so the returned summary stays JSON-serializable
+    # (CLI prints it).
     for t in summary["triggers"]:
         t.pop("target", None)
+        t.pop("_state_key", None)
+        t.pop("_prior", None)
 
     logger.info(
         "Watchlist monitor done: %d checked, %d fired, %d errors (markets=%s)",
@@ -455,38 +493,55 @@ def run_monitor(
     return summary
 
 
-def _deliver(triggers: list[dict]) -> None:
-    """Send fired triggers to Telegram (never-raise).
+def _deliver(triggers: list[dict]) -> set[str]:
+    """Send fired triggers to Telegram (never-raise); return delivered keys.
 
     One focused Korean message per trigger when <=3 fired; a single batched
     Korean digest when more than 3 fired (to avoid flooding the chat). Each
     send is wrapped so a Telegram failure never aborts the run.
 
+    The returned set of ``_state_key`` strings lets the caller commit the
+    rising-edge/cooldown state only for triggers that were actually delivered —
+    a failed send leaves its edge un-consumed so the next run retries. A stable
+    state key (not object identity) is used so matching survives any object
+    churn.
+
     Args:
         triggers: Fired trigger dicts from run_monitor. Each carries a
-            ``"target"`` WatchTarget used to enrich the individual message.
+            ``"target"`` WatchTarget used to enrich the individual message and a
+            ``"_state_key"`` used to report delivery success.
+
+    Returns:
+        The set of ``_state_key`` values whose send succeeded. For the digest
+        path the single message is all-or-nothing: every key on success, none on
+        failure.
     """
     if not triggers:
-        return
+        return set()
 
     if len(triggers) > 3:
-        from scheduler.telegram_sender import send_message
-
-        lines = [f"\U0001f514 워치리스트 알림 {len(triggers)}건 (지연/종가 기준)"]
-        for t in triggers:
-            label = TRIGGER_LABELS_KR.get(t["trigger"], t["trigger"])
-            lines.append(
-                f"• {t['ticker']} ({t['market']}) — {label} @ {t['price']:.2f}"
-            )
         try:
-            send_message("\n".join(lines))
+            from scheduler.telegram_sender import send_message
+
+            lines = [f"\U0001f514 워치리스트 알림 {len(triggers)}건 (지연/종가 기준)"]
+            for t in triggers:
+                label = TRIGGER_LABELS_KR.get(t["trigger"], t["trigger"])
+                lines.append(
+                    f"• {t['ticker']} ({t['market']}) — {label} @ {t['price']:.2f}"
+                )
+            ok = send_message("\n".join(lines))
         except Exception as e:
             logger.warning("Telegram digest failed: %s", e)
-        return
+            return set()
+        if not ok:
+            logger.warning("Telegram digest send returned failure")
+            return set()
+        return {t["_state_key"] for t in triggers}
 
+    delivered: set[str] = set()
     for t in triggers:
         try:
-            send_watch_alert(
+            ok = send_watch_alert(
                 ticker=t["ticker"],
                 market=t["market"],
                 trigger_type=t["trigger"],
@@ -495,6 +550,16 @@ def _deliver(triggers: list[dict]) -> None:
             )
         except Exception as e:
             logger.warning("Telegram watch alert failed: %s", e)
+            continue
+        if ok:
+            delivered.add(t["_state_key"])
+        else:
+            logger.warning(
+                "Telegram watch alert returned failure for %s (%s)",
+                t["ticker"],
+                t["market"],
+            )
+    return delivered
 
 
 def _build_arg_parser():

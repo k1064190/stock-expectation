@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stage 16 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --accent: #2d6a7f;
+        --accent-light: #e6f2f6;
+        --muted: #8a9ba8;
+        --muted-bg: #b0c4ce;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #dde3e7;
+        --text: #1e2a32;
+        --text-secondary: #4a5c68;
+        --timeline-line: #c8d6dc;
+        --node-size: 2.4rem;
+        --font:
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui,
+          -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+        font-size: 1rem;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .header-titles h1 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      .header-titles p {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.1rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      .lang-separator {
+        margin: 0 0.35rem;
+        color: var(--border);
+      }
+
+      /* ── Timeline ── */
+      nav.timeline-nav {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+        margin: 0 auto;
+      }
+
+      .timeline-segment {
+        display: flex;
+        align-items: center;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      .node-circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        line-height: 1;
+        text-align: center;
+        flex-shrink: 0;
+      }
+
+      .node-circle.filled-muted {
+        background: var(--muted-bg);
+        color: #ffffff;
+      }
+
+      .node-circle.filled-accent {
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow:
+          0 0 0 3px var(--accent-light),
+          0 0 0 5px var(--accent);
+      }
+
+      .node-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      .node-label.accent-label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-connector {
+        height: 2px;
+        width: 2.5rem;
+        background: var(--timeline-line);
+        flex-shrink: 0;
+        margin-bottom: 1.2rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 3rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      .stage-heading p {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .card-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--accent-light);
+      }
+
+      .card-header h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .card-body {
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .card-section h4 {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.55rem;
+        border-bottom: 1px solid var(--accent-light);
+        padding-bottom: 0.3rem;
+      }
+
+      .card-section p {
+        color: var(--text-secondary);
+        font-size: 0.925rem;
+      }
+
+      .card-section ul {
+        list-style: none;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+
+      .card-section ul li {
+        font-size: 0.925rem;
+        color: var(--text-secondary);
+        padding-left: 1.1rem;
+        position: relative;
+      }
+
+      .card-section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--muted);
+      }
+
+      .card-section.code-locations ul li {
+        padding-left: 0;
+        font-size: 0.875rem;
+      }
+
+      .card-section.code-locations ul li::before {
+        display: none;
+      }
+
+      .card-section.code-locations code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.825rem;
+        background: #f0f4f6;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.1rem 0.35rem;
+        color: #2a4a5a;
+        word-break: break-all;
+      }
+
+      .card-section.retrospective p {
+        font-style: italic;
+        font-size: 0.925rem;
+        color: var(--text-secondary);
+      }
+
+      .card-section.review-loop ul {
+        gap: 0.55rem;
+      }
+
+      .card-section.review-loop ul li {
+        font-size: 0.9rem;
+      }
+
+      .card-section.review-loop .review-verification {
+        margin-top: 0.75rem;
+        padding: 0.65rem 0.9rem;
+        background: var(--accent-light);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem 1.25rem;
+        }
+
+        nav.timeline-nav {
+          padding: 1.25rem 1rem;
+        }
+
+        main {
+          padding: 1.5rem 1rem 2.5rem;
+        }
+
+        .timeline-connector {
+          width: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-titles">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span>EN</span>
+        <span class="lang-separator">|</span>
+        <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <nav class="timeline-nav" aria-label="Stage timeline">
+      <div class="timeline">
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">0</div>
+            <span class="node-label">Stage 0</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">1</div>
+            <span class="node-label">Stage 1</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">2</div>
+            <span class="node-label">Stage 2</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">3</div>
+            <span class="node-label">Stage 3</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">4</div>
+            <span class="node-label">Stage 4</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted" style="font-size: 0.55rem">
+              4.1
+            </div>
+            <span class="node-label">Stage 4.1</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">5</div>
+            <span class="node-label">Stage 5</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">6</div>
+            <span class="node-label">Stage 6</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">7</div>
+            <span class="node-label">Stage 7</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">8</div>
+            <span class="node-label">Stage 8</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">9</div>
+            <span class="node-label">Stage 9</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">11</div>
+            <span class="node-label">Stage 11</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-accent">16</div>
+            <span class="node-label accent-label">Stage 16</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section class="stage-heading">
+        <h2>Stage 16</h2>
+        <p>
+          Watchlist Monitor — price-level alert system that fires Korean
+          Telegram nudges when a tracked ticker's latest close touches a watched
+          entry, stop, target, or re-entry level.
+        </p>
+      </section>
+
+      <article class="card">
+        <div class="card-header">
+          <h3>Watchlist Monitor</h3>
+        </div>
+        <div class="card-body">
+          <div class="card-section">
+            <h4>Why</h4>
+            <p>
+              Predictions and positions already existed, but there was no
+              mechanism to notify when a ticker actually reached a level of
+              interest — an entry zone, a stop, a target, or a re-entry trigger.
+              The outcome tracker resolves predictions nightly but is silent
+              about "price is at your level now". This stage adds an EOD-ish
+              trigger alerter so Doctor Cho receives a Korean Telegram nudge
+              when the latest close touches a watched level, without introducing
+              any new schema in <code>predictions.db</code>.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <h4>What</h4>
+            <ul>
+              <li>
+                A saved-ticker watchlist in a sibling DB
+                <code>data/watchlist.db</code> (CRUD), plus a unified-watchlist
+                builder that merges saved rows + OPEN predictions + portfolio
+                positions, deduped by <code>(ticker, market)</code> with
+                precedence <code>saved &gt; prediction &gt; position</code>.
+              </li>
+              <li>
+                A pure-Python monitor that fetches the latest price per ticker
+                (never-raise), evaluates ENTRY / STOP / TARGET / RE-ENTRY
+                triggers (BULL default, BEAR mirrored), and fires Korean
+                Telegram alerts on rising-edge transitions with a 6h cooldown
+                backstop and re-arm semantics. Market-hours gated, alert-only
+                (never mutates predictions).
+              </li>
+              <li>
+                CLI subcommands <code>watch add/remove/list/check</code>,
+                <code>send_watch_alert</code>, an EOD-cadence crontab entry, the
+                SKILL.md, and <code>.gitignore</code> entries.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>How</h4>
+            <ul>
+              <li>
+                Delayed reframing made explicit.
+                <code>get_current_price()</code> returns the last close; KR
+                PyKRX is EOD. Documented in SKILL.md, module docstrings, the
+                crontab comment, and the alert body.
+              </li>
+              <li>
+                Mirrored existing patterns. Connection pattern (WAL +
+                busy_timeout + CREATE TABLE IF NOT EXISTS) copied from
+                <code>portfolio/db.py</code>. Never-raise loop, timezone-aware
+                gate, and Telegram alerting mirror
+                <code>outcome_tracker.py</code>.
+              </li>
+              <li>
+                Rising-edge dedup.
+                <code>state/watchlist_alerts.json</code> keyed
+                <code>{source}:{ticker}:{market}:{trigger}</code> stores
+                <code>{last_state, last_alert_iso}</code>. Fire only on a
+                transition into the satisfied state; re-arm on transition out;
+                6h cooldown as a flip-flop guard. Atomic write via temp +
+                <code>os.replace</code>; stale keys pruned each run.
+              </li>
+              <li>
+                Single-point entry band. Predictions/positions carry one entry
+                price, so ENTRY uses a ±1% band; saved rows use the explicit
+                <code>[entry_low, entry_high]</code>.
+              </li>
+              <li>
+                Delivery. One focused Korean message per trigger; a single
+                batched digest when more than 3 fire.
+              </li>
+              <li>
+                TDD. Store tests then monitor tests written before/with
+                implementation; 36 new tests, all green.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section code-locations">
+            <h4>Code locations</h4>
+            <ul>
+              <li>
+                <code>scheduler/watchlist_store.py</code> —
+                <code>get_connection</code>,
+                <code>add_watch</code
+                >/<code>remove_watch</code>/<code>list_watches</code>,
+                <code>load_unified_watchlist</code>, <code>WatchTarget</code>,
+                <code>POSITION_DEFAULT_STOP_PCT</code>
+              </li>
+              <li>
+                <code>scheduler/watchlist_monitor.py</code> —
+                <code>is_market_open</code>, <code>evaluate_triggers</code>,
+                <code>should_fire</code>, <code>run_monitor</code>,
+                <code>_deliver</code>,
+                <code>load_state</code>/<code>save_state</code>/<code
+                  >_prune_state</code
+                >
+              </li>
+              <li>
+                <code>scheduler/telegram_sender.py:163</code> —
+                <code>_ALERT_EMOJI</code>, <code>send_watch_alert</code>,
+                <code>_watch_level_for</code>
+              </li>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>cmd_watch_add/remove/list/check</code> + the
+                <code>watch</code> subparser group
+              </li>
+              <li>
+                <code>scheduler/crontab.example</code> — KR + US
+                watchlist-monitor lines
+              </li>
+              <li>
+                <code>scheduler/tests/test_watchlist_store.py</code>,
+                <code>scheduler/tests/test_watchlist_monitor.py</code>
+              </li>
+              <li>
+                <code>.claude/skills/watchlist-monitor/SKILL.md</code>,
+                <code>.gitignore</code>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section retrospective">
+            <h4>Retrospective</h4>
+            <p>
+              The single-pass collect-then-deliver design removed an ugly
+              mid-loop digest decision. The <code>scheduler</code> package is
+              not installed — the CLI needed <code>PROJECT_ROOT</code> on
+              <code>sys.path</code>. Carry forward: the US market-hours gate is
+              now DST-aware (<code>America/New_York</code>) after the review
+              loop.
+            </p>
+          </div>
+
+          <div class="card-section review-loop">
+            <h4>Review loop</h4>
+            <p
+              style="
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+                margin-bottom: 0.75rem;
+              "
+            >
+              Four P1 correctness defects found in a second-pass review, all
+              fixed under TDD. Reviewers: code-reviewer-pro (Claude) and Codex
+              (gpt-5.5, high effort). EOD/delayed framing,
+              never-mutate-predictions, and never-raise conventions preserved
+              throughout.
+            </p>
+            <ul>
+              <li>
+                <strong>State persisted before send (Codex P1).</strong>
+                <code>last_alert_iso</code> was committed before the alert was
+                sent, so a send failure silently consumed the rising edge. Fix:
+                deliver first; <code>_deliver</code> returns the delivered
+                <code>_state_key</code>s; <code>run_monitor</code> rolls back
+                each unfired key to its prior snapshot so the next run retries.
+                Dry-run still commits edges; digest is all-or-nothing.
+              </li>
+              <li>
+                <strong>Shared temp state path (Codex P1).</strong>
+                <code>save_state</code> now uses
+                <code>tempfile.mkstemp</code> (unique same-dir temp) +
+                <code>os.replace</code>, with temp cleanup on failure.
+              </li>
+              <li>
+                <strong>OPEN-prediction dedup ordering (Codex P1).</strong>
+                Added <code>ORDER BY created_at DESC, rowid DESC</code> so the
+                newest prediction's levels win the dedup (<code
+                  >predictions.id</code
+                >
+                is a UUID, so <code>rowid</code> is the insertion-order
+                tiebreaker).
+              </li>
+              <li>
+                <strong>US market-hours DST gate (Codex P1).</strong>
+                <code>is_market_open</code> now computes the US session in
+                <code>America/New_York</code> (DST-aware), RTH 09:30–16:00 ET
+                inclusive plus a 30-min post-close grace compared as full
+                datetimes; US cron window widened to cover the EST close.
+              </li>
+              <li>
+                <strong>Stable state keys (code-reviewer-pro).</strong>
+                <code>id()</code>-based matching replaced with stable
+                <code>_state_key</code> strings.
+              </li>
+              <li>
+                <strong
+                  >Digest import/build in never-raise try
+                  (code-reviewer-pro).</strong
+                >
+                Import and construction of the digest moved inside the
+                never-raise try block.
+              </li>
+              <li>
+                <strong
+                  >Full-datetime grace boundary (code-reviewer-pro).</strong
+                >
+                Grace period boundary now compared as full datetimes rather than
+                time-only values.
+              </li>
+              <li>
+                <strong
+                  >Pushed back — Telegram failures not in errors (Codex
+                  MEDIUM).</strong
+                >
+                <code>errors</code> is a price-fetch-failure counter by existing
+                contract; the edge-rollback mechanism (retry next run) is the
+                correct remedy and failures are logged. Out of scope
+                deliberately.
+              </li>
+            </ul>
+            <div class="review-verification">
+              Verification: 44 passed (36 baseline + 8 new) for the two
+              watchlist suites; 130 passed for the full scheduler suite
+              (no-network).
+            </div>
+          </div>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

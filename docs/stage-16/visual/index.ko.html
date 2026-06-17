@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>16단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --accent: #2d6a7f;
+        --accent-light: #e6f2f6;
+        --muted: #8a9ba8;
+        --muted-bg: #b0c4ce;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #dde3e7;
+        --text: #1e2a32;
+        --text-secondary: #4a5c68;
+        --timeline-line: #c8d6dc;
+        --node-size: 2.4rem;
+        --font:
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui,
+          -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+        font-size: 1rem;
+        min-height: 100vh;
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+      }
+
+      .header-titles h1 {
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      .header-titles p {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.1rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      .lang-separator {
+        margin: 0 0.35rem;
+        color: var(--border);
+      }
+
+      /* ── Timeline ── */
+      nav.timeline-nav {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+        margin: 0 auto;
+      }
+
+      .timeline-segment {
+        display: flex;
+        align-items: center;
+      }
+
+      .timeline-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      .node-circle {
+        width: var(--node-size);
+        height: var(--node-size);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        line-height: 1;
+        text-align: center;
+        flex-shrink: 0;
+      }
+
+      .node-circle.filled-muted {
+        background: var(--muted-bg);
+        color: #ffffff;
+      }
+
+      .node-circle.filled-accent {
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow:
+          0 0 0 3px var(--accent-light),
+          0 0 0 5px var(--accent);
+      }
+
+      .node-label {
+        font-size: 0.65rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      .node-label.accent-label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .timeline-connector {
+        height: 2px;
+        width: 2.5rem;
+        background: var(--timeline-line);
+        flex-shrink: 0;
+        margin-bottom: 1.2rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 3rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      .stage-heading p {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .card-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--border);
+        background: var(--accent-light);
+      }
+
+      .card-header h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--accent);
+      }
+
+      .card-body {
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+
+      .card-section h4 {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.55rem;
+        border-bottom: 1px solid var(--accent-light);
+        padding-bottom: 0.3rem;
+      }
+
+      .card-section p {
+        color: var(--text-secondary);
+        font-size: 0.925rem;
+      }
+
+      .card-section ul {
+        list-style: none;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+
+      .card-section ul li {
+        font-size: 0.925rem;
+        color: var(--text-secondary);
+        padding-left: 1.1rem;
+        position: relative;
+      }
+
+      .card-section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--muted);
+      }
+
+      .card-section.code-locations ul li {
+        padding-left: 0;
+        font-size: 0.875rem;
+      }
+
+      .card-section.code-locations ul li::before {
+        display: none;
+      }
+
+      .card-section.code-locations code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.825rem;
+        background: #f0f4f6;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.1rem 0.35rem;
+        color: #2a4a5a;
+        word-break: break-all;
+      }
+
+      .card-section.retrospective p {
+        font-style: italic;
+        font-size: 0.925rem;
+        color: var(--text-secondary);
+      }
+
+      .card-section.review-loop ul {
+        gap: 0.55rem;
+      }
+
+      .card-section.review-loop ul li {
+        font-size: 0.9rem;
+      }
+
+      .card-section.review-loop .review-verification {
+        margin-top: 0.75rem;
+        padding: 0.65rem 0.9rem;
+        background: var(--accent-light);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 4px 4px 0;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem 1.25rem;
+        }
+
+        nav.timeline-nav {
+          padding: 1.25rem 1rem;
+        }
+
+        main {
+          padding: 1.5rem 1rem 2.5rem;
+        }
+
+        .timeline-connector {
+          width: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-titles">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a>
+        <span class="lang-separator">|</span>
+        <span>한국어</span>
+      </nav>
+    </header>
+
+    <nav class="timeline-nav" aria-label="단계 타임라인">
+      <div class="timeline">
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">0</div>
+            <span class="node-label">0단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">1</div>
+            <span class="node-label">1단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">2</div>
+            <span class="node-label">2단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">3</div>
+            <span class="node-label">3단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">4</div>
+            <span class="node-label">4단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted" style="font-size: 0.55rem">
+              4.1
+            </div>
+            <span class="node-label">4.1단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">5</div>
+            <span class="node-label">5단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">6</div>
+            <span class="node-label">6단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">7</div>
+            <span class="node-label">7단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">8</div>
+            <span class="node-label">8단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">9</div>
+            <span class="node-label">9단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-muted">11</div>
+            <span class="node-label">11단계</span>
+          </div>
+        </div>
+
+        <div class="timeline-connector" aria-hidden="true"></div>
+
+        <div class="timeline-segment">
+          <div class="timeline-node">
+            <div class="node-circle filled-accent">16</div>
+            <span class="node-label accent-label">16단계</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section class="stage-heading">
+        <h2>16단계</h2>
+        <p>
+          Watchlist Monitor — 관심 종목의 최신 종가가 설정한
+          진입·손절·목표·재진입 수준에 도달했을 때 한국어 Telegram 알림을
+          발송하는 가격 레벨 알림 시스템.
+        </p>
+      </section>
+
+      <article class="card">
+        <div class="card-header">
+          <h3>Watchlist Monitor</h3>
+        </div>
+        <div class="card-body">
+          <div class="card-section">
+            <h4>왜</h4>
+            <p>
+              예측과 포지션은 이미 존재했지만, 종목이 관심 레벨 — 진입 구간,
+              손절선, 목표가, 재진입 트리거 — 에 실제로 도달했을 때 알려주는
+              수단이 없었다. 결과 추적기는 매일 밤 예측을 정산하지만 "지금
+              가격이 레벨에 있다"는 사실은 침묵한다. 이 단계에서는 최신 종가가
+              관심 레벨에 닿을 때 Doctor Cho에게 한국어 Telegram 알림을 보내는
+              EOD 트리거 알림 시스템을 추가한다. <code>predictions.db</code>에는
+              새 스키마를 일절 추가하지 않는다.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <h4>무엇을</h4>
+            <ul>
+              <li>
+                별도 DB <code>data/watchlist.db</code>에 저장되는 종목 관심
+                목록(CRUD)과, 저장 행 + OPEN 예측 + 포트폴리오 포지션을
+                <code>(ticker, market)</code> 기준으로 통합·중복 제거하는
+                unified-watchlist 빌더 — 우선순위:
+                <code>saved &gt; prediction &gt; position</code>.
+              </li>
+              <li>
+                순수 Python 모니터: 종목별 최신 가격을 never-raise 방식으로
+                조회하고, ENTRY / STOP / TARGET / RE-ENTRY 트리거를 평가(BULL
+                기본, BEAR 반전)하며, 상승 엣지 전환 시 6h 쿨다운 및 재활성화
+                시맨틱을 적용해 한국어 Telegram 알림을 발송. 마켓 시간 게이팅
+                적용, 알림 전용(예측 절대 수정 없음).
+              </li>
+              <li>
+                CLI 서브커맨드 <code>watch add/remove/list/check</code>,
+                <code>send_watch_alert</code>, EOD 케이던스 crontab 항목,
+                SKILL.md, <code>.gitignore</code> 항목 추가.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>어떻게</h4>
+            <ul>
+              <li>
+                지연 데이터 재정의를 명시적으로 문서화.
+                <code>get_current_price()</code>는 마지막 종가를 반환하며, KR
+                PyKRX는 EOD 전용. SKILL.md, 모듈 docstring, crontab 주석, 알림
+                본문 모두에 명시.
+              </li>
+              <li>
+                기존 패턴 그대로 적용. 커넥션 패턴(WAL + busy_timeout + CREATE
+                TABLE IF NOT EXISTS)은 <code>portfolio/db.py</code>에서 복사.
+                Never-raise 루프, 타임존 인식 게이팅, Telegram 알림 방식은
+                <code>outcome_tracker.py</code>를 그대로 따름.
+              </li>
+              <li>
+                상승 엣지 중복 제거. <code>state/watchlist_alerts.json</code>을
+                <code>{source}:{ticker}:{market}:{trigger}</code> 키로 관리하고
+                <code>{last_state, last_alert_iso}</code>를 저장. 만족 상태로
+                전환 시에만 발송; 상태 이탈 시 재활성화; 6h 쿨다운을 플립플롭
+                가드로 사용. <code>tempfile.mkstemp</code> +
+                <code>os.replace</code>로 원자적 쓰기; 매 실행마다 stale 키
+                정리.
+              </li>
+              <li>
+                단일 진입 구간. 예측·포지션은 진입가가 하나이므로 ENTRY에 ±1%
+                밴드를 사용하고, 저장 행은 명시적
+                <code>[entry_low, entry_high]</code>를 사용.
+              </li>
+              <li>
+                전송. 트리거당 한국어 메시지 1건; 3건 초과 시 단일 일괄
+                다이제스트 발송.
+              </li>
+              <li>
+                TDD. 스토어 테스트와 모니터 테스트를 구현 전/중에 작성; 신규
+                테스트 36개, 모두 통과.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section code-locations">
+            <h4>코드 위치</h4>
+            <ul>
+              <li>
+                <code>scheduler/watchlist_store.py</code> —
+                <code>get_connection</code>,
+                <code>add_watch</code
+                >/<code>remove_watch</code>/<code>list_watches</code>,
+                <code>load_unified_watchlist</code>, <code>WatchTarget</code>,
+                <code>POSITION_DEFAULT_STOP_PCT</code>
+              </li>
+              <li>
+                <code>scheduler/watchlist_monitor.py</code> —
+                <code>is_market_open</code>, <code>evaluate_triggers</code>,
+                <code>should_fire</code>, <code>run_monitor</code>,
+                <code>_deliver</code>,
+                <code>load_state</code>/<code>save_state</code>/<code
+                  >_prune_state</code
+                >
+              </li>
+              <li>
+                <code>scheduler/telegram_sender.py:163</code> —
+                <code>_ALERT_EMOJI</code>, <code>send_watch_alert</code>,
+                <code>_watch_level_for</code>
+              </li>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>cmd_watch_add/remove/list/check</code> +
+                <code>watch</code> 서브파서 그룹
+              </li>
+              <li>
+                <code>scheduler/crontab.example</code> — KR + US
+                watchlist-monitor 라인
+              </li>
+              <li>
+                <code>scheduler/tests/test_watchlist_store.py</code>,
+                <code>scheduler/tests/test_watchlist_monitor.py</code>
+              </li>
+              <li>
+                <code>.claude/skills/watchlist-monitor/SKILL.md</code>,
+                <code>.gitignore</code>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section retrospective">
+            <h4>회고</h4>
+            <p>
+              단일 패스 수집-후-전송 설계 덕분에 루프 중간의 지저분한 다이제스트
+              결정 로직이 사라졌다. <code>scheduler</code>는 설치 패키지가
+              아니므로 CLI에서 <code>PROJECT_ROOT</code>를
+              <code>sys.path</code>에 추가해야 했다. 이월 사항: 리뷰 루프 이후
+              US 마켓 시간 게이팅이 <code>America/New_York</code> DST 인식
+              방식으로 개선되었다.
+            </p>
+          </div>
+
+          <div class="card-section review-loop">
+            <h4>리뷰 루프</h4>
+            <p
+              style="
+                font-size: 0.9rem;
+                color: var(--text-secondary);
+                margin-bottom: 0.75rem;
+              "
+            >
+              두 번째 패스 리뷰에서 P1 정확성 결함 4건이 발견되어 TDD 방식으로
+              모두 수정. 리뷰어: code-reviewer-pro (Claude), Codex (gpt-5.5,
+              high effort). EOD/지연 데이터 프레임, never-mutate-predictions,
+              never-raise 규약은 전 과정에서 유지.
+            </p>
+            <ul>
+              <li>
+                <strong>전송 전 상태 영속화 (Codex P1).</strong>
+                <code>last_alert_iso</code>가 알림 발송 전에 커밋되어 발송 실패
+                시 상승 엣지가 소실되었다. 수정: 먼저 전송하고 이후 영속화;
+                <code>_deliver</code>가 전달된 <code>_state_key</code> 목록을
+                반환하며, <code>run_monitor</code>는 미전달 키를 이전 스냅샷으로
+                롤백해 다음 실행에서 재시도. dry-run은 여전히 엣지를 커밋하며,
+                다이제스트는 전부-또는-전무 처리.
+              </li>
+              <li>
+                <strong>공유 임시 상태 경로 (Codex P1).</strong>
+                <code>save_state</code>가 <code>tempfile.mkstemp</code>(동일
+                디렉터리 내 고유 임시 파일) + <code>os.replace</code>를
+                사용하며, 실패 시 임시 파일을 정리하도록 수정.
+              </li>
+              <li>
+                <strong>OPEN 예측 중복 제거 정렬 (Codex P1).</strong>
+                <code>ORDER BY created_at DESC, rowid DESC</code>를 추가하여
+                가장 최신 예측의 레벨이 중복 제거에서 우선하도록 수정
+                (<code>predictions.id</code>는 UUID이므로 <code>rowid</code>가
+                삽입 순서 기준).
+              </li>
+              <li>
+                <strong>US 마켓 시간 DST 게이팅 (Codex P1).</strong>
+                <code>is_market_open</code>이
+                <code>America/New_York</code> 기준으로 US 세션을 계산(DST 인식),
+                RTH 09:30–16:00 ET 포함 + 30분 장후 유예를 전체 datetime으로
+                비교; US cron 윈도우를 EST 마감 커버에 맞게 확장.
+              </li>
+              <li>
+                <strong>안정적 상태 키 (code-reviewer-pro).</strong>
+                <code>id()</code> 기반 매칭을 안정적인
+                <code>_state_key</code> 문자열로 교체.
+              </li>
+              <li>
+                <strong
+                  >다이제스트 임포트/빌드를 never-raise try 내부로 이동
+                  (code-reviewer-pro).</strong
+                >
+                다이제스트의 임포트 및 생성을 never-raise try 블록 안으로 이동.
+              </li>
+              <li>
+                <strong
+                  >전체 datetime 유예 경계 비교 (code-reviewer-pro).</strong
+                >
+                유예 기간 경계를 시간 값만으로 비교하던 방식을 전체 datetime
+                비교로 수정.
+              </li>
+              <li>
+                <strong
+                  >반려 — Telegram 실패를 errors에 미집계 (Codex
+                  MEDIUM).</strong
+                >
+                <code>errors</code>는 기존 계약상 가격 조회 실패 카운터이며,
+                엣지 롤백(다음 실행에서 재시도)이 올바른 대응책이고 실패는
+                로그에 기록된다. 의도적으로 범위 밖으로 제외.
+              </li>
+            </ul>
+            <div class="review-verification">
+              검증: 두 watchlist 스위트에서 44 passed (기존 36 + 신규 8); 전체
+              scheduler 스위트(no-network)에서 130 passed.
+            </div>
+          </div>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

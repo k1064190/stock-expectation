@@ -257,6 +257,120 @@ def test_position_default_stop(tmp_path):
     assert msft.stop == pytest.approx(400.0 * POSITION_DEFAULT_STOP_PCT)
 
 
+def test_open_prediction_dedup_keeps_newest(tmp_path):
+    """When two OPEN predictions share (ticker, market), the newest wins.
+
+    Predictions are selected ORDER BY created_at DESC so the most recent
+    prediction's levels are the ones that survive the (ticker, market) dedup —
+    an older/arbitrary prediction must not mask the latest levels.
+    """
+    from models import get_connection as pred_conn, insert_prediction, Prediction
+
+    pred_path = tmp_path / "predictions.db"
+    conn = pred_conn(pred_path)
+    try:
+        # Older prediction (stale levels) inserted first.
+        insert_prediction(
+            conn,
+            Prediction(
+                ticker="NVDA",
+                market="US",
+                direction="BULL",
+                confidence=0.7,
+                timeframe="1W",
+                reasoning="old thesis",
+                entry_price=100.0,
+                target_price=120.0,
+                stop_price=90.0,
+                created_at="2026-01-01T00:00:00+00:00",
+            ),
+        )
+        # Newer prediction (current levels) — must win the dedup.
+        insert_prediction(
+            conn,
+            Prediction(
+                ticker="NVDA",
+                market="US",
+                direction="BULL",
+                confidence=0.8,
+                timeframe="1M",
+                reasoning="new thesis",
+                entry_price=150.0,
+                target_price=180.0,
+                stop_price=140.0,
+                created_at="2026-06-01T00:00:00+00:00",
+            ),
+        )
+    finally:
+        conn.close()
+
+    targets = load_unified_watchlist(
+        market="US",
+        watchlist_db_path=tmp_path / "watchlist.db",
+        predictions_db_path=pred_path,
+        portfolio_db_path=tmp_path / "no_pf.db",
+    )
+    nvda = next(t for t in targets if t.ticker == "NVDA")
+    assert nvda.source == "prediction"
+    assert nvda.target == 180.0  # newest prediction's level
+    assert nvda.entry_low == 150.0
+
+
+def test_open_prediction_dedup_same_created_at_uses_insertion_order(tmp_path):
+    """Same created_at → the later-inserted prediction wins (rowid DESC tiebreak).
+
+    predictions.id is a UUID, so it can't order ties chronologically; the query
+    falls back to rowid (insertion order) so the most recently inserted row wins.
+    """
+    from models import get_connection as pred_conn, insert_prediction, Prediction
+
+    same_ts = "2026-03-01T00:00:00+00:00"
+    pred_path = tmp_path / "predictions.db"
+    conn = pred_conn(pred_path)
+    try:
+        insert_prediction(
+            conn,
+            Prediction(
+                ticker="NVDA",
+                market="US",
+                direction="BULL",
+                confidence=0.7,
+                timeframe="1W",
+                reasoning="first",
+                entry_price=100.0,
+                target_price=110.0,
+                stop_price=95.0,
+                created_at=same_ts,
+            ),
+        )
+        insert_prediction(
+            conn,
+            Prediction(
+                ticker="NVDA",
+                market="US",
+                direction="BULL",
+                confidence=0.7,
+                timeframe="1M",
+                reasoning="second",
+                entry_price=200.0,
+                target_price=210.0,
+                stop_price=195.0,
+                created_at=same_ts,
+            ),
+        )
+    finally:
+        conn.close()
+
+    targets = load_unified_watchlist(
+        market="US",
+        watchlist_db_path=tmp_path / "watchlist.db",
+        predictions_db_path=pred_path,
+        portfolio_db_path=tmp_path / "no_pf.db",
+    )
+    nvda = next(t for t in targets if t.ticker == "NVDA")
+    assert nvda.target == 210.0  # later-inserted row wins the tie
+
+
 def test_missing_dbs_yield_only_saved(tmp_path):
     """Absent predictions/portfolio DBs degrade to saved-only."""
     wl_path = tmp_path / "watchlist.db"

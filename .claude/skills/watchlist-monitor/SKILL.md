@@ -80,10 +80,12 @@ BULL 기본, BEAR는 미러링됩니다. 가격 P 기준:
 - 상태는 `state/watchlist_alerts.json`에 키 `{source}:{ticker}:{market}:{trigger}`로
   저장 (원자적 쓰기: temp + `os.replace`). 사라진 항목의 키는 정리됨.
 
-## 장 시간 게이트 (KST)
+## 장 시간 게이트 (거래소 현지 시간, DST 자동 반영)
 
-- **KR**: 09:00–15:30, 평일.
-- **US**: 약 22:30–05:00 KST, 미국 거래일 기준 (자정 넘어가는 구간 처리).
+- **KR**: 09:00–15:30 KST, 평일 (Asia/Seoul).
+- **US**: 09:30–16:00 ET + 마감 후 30분 EOD grace, 평일 (America/New_York).
+  거래소 현지 시간으로 평가하므로 EDT/EST 전환이 자동 반영됩니다 (EDT는 대략
+  22:30–05:30 KST, EST는 대략 23:30–06:30 KST에 해당).
 - 닫혀 있으면 깔끔하게 no-op (`--force`로 무시 가능).
 
 ## 한국어 알림 형식

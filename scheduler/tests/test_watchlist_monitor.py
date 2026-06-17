@@ -163,6 +163,46 @@ def test_cooldown_suppresses_rapid_reentry():
     assert should_fire(state, "k", True, later) is True
 
 
+# --- State persistence (atomic, unique temp path) ---
+
+
+def test_save_state_uses_unique_same_dir_temp(monkeypatch, tmp_path):
+    """save_state must write to a UNIQUE same-directory temp file then replace.
+
+    Two overlapping writers using a single shared ``.tmp`` path could clobber
+    each other / make ``os.replace`` fail. We assert each save allocates a fresh
+    temp path in the destination directory (not a fixed ``<name>.tmp``).
+    """
+    import os as _os
+    import tempfile as _tempfile
+
+    state_path = tmp_path / "state" / "alerts.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp_paths: list[str] = []
+    real_mkstemp = _tempfile.mkstemp
+
+    def spy_mkstemp(*args, **kwargs):
+        fd, name = real_mkstemp(*args, **kwargs)
+        tmp_paths.append(name)
+        return fd, name
+
+    monkeypatch.setattr(wm.tempfile, "mkstemp", spy_mkstemp)
+
+    wm.save_state({"a": 1}, state_path)
+    wm.save_state({"b": 2}, state_path)
+
+    # Two distinct temp files, both created in the destination directory.
+    assert len(tmp_paths) == 2
+    assert tmp_paths[0] != tmp_paths[1]
+    for p in tmp_paths:
+        assert Path(p).parent == state_path.parent
+        # The temp file was renamed away by os.replace — none linger.
+        assert not Path(p).exists()
+    # Final content reflects the last write.
+    assert wm.load_state(state_path) == {"b": 2}
+
+
 # --- Market-hours gate ---
 
 
@@ -206,6 +246,30 @@ def test_us_closed_midday_kst():
     assert is_market_open("US", now) is False
 
 
+def test_us_open_at_est_close_kst():
+    """During EST the US close (16:00 ET) is ~06:00 KST — must read as open.
+
+    Jan 14 2026 is a Wednesday; EST is UTC-5. 16:00 ET = 21:00 UTC = 06:00 KST
+    on Jan 15. A KST-fixed 05:00 close would WRONGLY skip the post-close EOD run
+    during EST; the DST-aware ET gate must keep it open at the close.
+    """
+    now = datetime(2026, 1, 15, 6, 0, tzinfo=KR_TZ)
+    assert is_market_open("US", now) is True
+
+
+def test_us_open_est_evening_kst():
+    """EST daytime session: Wed 23:30 KST = Wed 09:30 ET (open)."""
+    # Jan 14 2026 23:30 KST = 14:30 UTC = 09:30 EST Wed → session open.
+    now = datetime(2026, 1, 14, 23, 30, tzinfo=KR_TZ)
+    assert is_market_open("US", now) is True
+
+
+def test_us_closed_est_before_open_kst():
+    """EST pre-open: Wed 23:00 KST = Wed 09:00 ET (before 09:30 open)."""
+    now = datetime(2026, 1, 14, 23, 0, tzinfo=KR_TZ)
+    assert is_market_open("US", now) is False
+
+
 # --- run_monitor integration (monkeypatched provider + sender) ---
 
 
@@ -226,16 +290,20 @@ def patched(monkeypatch, tmp_path):
     Yields a dict the test mutates: ``price`` controls the stubbed provider,
     ``sent`` collects send_watch_alert/send_message payloads.
     """
-    ctx = {"price": 102.0, "sent": []}
+    ctx = {"price": 102.0, "sent": [], "send_fails": False}
 
     def fake_provider(market):
         return _FixedProvider(ctx["price"])
 
     def fake_watch_alert(**kwargs):
+        if ctx["send_fails"]:
+            raise RuntimeError("telegram down")
         ctx["sent"].append(("watch", kwargs))
         return True
 
     def fake_message(text, *a, **k):
+        if ctx["send_fails"]:
+            raise RuntimeError("telegram down")
         ctx["sent"].append(("message", text))
         return True
 
@@ -345,6 +413,43 @@ def test_run_digest_when_more_than_three(patched):
     assert len(msgs) == 1  # single digest
     assert watches == []  # no individual sends
     assert "워치리스트 알림 4건" in msgs[0][1]
+
+
+def test_failed_send_does_not_suppress_next_run(patched):
+    """A Telegram send FAILURE must not consume the rising edge.
+
+    The edge/cooldown state (last_alert_iso) is only committed after a
+    successful send. So if delivery raises, the next run re-evaluates the same
+    still-satisfied trigger as a fresh rising edge and retries the send.
+    """
+    _seed_saved(patched, entry_low=100, entry_high=105)
+    patched["price"] = 102.0
+
+    # First run: send raises → edge must NOT be consumed (and never raises).
+    patched["send_fails"] = True
+    first = _run(patched, now=datetime(2026, 6, 17, 23, 0, tzinfo=KR_TZ))
+    assert first["fired"] == 1  # it tried to fire
+    assert patched["sent"] == []  # nothing delivered
+
+    # Second run: trigger still satisfied. Because the failed send did NOT
+    # consume the edge, this run fires again and (now) delivers successfully.
+    patched["send_fails"] = False
+    second = _run(patched, now=datetime(2026, 6, 17, 23, 30, tzinfo=KR_TZ))
+    assert second["fired"] == 1
+    assert any(s[0] == "watch" for s in patched["sent"])
+
+
+def test_successful_send_consumes_edge(patched):
+    """A successful send DOES consume the edge: no re-alert next run."""
+    _seed_saved(patched, entry_low=100, entry_high=105)
+    patched["price"] = 102.0
+    first = _run(patched, now=datetime(2026, 6, 17, 23, 0, tzinfo=KR_TZ))
+    assert first["fired"] == 1
+    assert any(s[0] == "watch" for s in patched["sent"])
+    patched["sent"].clear()
+    second = _run(patched, now=datetime(2026, 6, 17, 23, 30, tzinfo=KR_TZ))
+    assert second["fired"] == 0
+    assert patched["sent"] == []
 
 
 def test_run_returns_json_serializable_triggers(patched):
