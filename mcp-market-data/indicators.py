@@ -218,11 +218,73 @@ def _close(bar) -> float:
     return float(bar.close)
 
 
+def _high(bar) -> float:
+    """Extract high from a dict or OHLCV-like object."""
+    if isinstance(bar, dict):
+        return float(bar["high"])
+    return float(bar.high)
+
+
+def _low(bar) -> float:
+    """Extract low from a dict or OHLCV-like object."""
+    if isinstance(bar, dict):
+        return float(bar["low"])
+    return float(bar.low)
+
+
 def _volume(bar) -> float:
     """Extract volume from a dict or OHLCV-like object."""
     if isinstance(bar, dict):
         return float(bar["volume"])
     return float(bar.volume)
+
+
+def compute_atr(bars: list, period: int = 14) -> Optional[float]:
+    """Average True Range using Wilder's true-range smoothing.
+
+    True range per bar is ``max(high - low, |high - prev_close|,
+    |low - prev_close|)``. The first ATR value is the simple mean of the
+    first ``period`` true ranges; subsequent bars apply Wilder smoothing
+    (running EMA with alpha = 1/period). This mirrors :func:`compute_rsi`'s
+    seed-then-smooth structure.
+
+    Accepts the same dual bar shape as the sibling helpers: each element may
+    be a dict with ``high``/``low``/``close`` keys or an OHLCV dataclass.
+
+    Args:
+        bars: OHLCV bars, oldest-first. Needs at least ``period + 1`` bars
+            (the first bar only supplies a previous close, so it yields no
+            true range of its own).
+        period: ATR lookback (default 14).
+
+    Returns:
+        The smoothed ATR over the most recent bars, or None if fewer than
+        ``period + 1`` bars are available.
+    """
+    if period <= 0 or len(bars) < period + 1:
+        return None
+
+    highs = [_high(b) for b in bars]
+    lows = [_low(b) for b in bars]
+    closes = [_close(b) for b in bars]
+
+    true_ranges: list[float] = []
+    for i in range(1, len(bars)):
+        prev_close = closes[i - 1]
+        true_ranges.append(
+            max(
+                highs[i] - lows[i],
+                abs(highs[i] - prev_close),
+                abs(lows[i] - prev_close),
+            )
+        )
+
+    # Seed: simple mean over the first `period` true ranges.
+    atr = sum(true_ranges[:period]) / period
+    # Wilder smoothing for the remaining true ranges.
+    for tr in true_ranges[period:]:
+        atr = (atr * (period - 1) + tr) / period
+    return atr
 
 
 def compute_avg_volume(volumes: list[float], period: int) -> Optional[float]:

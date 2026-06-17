@@ -11,6 +11,7 @@ from indicators import (
     CYCLE_RISK_PCT_FROM_ATH_THRESHOLD,
     CYCLE_RISK_RETURN_1Y_THRESHOLD,
     classify_overextension,
+    compute_atr,
     compute_horizon_metrics,
     compute_rsi,
     compute_sma,
@@ -136,6 +137,96 @@ def test_return_1w_computed_when_enough_bars():
     closes = [100.0] * 6 + [110.0]  # 7 bars total, last is 110, [-6] is 100
     metrics = compute_horizon_metrics(_bars(closes), ticker="X", market="US")
     assert metrics.return_1w == pytest.approx(0.10)
+
+
+# ---------------------------------------------------------------------------
+# ATR (Wilder true-range smoothing) — input to the chandelier trailing stop
+# used by the position-exit-manager skill.
+# ---------------------------------------------------------------------------
+
+
+def _ohlc_bars(rows: list[tuple[float, float, float]]) -> list[dict]:
+    """Wrap (high, low, close) triples in OHLCV dicts, oldest-first.
+
+    Open and volume are filled with placeholder values that ATR ignores.
+    """
+    return [
+        {
+            "date": f"2025-01-{i + 1:02d}",
+            "open": c,
+            "high": h,
+            "low": lo,
+            "close": c,
+            "volume": 1_000_000,
+        }
+        for i, (h, lo, c) in enumerate(rows)
+    ]
+
+
+def test_atr_constant_true_range():
+    """Every bar has high-low=2 and no gap, so each TR=2 and ATR=2 exactly.
+
+    high = close+1, low = close-1 around a flat 100 close means the
+    high/low straddle the previous close, so the gap terms never dominate
+    and Wilder smoothing of a constant series stays at the constant.
+    """
+    rows = [(101.0, 99.0, 100.0) for _ in range(20)]
+    atr = compute_atr(_ohlc_bars(rows), period=14)
+    assert atr == pytest.approx(2.0)
+
+
+def test_atr_known_series():
+    """Hand-computed ATR against an explicit true-range sequence.
+
+    Closes 10,11,9,12,8; highs/lows below give true ranges (skipping bar 0):
+      bar1: max(13-9, |13-10|, |9-10|)  = 4
+      bar2: max(11-7, |11-11|, |7-11|)  = 4
+      bar3: max(15-10,|15-9|, |10-9|)   = 6
+      bar4: max(10-6, |10-12|, |6-12|)  = 6
+    With period=4 the seed mean = (4+4+6+6)/4 = 5.0 and no bars remain to
+    smooth, so ATR = 5.0.
+    """
+    rows = [
+        (10.0, 10.0, 10.0),  # bar0: seeds prev_close only
+        (13.0, 9.0, 11.0),  # TR 4
+        (11.0, 7.0, 9.0),  # TR 4
+        (15.0, 9.0, 12.0),  # TR 6
+        (10.0, 6.0, 8.0),  # TR 6
+    ]
+    atr = compute_atr(_ohlc_bars(rows), period=4)
+    assert atr == pytest.approx(5.0)
+
+
+def test_atr_none_when_insufficient_bars():
+    """ATR(14) needs at least period+1=15 bars (first bar supplies no TR)."""
+    rows = [(101.0, 99.0, 100.0) for _ in range(14)]
+    assert compute_atr(_ohlc_bars(rows), period=14) is None
+
+
+def test_atr_dict_and_object_parity():
+    """Dict bars and OHLCV-like objects must produce the identical ATR."""
+
+    class _Bar:
+        def __init__(self, high, low, close):
+            self.high = high
+            self.low = low
+            self.close = close
+            self.open = close
+            self.volume = 1_000_000
+            self.date = "2025-01-01"
+
+    rows = [
+        (10.0, 10.0, 10.0),
+        (13.0, 9.0, 11.0),
+        (11.0, 7.0, 9.0),
+        (15.0, 9.0, 12.0),
+        (10.0, 6.0, 8.0),
+    ]
+    dict_bars = _ohlc_bars(rows)
+    obj_bars = [_Bar(h, lo, c) for (h, lo, c) in rows]
+    assert compute_atr(dict_bars, period=4) == pytest.approx(
+        compute_atr(obj_bars, period=4)
+    )
 
 
 # ---------------------------------------------------------------------------
