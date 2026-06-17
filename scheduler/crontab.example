@@ -86,6 +86,20 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # and rolls state/calibration-trend.json (last 12 weeks).
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
 
+# Watchlist monitor — DELAYED / EOD-ish, NOT real-time.
+# Evaluates triggers against the latest CLOSE (provider.get_current_price returns
+# the last bar; KR PyKRX is EOD-oriented), so this is a near-close checkpoint, not
+# an intraday tick alerter. The script self-gates on market hours, so the cron
+# windows below are intentionally coarse and the monitor no-ops cleanly when a
+# market is closed.
+#   KR window: every 30 min, 09:00-15:30 KST Mon-Fri (catches the KR close read).
+0,30 9-15 * * 1-5 cd $PROJECT && uv run python scheduler/watchlist_monitor.py --market KR >> $LOG_DIR/watchlist_monitor.log 2>&1
+#   US window: every 30 min during the US session in KST (22:30-05:00). Split
+#   into the evening leg (22-23 KST, Mon-Fri) and the overnight/morning leg
+#   (00-04 KST, Tue-Sat) so day-of-week filters match the US trading calendar.
+0,30 22-23 * * 1-5 cd $PROJECT && uv run python scheduler/watchlist_monitor.py --market US >> $LOG_DIR/watchlist_monitor.log 2>&1
+0,30 0-4 * * 2-6 cd $PROJECT && uv run python scheduler/watchlist_monitor.py --market US >> $LOG_DIR/watchlist_monitor.log 2>&1
+
 # === Anthropic API mode (alternative) ===
 # Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
 # 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
