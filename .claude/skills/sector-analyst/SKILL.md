@@ -4,6 +4,7 @@ description: This skill should be used when analyzing sector rotation patterns a
 ---
 
 > **Dual-market support**: This skill uses `bin/stock-cli` for data fetching, supporting both US and KR markets. Original FMP scripts preserved in `scripts/` for reference.
+> **For prescriptive verdicts + machine-readable output** (FAVOR / ROTATING_IN / ROTATING_OUT / AVOID per sector, consumed by discovery) use the companion `sector-rotation-rs-screener` skill. This skill stays narrative (cycle phase, scenarios).
 
 # Sector Analyst
 

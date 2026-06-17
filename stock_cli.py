@@ -84,6 +84,13 @@ from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
 from regime import aggregate_regime, compute_regime, compute_realized_vol
+from sector_rs import (
+    US_BENCHMARK,
+    US_SECTOR_CONSTITUENTS,
+    US_SECTOR_ETFS,
+    compute_sector_verdict,
+    rank_sectors,
+)
 from news_features import summarize_news
 from llm_context import validate_llm_context, score_from_debate
 
@@ -511,6 +518,190 @@ def cmd_regime(args) -> int:
                 note += " — floored RISK_ON to NEUTRAL"
             verdict.notes.append(note)
         _print_json(asdict(verdict))
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+# The KR market benchmark all sector proxies are measured against (KODEX 200).
+KR_BENCHMARK = "069500"
+KR_SECTOR_MAP_PATH = PROJECT_ROOT / "data" / "kr_sector_map.csv"
+
+
+def _load_kr_sector_map():
+    """Read data/kr_sector_map.csv into a list of sector specs.
+
+    Returns:
+        List of ``(sector, proxy_etf, constituents)`` tuples where
+        ``constituents`` is a list of 6-digit codes. Returns ``[]`` on any read
+        failure so ``cmd_sector_rs`` degrades to an empty result rather than
+        raising (mirrors the never-raise idiom in candidate_discovery).
+    """
+    if not KR_SECTOR_MAP_PATH.exists():
+        return []
+    out = []
+    try:
+        import csv
+
+        with KR_SECTOR_MAP_PATH.open("r", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                sector = (row.get("sector") or "").strip()
+                proxy = (row.get("proxy_etf") or "").strip()
+                raw = (row.get("constituents") or "").strip()
+                constituents = [c.strip() for c in raw.split(";") if c.strip()]
+                if sector and proxy:
+                    out.append((sector, proxy, constituents))
+    except Exception:  # noqa: BLE001 — never block on CSV parse
+        return []
+    return out
+
+
+def _sector_specs(market: str):
+    """Return ``(benchmark, [(sector, etf, constituents)])`` for the market.
+
+    US specs come from the static maps in ``sector_rs``; KR specs from
+    ``data/kr_sector_map.csv``.
+    """
+    if market == "US":
+        specs = [
+            (sector, etf, US_SECTOR_CONSTITUENTS.get(sector, []))
+            for sector, etf in US_SECTOR_ETFS.items()
+        ]
+        return US_BENCHMARK, specs
+    return KR_BENCHMARK, _load_kr_sector_map()
+
+
+def _metrics_and_closes(bars_by_ticker, ticker, market):
+    """Build HorizonMetrics + closes for one ticker, or ``(None, None)``.
+
+    Never raises: a ticker with no bars (provider miss / delisting) yields
+    ``(None, None)`` so the sector still scores via its NEUTRAL floor.
+    """
+    bars = bars_by_ticker.get(ticker) or []
+    if not bars:
+        return None, None
+    try:
+        bar_dicts = [asdict(b) for b in bars]
+        metrics = compute_horizon_metrics(bars=bar_dicts, ticker=ticker, market=market)
+        closes = [b["close"] for b in bar_dicts if b.get("close") is not None]
+        return metrics, closes
+    except Exception:  # noqa: BLE001 — degrade this ticker, never the whole run
+        return None, None
+
+
+def _write_sector_rs_json(market: str, payload: dict) -> Path:
+    """Atomically write ``data/sector_rs_{market}.json`` (per-market file).
+
+    Writes to a sibling temp file then ``os.replace`` so a concurrent reader
+    (discovery) never sees a half-written file, and uses a per-market filename
+    so a US run never clobbers the KR snapshot (or vice versa).
+
+    Args:
+        market: "US" or "KR" (used lower-cased in the filename).
+        payload: The JSON-serializable snapshot to persist.
+
+    Returns:
+        The path written.
+    """
+    import os
+    import tempfile
+
+    data_dir = PROJECT_ROOT / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    target = data_dir / f"sector_rs_{market.lower()}.json"
+    fd, tmp_name = tempfile.mkstemp(dir=str(data_dir), suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
+        os.replace(tmp_name, target)
+    except Exception:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+        raise
+    return target
+
+
+def cmd_sector_rs(args) -> int:
+    """Rank sectors by relative strength + breadth + lifecycle stage.
+
+    For the market, fetches the benchmark, every sector proxy ETF, and every
+    constituent in one batch call, builds a SectorVerdict per sector via
+    ``sector_rs.compute_sector_verdict`` (FAVOR / ROTATING_IN / ROTATING_OUT /
+    AVOID / NEUTRAL), and ranks by score. A missing benchmark floors every
+    sector to NEUTRAL (the verdict module's contract). Read-only JSON output
+    unless ``--write`` is set, which atomically persists the snapshot to the
+    per-market ``data/sector_rs_{market}.json`` for discovery to consume.
+
+    Args:
+        args: Parsed CLI args with market, days, write.
+
+    Returns:
+        0 on success, 1 on error.
+    """
+    try:
+        market = args.market.upper()
+        benchmark, specs = _sector_specs(market)
+        if not specs:
+            _print_json({"error": f"no sector map for market {market}"})
+            return 1
+
+        # One batch fetch for the benchmark + every ETF + every constituent.
+        wanted = {benchmark}
+        for _sector, etf, constituents in specs:
+            wanted.add(etf)
+            wanted.update(constituents)
+        provider = _get_provider(market)
+        bars_by_ticker = provider.get_price_history_batch(
+            sorted(wanted), days=args.days
+        )
+
+        bench_metrics, bench_closes = _metrics_and_closes(
+            bars_by_ticker, benchmark, market
+        )
+
+        verdicts = []
+        for sector, etf, constituents in specs:
+            etf_metrics, etf_closes = _metrics_and_closes(bars_by_ticker, etf, market)
+            cons_metrics = []
+            for tk in constituents:
+                m, _ = _metrics_and_closes(bars_by_ticker, tk, market)
+                if m is not None:
+                    cons_metrics.append(m)
+            v = compute_sector_verdict(
+                sector=sector,
+                etf_metrics=etf_metrics,
+                etf_closes=etf_closes,
+                benchmark_metrics=bench_metrics,
+                benchmark_closes=bench_closes,
+                constituent_metrics=cons_metrics,
+            )
+            verdicts.append((v, etf, constituents))
+
+        ranked = rank_sectors([v for v, _etf, _c in verdicts])
+        cons_by_sector = {sector: c for sector, _etf, c in specs}
+        etf_by_sector = {sector: etf for sector, etf, _c in specs}
+
+        sectors_out = []
+        for v in ranked:
+            row = asdict(v)
+            row["etf"] = etf_by_sector.get(v.sector, "")
+            row["constituents"] = cons_by_sector.get(v.sector, [])
+            sectors_out.append(row)
+
+        payload = {
+            "market": market,
+            "benchmark": bench_metrics.ticker if bench_metrics else benchmark,
+            "benchmark_available": bench_metrics is not None,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "sectors": sectors_out,
+        }
+
+        if getattr(args, "write", False):
+            path = _write_sector_rs_json(market, payload)
+            payload["written_to"] = str(path)
+
+        _print_json(payload)
         return 0
     except Exception as e:
         _print_json({"error": str(e)})
@@ -1759,6 +1950,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Calendar days of index history to fetch (default 400)",
     )
     p.set_defaults(func=cmd_regime)
+
+    # --- sector-rs ---
+    p = sub.add_parser(
+        "sector-rs",
+        help="Rank sectors by relative strength + breadth + lifecycle stage",
+    )
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of price history to fetch (default 400)",
+    )
+    p.add_argument(
+        "--write",
+        action="store_true",
+        help="Atomically persist data/sector_rs_{market}.json for discovery",
+    )
+    p.set_defaults(func=cmd_sector_rs)
 
     # --- news ---
     p = sub.add_parser("news", help="Fetch recent news headlines for a ticker")
