@@ -66,6 +66,12 @@ MACRO_KEYWORDS = (
     "unemployment rate",
 )
 
+# The R3 macro stream is US-only by design: FOMC/CPI/NFP transmit globally
+# (via FX / index futures) so KR consumes the same stream, but a non-US CPI/NFP
+# row (e.g. UK or EU) must NOT trigger macro_trim. FMP's economic-calendar
+# country field uses "US"; we also accept the long form defensively.
+MACRO_COUNTRIES = ("us", "united states")
+
 Market = Literal["US", "KR", "GLOBAL"]
 EventKind = Literal["earnings", "macro"]
 Timing = Optional[Literal["BMO", "AMC", "TAS"]]
@@ -201,6 +207,21 @@ def _is_macro_event(name: str) -> bool:
     return any(kw in lowered for kw in MACRO_KEYWORDS)
 
 
+def _is_us_macro_country(country: Optional[str]) -> bool:
+    """True if a macro row's country is the US (the only stream R3 acts on).
+
+    Args:
+        country: Raw FMP economic-calendar ``country`` field ("US",
+            "United States", or a non-US country like "GB"/"EU").
+
+    Returns:
+        Whether ``country`` matches a US identifier ("US"/"United States",
+        case-insensitive). Non-US rows are ignored so a foreign CPI/NFP release
+        cannot trigger ``macro_trim``.
+    """
+    return (country or "").strip().lower() in MACRO_COUNTRIES
+
+
 def _normalize_timing(time_value: Optional[str]) -> Timing:
     """Normalize an FMP earnings ``time`` value to BMO/AMC/TAS.
 
@@ -229,14 +250,16 @@ def build_timeline(
     """Merge raw earnings + macro rows into a normalized, sorted timeline.
 
     Pure: takes already-fetched rows (or stubbed ones) and produces the merged
-    structure. Past-dated rows (event_date on/before ``asof``) are dropped.
+    structure. Strictly-past rows (event_date before ``asof``) are dropped;
+    same-day rows (event_date == ``asof``, td == 0) are kept — they still carry
+    binary risk.
 
     Args:
         asof: As-of date, "YYYY-MM-DD".
         earnings_rows: FMP /earning_calendar rows (keys: symbol, date, time,
             companyName). Treated as market-specific (US only in practice).
         macro_rows: FMP /economic_calendar rows (keys: date, event, impact,
-            country, ...). Filtered to High-impact macro keywords.
+            country, ...). Filtered to High-impact, US-country macro keywords.
         market: "US" or "KR" — stamped onto earnings events.
 
     Returns:
@@ -256,7 +279,10 @@ def build_timeline(
             td = trading_days_between(asof, event_date)
         except (ValueError, AttributeError):
             continue
-        if _parse_date(event_date) <= _parse_date(asof):
+        # Drop only strictly-past rows. An event ON the as-of date (td == 0,
+        # e.g. an earnings report TODAY) still carries binary risk and must
+        # reach the WATCH cap.
+        if _parse_date(event_date) < _parse_date(asof):
             continue
         ev = CatalystEvent(
             ticker=symbol,
@@ -276,13 +302,21 @@ def build_timeline(
         name = row.get("event", "")
         event_date = row.get("date")
         impact = row.get("impact")
-        if not event_date or impact != "High" or not _is_macro_event(name):
+        country = row.get("country")
+        if (
+            not event_date
+            or impact != "High"
+            or not _is_macro_event(name)
+            or not _is_us_macro_country(country)
+        ):
             continue
         try:
             td = trading_days_between(asof, event_date)
         except (ValueError, AttributeError):
             continue
-        if _parse_date(event_date) <= _parse_date(asof):
+        # Drop only strictly-past rows. A macro release ON the as-of date
+        # (td == 0, e.g. an FOMC decision TODAY) still drives macro_trim.
+        if _parse_date(event_date) < _parse_date(asof):
             continue
         market_wide.append(
             CatalystEvent(

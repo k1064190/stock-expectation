@@ -110,8 +110,13 @@ def test_build_timeline_groups_earnings_by_ticker_and_filters_macro():
 def test_build_timeline_macro_sorted_nearest_first():
     asof = "2026-06-17"
     macro_rows = [
-        {"date": "2026-06-24", "event": "Nonfarm Payrolls", "impact": "High"},
-        {"date": "2026-06-18", "event": "CPI", "impact": "High"},
+        {
+            "date": "2026-06-24",
+            "event": "Nonfarm Payrolls",
+            "impact": "High",
+            "country": "US",
+        },
+        {"date": "2026-06-18", "event": "CPI", "impact": "High", "country": "US"},
     ]
     tl = build_timeline(asof, [], macro_rows, "US")
     dates = [e.event_date for e in tl["market_wide"]]
@@ -150,6 +155,25 @@ def test_evaluate_gate_earnings_one_td_caps_watch(monkeypatch):
     assert v["confidence_trim"] == 0.0
     assert v["trading_days_until"] == 1
     assert gate.gate_unavailable is False
+
+
+def test_evaluate_gate_earnings_same_day_caps_watch(monkeypatch):
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+    asof = "2026-06-17"  # earnings report TODAY → td == 0
+    gate = evaluate_gate(
+        asof,
+        ["NVDA"],
+        "US",
+        fetch_earnings=_stub_earnings(
+            [{"symbol": "NVDA", "date": "2026-06-17", "time": "amc"}]
+        ),
+        fetch_macro=_stub_macro([]),
+    )
+    v = gate.by_ticker["NVDA"]
+    # A same-day report (td == 0) must NOT be dropped — it caps at WATCH.
+    assert v["cap_label"] == "WATCH"
+    assert v["trading_days_until"] == 0
+    assert v["next_earnings_date"] == "2026-06-17"
 
 
 def test_evaluate_gate_earnings_four_td_trims(monkeypatch):
@@ -221,6 +245,7 @@ def test_evaluate_gate_fomc_one_td_macro_trim(monkeypatch):
                     "date": "2026-06-18",
                     "event": "FOMC Interest Rate Decision",
                     "impact": "High",
+                    "country": "US",
                 }
             ]
         ),
@@ -228,6 +253,54 @@ def test_evaluate_gate_fomc_one_td_macro_trim(monkeypatch):
     assert gate.macro_trim == MACRO_CONFIDENCE_TRIM
     assert len(gate.macro_events) == 1
     assert gate.macro_events[0]["trading_days_until"] == 1
+
+
+def test_evaluate_gate_fomc_same_day_macro_trim(monkeypatch):
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+    # High-impact FOMC TODAY (td == 0) must still drive macro_trim.
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_stub_earnings([]),
+        fetch_macro=_stub_macro(
+            [
+                {
+                    "date": "2026-06-17",
+                    "event": "FOMC Interest Rate Decision",
+                    "impact": "High",
+                    "country": "US",
+                }
+            ]
+        ),
+    )
+    assert gate.macro_trim == MACRO_CONFIDENCE_TRIM
+    assert len(gate.macro_events) == 1
+    assert gate.macro_events[0]["trading_days_until"] == 0
+
+
+def test_evaluate_gate_non_us_macro_ignored(monkeypatch):
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+    # A High-impact, imminent CPI release from a non-US country must NOT trigger
+    # macro_trim — the R3 macro stream is US-only by design.
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_stub_earnings([]),
+        fetch_macro=_stub_macro(
+            [
+                {
+                    "date": "2026-06-18",
+                    "event": "Consumer Price Index",
+                    "impact": "High",
+                    "country": "GB",
+                }
+            ]
+        ),
+    )
+    assert gate.macro_trim == 0.0
+    assert gate.macro_events == []
 
 
 def test_evaluate_gate_distant_macro_no_trim(monkeypatch):
@@ -239,7 +312,14 @@ def test_evaluate_gate_distant_macro_no_trim(monkeypatch):
         "US",
         fetch_earnings=_stub_earnings([]),
         fetch_macro=_stub_macro(
-            [{"date": "2026-06-24", "event": "CPI", "impact": "High"}]
+            [
+                {
+                    "date": "2026-06-24",
+                    "event": "CPI",
+                    "impact": "High",
+                    "country": "US",
+                }
+            ]
         ),
     )
     assert gate.macro_trim == 0.0
@@ -270,6 +350,7 @@ def test_evaluate_gate_kr_macro_only_no_earnings_cap(monkeypatch):
                     "date": "2026-06-18",
                     "event": "Fed Interest Rate Decision",
                     "impact": "High",
+                    "country": "US",
                 }
             ]
         ),

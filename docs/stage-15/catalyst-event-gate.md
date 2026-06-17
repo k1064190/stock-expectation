@@ -64,10 +64,11 @@ never raises the BUY bar** (only R1/R2 do).
 - `stock_cli.py` — `cmd_catalyst_timeline`, `cmd_catalyst_gate`,
   `_catalyst_tickers`, the `catalyst` nested subparser, `events` import, and the
   added `os` / `timedelta` imports.
-- `mcp-market-data/tests/test_events.py` — 17 offline tests (stubbed fetchers):
-  `trading_days_between` boundaries, R3 earnings/macro thresholds, KR
-  macro-only, single-fetch quota guard, timeline merge/grouping, and both
-  fail-open paths (missing key + simulated fetch exception).
+- `mcp-market-data/tests/test_events.py` — 20 offline tests (stubbed fetchers):
+  `trading_days_between` boundaries, R3 earnings/macro thresholds (incl.
+  same-day td==0), macro US-country filter, KR macro-only, single-fetch quota
+  guard, timeline merge/grouping, and both fail-open paths (missing key +
+  simulated fetch exception).
 - `.claude/skills/catalyst-event-gate/SKILL.md` — new skill doc.
 - `.claude/skills/expect/SKILL.md` — Step 4 fetch, Step 5 ALGO row, Step 7
   RULE R3 + R1+R2+R3 stacking.
@@ -115,3 +116,34 @@ separate backtest harness.
   exists — revisit if a KR earnings calendar source is added. The holiday-naive
   `trading_days_between` is fine as a fail-open gate but would need a market
   holiday calendar if R3 is ever used for hard date math.
+
+## Review loop
+
+- **code-reviewer-pro**: clean — no findings on the event-gate diff.
+- **codex (gpt-5.5)**: found two P1 correctness bugs in `build_timeline`.
+  1. **Same-day events dropped.** The earnings (`events.py` ~:259) and macro
+     (~:285) past-date filters used `event_date <= asof`, which silently
+     dropped events ON the as-of date. A `trading_days_until == 0` risk — an
+     earnings report TODAY or an FOMC/CPI/NFP TODAY — was the single highest-risk
+     band yet never reached the WATCH cap / `macro_trim`.
+  2. **Macro country not filtered.** The macro loop accepted any High-impact
+     FOMC/CPI/NFP-keyword row regardless of `country`, so a non-US release (e.g.
+     UK CPI, EU unemployment) could trigger `macro_trim` for US/KR even though R3
+     is a US-only macro stream by design.
+- **Fixes applied** (`mcp-market-data/events.py`):
+  1. Changed both past-date filters from `<= asof` to `< asof` (keep same-day
+     td==0 events; drop only strictly-past rows). Confirmed
+     `trading_days_between` already returns 0 for same-day, which the WATCH /
+     `macro_trim` bands correctly treat as the most imminent.
+  2. Added `MACRO_COUNTRIES = ("us", "united states")` + `_is_us_macro_country`
+     helper, and a `not _is_us_macro_country(country)` clause to the macro
+     filter (tolerant of "US" / "United States", case-insensitive).
+  - Fail-open + KR-macro-only behavior unchanged; the live CLI already feeds the
+    real `/economic_calendar` `country` field, so no CLI change was needed.
+- **New tests** (`mcp-market-data/tests/test_events.py`):
+  `test_evaluate_gate_earnings_same_day_caps_watch` (td==0 earnings → WATCH),
+  `test_evaluate_gate_fomc_same_day_macro_trim` (td==0 FOMC → macro_trim),
+  `test_evaluate_gate_non_us_macro_ignored` (GB CPI → no macro_trim). Existing
+  macro test rows gained an explicit `country: "US"` to keep asserting their
+  intent. Mutation-checked: all three new tests fail against the pre-fix code
+  and pass after. Suite: `20 passed`; full non-network suite `437 passed`.
