@@ -397,6 +397,57 @@ def cmd_horizon_metrics_batch(args) -> int:
         return 1
 
 
+def cmd_screen_presurge(args) -> int:
+    """Screen the universe for pre-surge setups (before a stock runs).
+
+    Complements the legacy momentum funnel: surfaces base/pivot, pullback,
+    relative-strength-leader, and (US-only) pre-earnings candidates that are NOT
+    yet extended. Outputs a JSON list tagged with discovery_source/setup_type.
+
+    Args:
+        args: Parsed CLI args (market, top_n, min_score, days, with_earnings).
+
+    Returns:
+        0 on success, 1 on failure.
+    """
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "scheduler"))
+        from pre_surge_discovery import discover_presurge_candidates
+
+        cands = discover_presurge_candidates(
+            market=args.market,
+            with_earnings=bool(getattr(args, "with_earnings", False)),
+            top_n_output=args.top_n,
+            min_score=args.min_score,
+            days=args.days,
+        )
+        results = [
+            {
+                "ticker": c.ticker,
+                "name": c.name,
+                "market": c.market,
+                "discovery_source": c.discovery_source,
+                "setup_type": c.setup_type,
+                "return_5d_pct": round(c.return_5d_pct, 2),
+                "vol_ratio": round(c.vol_ratio_5d, 2),
+                "market_cap": c.market_cap,
+            }
+            for c in cands
+        ]
+        _print_json(
+            {
+                "market": args.market.upper(),
+                "min_score": args.min_score,
+                "count": len(results),
+                "candidates": results,
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
 # Default liquid index proxies for the market-regime gate. US uses both the
 # broad market (SPY) and the tech/growth proxy (QQQ) because the June 2026
 # drawdown was growth-led — SPY stayed calm while QQQ broke down — and the gate
@@ -1661,6 +1712,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Calendar days of history per ticker (default 400)",
     )
     p.set_defaults(func=cmd_horizon_metrics_batch)
+
+    # --- screen-presurge ---
+    p = sub.add_parser(
+        "screen-presurge",
+        help="Screen the universe for pre-surge setups (base/pullback/RS/pre-earnings)",
+    )
+    p.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    p.add_argument(
+        "--top-n", type=int, default=20, help="Max candidates to return (default 20)"
+    )
+    p.add_argument(
+        "--min-score",
+        type=float,
+        default=0.5,
+        help="Minimum best-setup score to survive (0-1, default 0.5)",
+    )
+    p.add_argument(
+        "--days",
+        type=int,
+        default=400,
+        help="Calendar days of history per ticker (default 400)",
+    )
+    p.add_argument(
+        "--with-earnings",
+        action="store_true",
+        help="Enable the US-only pre-earnings setup (best-effort FMP fetch)",
+    )
+    p.set_defaults(func=cmd_screen_presurge)
 
     # --- regime ---
     p = sub.add_parser(

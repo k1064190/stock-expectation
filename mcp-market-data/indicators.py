@@ -244,6 +244,64 @@ def compute_avg_volume(volumes: list[float], period: int) -> Optional[float]:
     return sum(window) / period
 
 
+def compute_return_stdev(closes: list[float], window: int) -> Optional[float]:
+    """Sample standard deviation of daily percentage returns over the last window.
+
+    Measures realised volatility from close-to-close simple returns. Used by the
+    pre-surge base/pivot detector to quantify a volatility "coil".
+
+    Args:
+        closes: Closing prices, oldest-first.
+        window: Number of trailing daily returns to measure. Needs
+            ``window + 1`` closes (each return spans two bars).
+
+    Returns:
+        Sample standard deviation (ddof=1) of the last ``window`` daily returns,
+        or None if there are fewer than ``window + 1`` closes, ``window < 2``, or
+        any base price is non-positive.
+    """
+    if window < 2 or len(closes) < window + 1:
+        return None
+    rets: list[float] = []
+    for i in range(len(closes) - window, len(closes)):
+        prev = closes[i - 1]
+        if prev <= 0:
+            return None
+        rets.append(closes[i] / prev - 1.0)
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+    return var**0.5
+
+
+def contraction_ratio(
+    closes: list[float], recent: int = 10, prior: int = 20
+) -> Optional[float]:
+    """Volatility-contraction ratio: recent return-stdev over prior return-stdev.
+
+    A value below 1 means recent daily volatility has contracted relative to the
+    immediately preceding window — the "coil" that precedes many base breakouts.
+    The two windows are non-overlapping (the prior window ends where the recent
+    window begins).
+
+    Args:
+        closes: Closing prices, oldest-first.
+        recent: Length of the recent return window (default 10).
+        prior: Length of the prior return window (default 20).
+
+    Returns:
+        ``stdev(recent) / stdev(prior)``, or None if there are fewer than
+        ``recent + prior + 1`` closes or the prior stdev is zero.
+    """
+    if recent < 2 or prior < 2 or len(closes) < recent + prior + 1:
+        return None
+    recent_std = compute_return_stdev(closes, recent)
+    prior_closes = closes[: len(closes) - recent]
+    prior_std = compute_return_stdev(prior_closes, prior)
+    if recent_std is None or prior_std is None or prior_std == 0:
+        return None
+    return recent_std / prior_std
+
+
 def compute_horizon_metrics(
     bars: list,
     ticker: str,

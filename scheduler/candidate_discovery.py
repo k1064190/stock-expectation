@@ -65,6 +65,22 @@ class Candidate:
             this 0; Stage B's theme_clusterer backfills it.
         reason: Why this ticker made the cut — ``"anchor"`` |
             ``"momentum"`` | ``"volume"``. Anchors are always included.
+        discovery_source: Which discovery stream produced this candidate —
+            ``"momentum"`` (the legacy 5d-return/volume filter), ``"presurge"``
+            (the pre-surge base/pullback/RS/pre-earnings engine), ``"sector"``
+            (a sector-rotation leader), or ``"anchor"``. Defaults to
+            ``"momentum"`` so all existing constructors keep their meaning.
+        setup_type: For pre-surge candidates, the matched setup —
+            ``"base_pivot"`` | ``"pullback"`` | ``"rs_leader"`` |
+            ``"pre_earnings"``; ``None`` for momentum/anchor candidates.
+        watch_only: True when downstream gating has demoted this candidate to
+            WATCH-only (e.g. a parabolic >20% / overextended momentum name) so
+            it must not be logged as a new BULL.
+        sector_verdict: Optional sector-rotation verdict carried for this
+            candidate's sector — ``"FAVOR"`` | ``"AVOID"`` | ``"ROTATING"`` |
+            ``None`` (populated by the sector-rotation consumer).
+        sector_stage: Optional sector lifecycle stage — e.g. ``"early"`` |
+            ``"late"`` | ``None``.
     """
 
     ticker: str
@@ -76,6 +92,11 @@ class Candidate:
     vol_ratio_5d: float
     news_count_7d: int = 0
     reason: str = "momentum"
+    discovery_source: str = "momentum"
+    setup_type: Optional[str] = None
+    watch_only: bool = False
+    sector_verdict: Optional[str] = None
+    sector_stage: Optional[str] = None
 
 
 # Three KR anchors. Always included regardless of dynamic filter score so
