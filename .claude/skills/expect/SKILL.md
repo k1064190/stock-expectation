@@ -96,9 +96,16 @@ bin/stock-cli news NVDA --market US --limit 5 --since-days 7
 # KR: Naver Finance scrape + Open DART regulatory disclosures
 bin/stock-cli news 005930        --market KR --limit 5 --since-days 7
 bin/stock-cli disclosure 005930              --since-days 7
+
+# Catalyst event gate (R3) — one call per market, all candidates at once.
+# Returns per-ticker earnings cap/trim (US) + market-wide macro_trim (US+KR).
+bin/stock-cli catalyst gate NVDA,AMD,AVGO,MSFT,AAPL --market US
+bin/stock-cli catalyst gate 005930,000660,035420,005380,051910 --market KR
 ```
 
 Each `news` call returns a `generated_at` timestamp + items with optional `sentiment_score` (US Alpha Vantage only) and `sentiment_label`. Disclosures (`KR` only) include `report_nm` to scan for material flags (감자 / 유상증자 / 관리종목 / 거래정지).
+
+The `catalyst gate` call returns `by_ticker[SYM]` = `{cap_label, confidence_trim, next_earnings_date, trading_days_until}` plus a market-wide `macro_trim` and `gate_unavailable`. Fetch it **once per market** (it fetches the FMP earnings + macro windows once and iterates all tickers in memory). This is the input to RULE R3 (Step 7) and the ALGO 'Earnings event' row (Step 5). If `gate_unavailable` is true (no FMP key / fetch error), treat every cap/trim as zero and proceed — the gate is fail-open by design.
 
 If Finnhub returns nothing and the fallback chain produces an empty list, treat news_score's sentiment + volume components as 0 — do not invent.
 
@@ -125,7 +132,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | **Cycle** | `pct_from_52w_high` ≥ -0.10 | +1.0 | within 10% of 52-week high |
 | | `max_drawdown_1y` ≤ -0.25 | -1.0 | |
 | | else | 0 | |
-| **Earnings event** *(penalty only)* | next earnings within 7 days | -1.0 | optional — requires `earnings-calendar` lookup |
+| **Earnings event** *(penalty only)* | next earnings within 7 days | -1.0 | fed by RULE R3 — apply -1.0 when `catalyst gate` reports the ticker's `trading_days_until ≤ 5` (cap or trim band). R3 then also caps/trims per Step 7. |
 | | else | 0 | |
 
 Max positive sum: 3 + 1.5 + 1.5 + 1 + 1 + 0 = **8.0**. Max negative drag: -1 + -0.5 + -0.5 + -1 + -1 = **-4.0**. Effective floor with earnings event also: **-5.0**.
@@ -294,12 +301,37 @@ RSI < 60) and entries > 15% above MA20 won 30% (vs 66% in the 3–8% band). A
 blow-off entry is a strong anti-signal that the broad regime gate (R1) cannot
 see.
 
-**R1 + R2 stacking (explicit):** apply both gates cumulatively.
-- A WATCH cap from *either* rule wins: if R1 is RISK_OFF **or** R2 is EXTREME,
-  the label is WATCH (no BULL logged), full stop.
-- The BUY-bar raises are **additive**: base 8.0, +1.0 if R1 NEUTRAL, +1.0 if R2
-  ELEVATED → e.g. NEUTRAL regime **and** ELEVATED stock requires COMPOSITE ≥ 10.0.
-- Confidence caps take the **minimum** of the applicable caps (each is 0.60 here).
+**RULE R3 — Event-risk gate (imminent binary catalysts).** Read the `catalyst
+gate` output (Step 4) for the candidate's market. R3 is a risk gate only — it
+never raises the BUY bar and never issues a BUY.
+- **Earnings (per-ticker, US only).** From `by_ticker[SYM]`:
+  - `cap_label == "WATCH"` (next earnings `trading_days_until ≤ 2`): cap the
+    label at WATCH, resolve would-be BULL horizons to NEUTRAL. Emit "⚠️ EARNINGS
+    in N td — entry gated". Don't hold a directional thesis through a coin-flip
+    gap.
+  - `confidence_trim == 0.05` (`2 < td ≤ 5`): trim logged confidence by 0.05.
+    Emit "⚠️ earnings in N td — confidence trimmed".
+- **Macro (market-wide, US + KR).** If `macro_trim == 0.05` (a High-impact
+  FOMC/CPI/NFP within 2 td), trim **every** pick in that market by 0.05 and emit
+  "⚠️ macro event (<name>) in N td". **KR consumes the US macro stream** (it
+  transmits via FX / SOXL); KR never gets a per-ticker earnings cap (no forward
+  KR EPS feed).
+- **Fail-open.** If `gate_unavailable` is true, treat all caps/trims as zero.
+
+Rationale: the deterministic ALGO/NEWS/LLM_CONTEXT score cannot see dated binary
+events. A BUY logged the day before the report or the Fed gaps on the print, not
+the thesis — exactly the entries R3 caps or trims.
+
+**R1 + R2 + R3 stacking (explicit):** apply all three gates cumulatively.
+- A WATCH cap from *any* rule wins: if R1 is RISK_OFF **or** R2 is EXTREME **or**
+  R3 earnings is WATCH, the label is WATCH (no BULL logged), full stop.
+- The BUY-bar raises are **additive** and come **only from R1/R2**: base 8.0,
+  +1.0 if R1 NEUTRAL, +1.0 if R2 ELEVATED → e.g. NEUTRAL regime **and** ELEVATED
+  stock requires COMPOSITE ≥ 10.0. **R3 never raises the bar.**
+- Confidence is pulled **down** by the strictest of all applicable caps/trims:
+  take the **minimum** of the R1/R2 caps (each 0.60) and then subtract the R3
+  earnings trim (−0.05) and the R3 macro trim (−0.05) that apply to the pick
+  (a pick can eat both R3 trims at once).
 
 Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
 

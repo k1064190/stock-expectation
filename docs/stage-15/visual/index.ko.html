@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>15단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --accent: #2a6b7c;
+        --accent-muted: #7aa8b4;
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --border: #e0dedd;
+        --text: #1a1a1a;
+        --text-muted: #6b6b6b;
+        --text-light: #9a9a9a;
+        --node-filled-muted: #9dbec8;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Helvetica,
+          Arial,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        font-size: 15px;
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      header .title-block h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+
+      header .title-block p {
+        font-size: 0.825rem;
+        color: var(--text-muted);
+        margin-top: 0.1rem;
+      }
+
+      header nav[aria-label="언어"] {
+        font-size: 0.825rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      header nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      header nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline strip ── */
+      nav[aria-label="단계 타임라인"] {
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .timeline-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .timeline-connector {
+        width: 2rem;
+        height: 2px;
+        background: var(--border);
+        flex-shrink: 0;
+      }
+
+      .timeline-node {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .timeline-node.filled-muted {
+        background: var(--node-filled-muted);
+        border: 2px solid var(--node-filled-muted);
+        color: #ffffff;
+      }
+
+      .timeline-node.accent {
+        background: var(--accent);
+        border: 2px solid var(--accent);
+        color: #ffffff;
+      }
+
+      .timeline-label {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        margin-top: 0.35rem;
+        white-space: nowrap;
+      }
+
+      .timeline-item.current .timeline-label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 0.5rem;
+      }
+
+      .stage-heading h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+
+      .stage-summary {
+        font-size: 0.95rem;
+        color: var(--text-muted);
+        margin-bottom: 1.75rem;
+        font-style: italic;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.75rem 2rem;
+        margin-bottom: 1.5rem;
+      }
+
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      .card-section {
+        margin-bottom: 1.25rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+      }
+
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text);
+        line-height: 1.65;
+      }
+
+      .card-section ul {
+        list-style: none;
+        padding: 0;
+      }
+
+      .card-section ul li {
+        font-size: 0.9rem;
+        color: var(--text);
+        line-height: 1.6;
+        padding-left: 1.1rem;
+        position: relative;
+        margin-bottom: 0.3rem;
+      }
+
+      .card-section ul li::before {
+        content: "-";
+        position: absolute;
+        left: 0;
+        color: var(--text-light);
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding: 0;
+      }
+
+      .card-section .code-list li {
+        padding: 0.2rem 0;
+        padding-left: 0;
+        margin-bottom: 0;
+      }
+
+      .card-section .code-list li::before {
+        display: none;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #f0efed;
+        border: 1px solid #e4e3e0;
+        border-radius: 3px;
+        padding: 0.1em 0.4em;
+        color: var(--text);
+        word-break: break-all;
+      }
+
+      .card-section.retrospective p {
+        font-style: italic;
+        color: var(--text-muted);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        main {
+          padding: 1.25rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1rem;
+        }
+        nav[aria-label="단계 타임라인"] {
+          padding: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="title-block">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어"><a href="index.html">EN</a> | 한국어</nav>
+    </header>
+
+    <nav aria-label="단계 타임라인">
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">0</div>
+          <div class="timeline-label">0단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">1</div>
+          <div class="timeline-label">1단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">2</div>
+          <div class="timeline-label">2단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">3</div>
+          <div class="timeline-label">3단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">4</div>
+          <div class="timeline-label">4단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted" style="font-size: 0.55rem">
+            4.1
+          </div>
+          <div class="timeline-label">4.1단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">5</div>
+          <div class="timeline-label">5단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">6</div>
+          <div class="timeline-label">6단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">7</div>
+          <div class="timeline-label">7단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">8</div>
+          <div class="timeline-label">8단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">9</div>
+          <div class="timeline-label">9단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item">
+          <div class="timeline-node filled-muted">11</div>
+          <div class="timeline-label">11단계</div>
+        </div>
+        <div class="timeline-connector"></div>
+
+        <div class="timeline-item current">
+          <div class="timeline-node accent">15</div>
+          <div class="timeline-label">15단계</div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section>
+        <div class="stage-heading">
+          <h2>15단계</h2>
+        </div>
+        <p class="stage-summary">
+          진입 구간 내에 수익 발표나 고영향 매크로 이벤트가 존재할 때 진입을
+          차단하거나 신뢰도를 낮추는 결정론적·페일-오픈 이벤트 리스크
+          게이트(R3)를 도입합니다.
+        </p>
+
+        <article class="card">
+          <h3>Catalyst Event Gate</h3>
+
+          <div class="card-section">
+            <h4>왜</h4>
+            <p>
+              /expect 점수(ALGO + NEWS + LLM_CONTEXT)와 R1(레짐) / R2(과확장)
+              게이트는 모두 상태(state) 기반이어서 날짜가 정해진 이진 이벤트를
+              인식하지 못합니다. 기술적으로 강하고 매크로가 뒷받침되는
+              셋업이라도, 다음 거래일이 수익 발표일이거나 Fed 결정일이라면
+              잘못된 진입입니다. 결과는 논리적 테제가 아닌 동전 던지기 갭이
+              됩니다. R3는 이 맹점을 결정론적·페일-오픈 이벤트 리스크 게이트로
+              해소합니다.
+            </p>
+          </div>
+
+          <div class="card-section">
+            <h4>무엇을</h4>
+            <ul>
+              <li>
+                두 FMP 캘린더를 통합한 선행 촉매 타임라인:
+                <code>/earning_calendar</code>(종목별 수익 발표, US 상장 종목
+                한정)와 <code>/economic_calendar</code>(시장 전반 고영향 매크로:
+                FOMC / CPI / NFP).
+              </li>
+              <li>
+                RULE R3 게이트(EventGate): 종목별 수익 발표 캡/트림(US) + 시장
+                전반 매크로 트림(US + KR). KR은 매크로 전용 — US 매크로 스트림을
+                소비(FX / SOXL 경유 전달)하지만 종목별 수익 발표 캡은 없음(FMP에
+                KR 선행 EPS 피드 없음).
+              </li>
+              <li>
+                CLI:
+                <code
+                  >bin/stock-cli catalyst timeline TICKERS --market {US,KR}
+                  [--days 14] [--include-macro]</code
+                >
+                및
+                <code>bin/stock-cli catalyst gate TICKERS --market {US,KR}</code
+                >.
+              </li>
+              <li>
+                타임라인 구조, R3 규칙 테이블, CLI, KR-vs-US 매트릭스, R1+R2+R3
+                스태킹을 문서화한 신규 catalyst-event-gate 스킬.
+              </li>
+              <li>
+                /expect 연동: Step 4 촉매 게이트 fetch, Step 7 게이트 섹션의
+                RULE R3, ALGO 'Earnings event' 행을 R3가 공급.
+              </li>
+              <li>
+                R3 임계값(거래일): 수익 발표 td &lt;= 2이면 레이블을 WATCH로 캡;
+                2 &lt; td &lt;= 5이면 신뢰도 0.05 트림; td &gt; 5이면 적용 없음.
+                고영향 FOMC/CPI/NFP가 td &lt;= 2 이내이면 해당 시장의 모든
+                종목에 macro_trim 0.05 적용.
+              </li>
+              <li>
+                스태킹: R1/R2/R3 중 어느 하나의 WATCH 캡이라도 존재하면 해당
+                레이블이 확정; 신뢰도는 가장 엄격한 캡 순으로 하향 조정된 뒤 R3
+                트림이 추가 적용; R3는 BUY 기준을 올리지 않음(R1/R2만 올릴 수
+                있음).
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>어떻게</h4>
+            <ul>
+              <li>
+                순수 코어는 stdlib 전용에 fetcher 주입 가능하므로 R3 로직 전체를
+                오프라인으로 테스트: <code>build_timeline</code> /
+                <code>evaluate_gate</code>는 선택적
+                <code>fetch_earnings</code> / <code>fetch_macro</code> 콜러블을
+                받음(기본값은 실제 httpx FMP 래퍼; 테스트는 스텁 전달).
+              </li>
+              <li>
+                <code>trading_days_between</code>은 월–금 경계를 카운트(당일 =
+                0, 주말 인식). 공휴일은 의도적으로 무시 — 문서화된 주의사항;
+                유일한 영향은 이벤트가 ~1일 더 멀어 보이는 것으로, 페일-오픈
+                리스크 게이트에서는 안전한 방향.
+              </li>
+              <li>
+                할당량 보호: <code>evaluate_gate</code> / CLI는 수익 + 매크로
+                윈도우를 호출당 한 번만 fetch하고 모든 종목을 메모리 내에서
+                순회(FMP 무료 티어 250회/일). KR은 수익 fetch를 전부 건너뜀.
+              </li>
+              <li>
+                FAIL-OPEN은 mcp-market-data의 나머지 컨벤션을 따름:
+                <code>FMP_API_KEY</code>가 없거나 fetch 예외 발생 시 캡/트림이
+                없는 중립적 <code>EventGate(gate_unavailable=True)</code>를
+                반환하며, CLI는 여전히 exit 0으로 종료.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section">
+            <h4>코드 위치</h4>
+            <ul class="code-list">
+              <li>
+                <code>mcp-market-data/events.py</code> — CatalystEvent,
+                EventGate, trading_days_between, build_timeline, evaluate_gate,
+                임계값, 그리고 thin _fetch_earnings_window / _fetch_macro_window
+                httpx 래퍼.
+              </li>
+              <li>
+                <code>stock_cli.py</code> — cmd_catalyst_timeline,
+                cmd_catalyst_gate, _catalyst_tickers, catalyst 중첩 서브파서,
+                events 임포트.
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_events.py</code> — 17개
+                오프라인 테스트(스텁 fetcher).
+              </li>
+              <li>
+                <code>.claude/skills/catalyst-event-gate/SKILL.md</code> — 신규
+                스킬 문서.
+              </li>
+              <li>
+                <code>.claude/skills/expect/SKILL.md</code> — Step 4 fetch, Step
+                5 ALGO 행, Step 7 RULE R3 + R1+R2+R3 스태킹.
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-section retrospective">
+            <h4>회고</h4>
+            <p>
+              잘 된 점: fetcher 주입 덕분에 R3 규칙 전체를 오프라인으로 테스트할
+              수 있었음(17개 그린, 네트워크 없음); 페일-오픈 + 단일 fetch 할당량
+              가드는 기존 us.py 프로바이더 계약을 복사하는 것만으로 깔끔하게
+              나왔음. 앞으로 이어갈 것: KR은 선행 KR EPS 피드가 생길 때까지
+              구조적으로 매크로 전용; R3가 하드 날짜 계산에 사용될 경우 공휴일을
+              고려하지 않는 <code>trading_days_between</code>은 시장 공휴일
+              캘린더가 필요함.
+            </p>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

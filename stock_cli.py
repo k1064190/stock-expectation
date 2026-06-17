@@ -31,9 +31,10 @@ Examples:
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -90,6 +91,12 @@ from sector_rs import (
     US_SECTOR_ETFS,
     compute_sector_verdict,
     rank_sectors,
+)
+from events import (
+    build_timeline,
+    evaluate_gate,
+    _fetch_earnings_window,
+    _fetch_macro_window,
 )
 from news_features import summarize_news
 from llm_context import validate_llm_context, score_from_debate
@@ -774,6 +781,112 @@ def cmd_disclosure(args) -> int:
                 "items": [asdict(d) for d in items],
             }
         )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def _catalyst_tickers(raw: str) -> list[str]:
+    """Split a comma-separated ticker argument, dropping blanks.
+
+    Args:
+        raw: e.g. "NVDA,AMD" or "005930".
+
+    Returns:
+        List of trimmed, non-empty ticker strings.
+    """
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def cmd_catalyst_timeline(args) -> int:
+    """Emit the merged forward catalyst timeline for one or more tickers.
+
+    Fetches the FMP earnings (US-listed only) + economic calendars once for the
+    requested window, normalizes them into ``CatalystEvent`` rows, and groups
+    them into per-ticker earnings + market-wide macro lists. Macro is omitted
+    unless ``--include-macro`` is passed. FAIL-OPEN: a missing FMP key or fetch
+    error yields empty lists plus ``gate_unavailable=true``, never an error exit.
+
+    Args:
+        args: Parsed CLI arguments with tickers, market, days, include_macro.
+
+    Returns:
+        0 always (read-only, fail-open). 1 only on an unexpected internal error.
+    """
+    try:
+        market = args.market.upper()
+        tickers = _catalyst_tickers(args.tickers)
+        norm = [t.upper() if market == "US" else t for t in tickers]
+        asof = datetime.now().date().isoformat()
+        window_to = (datetime.now().date() + timedelta(days=args.days)).isoformat()
+
+        out = {
+            "asof": asof,
+            "market": market,
+            "days": args.days,
+            "tickers": norm,
+            "include_macro": args.include_macro,
+            "gate_unavailable": False,
+            "by_ticker": {},
+            "market_wide": [],
+        }
+
+        if not os.environ.get("FMP_API_KEY", ""):
+            out["gate_unavailable"] = True
+            out["note"] = "FMP_API_KEY not set — timeline unavailable (fail-open)"
+            _print_json(out)
+            return 0
+
+        try:
+            earnings_rows = (
+                _fetch_earnings_window(asof, window_to, market)
+                if market == "US"
+                else []
+            )
+            macro_rows = (
+                _fetch_macro_window(asof, window_to) if args.include_macro else []
+            )
+        except Exception as e:
+            out["gate_unavailable"] = True
+            out["note"] = f"event calendar fetch failed: {e} (fail-open)"
+            _print_json(out)
+            return 0
+
+        timeline = build_timeline(asof, earnings_rows, macro_rows, market)
+        # Keep only the requested tickers in the per-ticker view.
+        out["by_ticker"] = {
+            t: [asdict(e) for e in timeline["by_ticker"].get(t, [])] for t in norm
+        }
+        if args.include_macro:
+            out["market_wide"] = [asdict(e) for e in timeline["market_wide"]]
+        _print_json(out)
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_catalyst_gate(args) -> int:
+    """Emit the deterministic R3 event-risk gate for one or more tickers.
+
+    Per-ticker earnings cap/trim (US only) + market-wide macro trim (US + KR).
+    KR returns macro_trim only — no per-ticker earnings cap, since FMP has no
+    forward KR EPS feed. FAIL-OPEN: missing key or fetch error yields a neutral
+    gate with ``gate_unavailable=true``.
+
+    Args:
+        args: Parsed CLI arguments with tickers, market.
+
+    Returns:
+        0 always (read-only, fail-open). 1 only on an unexpected internal error.
+    """
+    try:
+        market = args.market.upper()
+        tickers = _catalyst_tickers(args.tickers)
+        asof = datetime.now().date().isoformat()
+        gate = evaluate_gate(asof, tickers, market)
+        _print_json(asdict(gate))
         return 0
     except Exception as e:
         _print_json({"error": str(e)})
@@ -2109,6 +2222,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--limit", type=_positive_int, default=30)
     p.set_defaults(func=cmd_disclosure)
+
+    # --- catalyst (forward event timeline + R3 event-risk gate) ---
+    catalyst = sub.add_parser(
+        "catalyst",
+        help="Forward catalyst timeline + R3 event-risk gate (earnings + macro)",
+    )
+    catalyst_sub = catalyst.add_subparsers(dest="catalyst_command", required=True)
+
+    ct = catalyst_sub.add_parser(
+        "timeline",
+        help="Merged forward earnings (US) + macro timeline for tickers",
+    )
+    ct.add_argument("tickers", help="Comma-separated tickers (e.g. NVDA,AMD or 005930)")
+    ct.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    ct.add_argument(
+        "--days",
+        type=_positive_int,
+        default=14,
+        help="Forward calendar-day window to scan (default 14)",
+    )
+    ct.add_argument(
+        "--include-macro",
+        action="store_true",
+        help="Include the market-wide macro (FOMC/CPI/NFP) timeline",
+    )
+    ct.set_defaults(func=cmd_catalyst_timeline)
+
+    cg = catalyst_sub.add_parser(
+        "gate",
+        help="Deterministic R3 gate: per-ticker earnings cap/trim + macro_trim",
+    )
+    cg.add_argument("tickers", help="Comma-separated tickers (e.g. NVDA,AMD or 005930)")
+    cg.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
+    cg.set_defaults(func=cmd_catalyst_gate)
 
     # --- memory (Stage 7-A: mem0 semantic memory) ---
     memory = sub.add_parser(
