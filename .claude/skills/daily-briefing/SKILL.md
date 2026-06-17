@@ -208,6 +208,37 @@ Section 3 (시장 환경 분석) 결과 + 섹터 lifecycle + narrative themes �
 
 각 시장에서 **5-6개 종목 선정**해 라벨 부여 (총 10-12개). 라벨이 BUY/WATCH만 있다면 좋지만, AVOID/SELL도 자연스럽게 포함 가능 (다양성 + 공부 자료).
 
+### 4.5. 블렌드 후보 퍼널 + 코호트 태깅 (모멘텀 편향 보정)
+
+Cron 브리핑의 후보는 더 이상 모멘텀 단일 스트림이 아니다.
+`scheduler/blended_funnel.py`의 `assemble_blended_candidates`가 **2개 스트림을 병합**한다:
+
+- **PRE-SURGE** (`scheduler/pre_surge_discovery.py`): base/pullback/RS/pre-earnings —
+  아직 과열 아닌 종목. 프롬프트에서 **먼저** 제시되며 우선 검토 대상.
+- **MOMENTUM** (legacy 5일 급등/거래량): 유지하되 **캡**되고, "과열 아닐 때만 BUY"로 표기.
+- **앵커** (SPY/QQQ/DIA, 005930/000660/069500): 시장 참고용 — 추천 슬롯 아님.
+
+근거: as-of 백테스트(`scheduler/asof_backtest.py`)에서 trailing-1m >40% 모멘텀 코호트가
+최악(≈24-55% 적중), pre-surge는 1W에서 +8.9pp 우위(단 신뢰구간은 0 포함 — 확정 아님).
+따라서 모멘텀 **대체가 아니라 가산 블렌드** + 과열 캡으로 운용한다.
+
+**과열 캡은 store 레벨에서 강제된다 (codex-cli에서 유일하게 작동하는 enforcement).**
+`bin/stock-cli predict create --source LIVE --direction BULL`은
+`--components`의 `overextension`이 EXTREME이거나 `return_1m > 0.20`이면
+`mcp-prediction-store/models.py:insert_prediction`이 **하드 거부**한다 (BEAR 거부와 동일 패턴).
+프롬프트 캡은 advisory일 뿐이므로, 반드시 아래 components를 정직하게 넘겨야 한다.
+
+**코호트 태깅 (Section 5 components에 추가 필수)**: 모든 `predict create`의 `--components`에
+`overextension`(NONE/ELEVATED/EXTREME) + `return_1m`(소수) + `discovery_source`(presurge/momentum)
++ `setup_type`(base_pivot/pullback/rs_leader/pre_earnings/momentum)를 포함한다.
+주간 calibration이 이 태그로 스트림별 적중률을 추적한다.
+
+**호라이즌 규칙 (백테스트 근거)**: PRE-SURGE 픽(base/pullback/rs_leader)은 **1M 이상**에 conviction을
+둔다 — base/pullback 셋업은 전개에 수 주가 걸려, 1W 호라이즌에서는 약 60%가 목표 미달로 만료(dead money,
+as-of 백테스트)되지만 1M에서는 만료 ~11%로 모멘텀과 대등하다. MOMENTUM 픽은 1W도 무방.
+즉 pre-surge는 모멘텀을 "이긴다"기보다 퍼널이 못 보던 **다양성**을 더하는 가산 스트림이며, 과열 캡(store
+게이트)이 실증된 핵심 개선이다.
+
 ### 5. 예측 등록 (각 종목별)
 
 BUY/WATCH/HOLD 라벨 종목은 모두 DB에 등록 (AVOID/SELL은 정보 제공만, 등록 선택).
@@ -225,7 +256,7 @@ bin/stock-cli predict create \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
-  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","regime":"NEUTRAL"}' \
+  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","return_1m":0.12,"regime":"NEUTRAL","discovery_source":"presurge","setup_type":"pullback"}' \
   --source LIVE \
   --recalibrate \
   --analysis-group-id "$GROUP_ID"

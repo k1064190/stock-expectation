@@ -458,15 +458,74 @@ def validate_prediction_dict(p: dict) -> list[str]:
     return errors
 
 
+# Overextension gate thresholds. A LIVE BULL entered on a parabolic blow-off is
+# empirically a strong anti-signal: the closed-BULL history shows ~26% hit at
+# entry RSI>75 (vs ~47% at RSI<60), and the as-of backtest's >40% trailing-month
+# bucket is the worst-performing momentum cohort. The briefing's prompt-level
+# parabolic cap is advisory only — under codex-cli the LLM logs predictions
+# directly via ``bin/stock-cli predict create``, bypassing any in-process funnel
+# logic — so this STORE-LEVEL gate is the one enforcement that survives cron.
+GATE_PARABOLIC_RETURN_1M = 0.20  # trailing 21-day return above which a BULL is a chase
+
+
+def _check_overextension_gate(pred: Prediction) -> None:
+    """Hard-reject LIVE BULL predictions entered on a parabolic blow-off.
+
+    Reads the ``overextension`` level and ``return_1m`` (trailing 21-day return,
+    decimal) the briefing/expect skills pass in ``components``. Fires only when
+    those fields are present (fail-open: a create without components is not
+    blocked, so interactive/legacy callers are unaffected) and the entry is
+    EXTREME-overextended or already up >20% over the trailing month.
+
+    Args:
+        pred: The prediction about to be inserted.
+
+    Raises:
+        ValueError: If a LIVE BULL is overextended (caller should demote to
+            WATCH and not log a new BULL).
+    """
+    if pred.source != "LIVE" or pred.direction != "BULL" or not pred.components:
+        return
+    overext = pred.components.get("overextension")
+    trailing = pred.components.get("return_1m")
+    if isinstance(trailing, str):  # tolerate JSON string forms like "0.25"
+        try:
+            trailing = float(trailing)
+        except ValueError:
+            trailing = None
+    parabolic = (
+        isinstance(trailing, (int, float))
+        and not isinstance(
+            trailing, bool
+        )  # bool is an int subclass — reject True/False
+        and trailing > GATE_PARABOLIC_RETURN_1M
+    )
+    if overext == "EXTREME" or parabolic:
+        detail = (
+            f"overextension={overext}"
+            if overext == "EXTREME"
+            else f"return_1m={trailing}"
+        )
+        raise ValueError(
+            "LIVE BULL gated: overextended entry "
+            f"({detail}; parabolic blow-offs hit ~26%). Demote to WATCH — do not "
+            "log a new BULL. Use source INTERACTIVE to override deliberately."
+        )
+
+
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
     """Insert a new prediction into the database.
 
-    Two guards run before insertion:
+    Three guards run before insertion:
 
     1. LIVE BEAR predictions are hard-rejected. The track record shows a ~0%
        hit rate for automated BEAR calls, so the scheduler must not log them.
        Manual (INTERACTIVE) BEAR is still allowed as a deliberate override.
-    2. Same-day duplicates are rejected: a second OPEN row matching an existing
+    2. LIVE BULL predictions on a parabolic blow-off entry (overextension EXTREME
+       or trailing 21-day return >20%, read from ``components``) are hard-rejected
+       — the cron-surviving enforcement of the briefing's parabolic cap
+       (see :func:`_check_overextension_gate`).
+    3. Same-day duplicates are rejected: a second OPEN row matching an existing
        one on (ticker, market, direction, timeframe, source, created date)
        indicates a re-run logging the same call twice. Different timeframes
        (normal multi-horizon rows) and re-predictions after the prior one
@@ -480,14 +539,16 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
         The inserted Prediction.
 
     Raises:
-        ValueError: If the prediction is a LIVE BEAR call or a same-day
-            duplicate of an existing OPEN prediction.
+        ValueError: If the prediction is a LIVE BEAR call, an overextended
+            LIVE BULL, or a same-day duplicate of an existing OPEN prediction.
     """
     if pred.source == "LIVE" and pred.direction == "BEAR":
         raise ValueError(
             "LIVE BEAR predictions are gated (measured win rate ~0%); "
             "use direction NEUTRAL or source INTERACTIVE."
         )
+
+    _check_overextension_gate(pred)
 
     dupe = conn.execute(
         """SELECT 1 FROM predictions

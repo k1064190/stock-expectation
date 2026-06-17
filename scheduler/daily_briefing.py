@@ -64,11 +64,11 @@ from metrics import (
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
+from indicators import compute_horizon_metrics
 from telegram_sender import send_briefing
-from candidate_discovery import (
-    discover_kr_candidates,
-    discover_us_candidates,
-    format_candidates_for_prompt,
+from blended_funnel import (
+    assemble_blended_candidates,
+    format_blended_for_prompt,
 )
 from theme_clusterer import (
     backfill_news_counts,
@@ -109,7 +109,8 @@ def fetch_us_market_data() -> str:
         anything — never raises.
     """
     us = USMarketProvider()
-    cands = discover_us_candidates(top_n_output=20, provider=us)
+    picks, anchors = assemble_blended_candidates("US", provider=us)
+    cands = picks + anchors
     # Guard the second batch fetch (yfinance can raise on transient
     # network/auth failures). The function "never raises" per docstring,
     # so swallow into an empty dict — candidates and themes still flow
@@ -131,7 +132,7 @@ def fetch_us_market_data() -> str:
 
     lines = [
         "## US Market Data\n",
-        format_candidates_for_prompt(cands),
+        format_blended_for_prompt(picks, anchors, "US"),
         "",
         format_themes_for_prompt(themes),
         "",
@@ -172,7 +173,8 @@ def fetch_kr_market_data() -> str:
         Falls back to anchors-only if PyKRX fails — never raises.
     """
     kr = KoreanMarketProvider()
-    cands = discover_kr_candidates(top_n_output=20, provider=kr)
+    picks, anchors = assemble_blended_candidates("KR", provider=kr)
+    cands = picks + anchors
     bars_by_ticker = kr.get_price_history_batch([c.ticker for c in cands], days=10)
 
     news_by_ticker = fetch_news_for_candidates(cands, days=7, provider=kr)
@@ -181,7 +183,7 @@ def fetch_kr_market_data() -> str:
 
     lines = [
         "## Korean Market Data\n",
-        format_candidates_for_prompt(cands),
+        format_blended_for_prompt(picks, anchors, "KR"),
         "",
         format_themes_for_prompt(themes),
         "",
@@ -403,11 +405,12 @@ def build_claude_code_prompt(market: str) -> str:
 
     if market == "US":
         us_provider = USMarketProvider()
-        us_candidates = discover_us_candidates(top_n_output=20, provider=us_provider)
+        picks, anchors = assemble_blended_candidates("US", provider=us_provider)
+        us_candidates = picks + anchors
         us_news = fetch_news_for_candidates(us_candidates, days=7, provider=us_provider)
         backfill_news_counts(us_candidates, us_news)
         us_themes = cluster_news(us_news, min_cluster_size=3)
-        candidate_block = format_candidates_for_prompt(us_candidates)
+        candidate_block = format_blended_for_prompt(picks, anchors, "US")
         themes_block = format_themes_for_prompt(us_themes)
         ticker_csv = ",".join(c.ticker for c in us_candidates) or "SPY,QQQ,DIA"
         return f"""Generate a US market daily briefing for {today}.
@@ -415,10 +418,11 @@ def build_claude_code_prompt(market: str) -> str:
 Follow the `daily-briefing` skill in `.claude/skills/daily-briefing/SKILL.md`.
 All data access goes through `bin/stock-cli` via Bash.
 
-The following candidates were chosen by a Python scanner (static S&P 500 + ETF
-universe → 5-day |return|≥15% OR vol_ratio≥2x filter → 3 broad-market ETF
-anchors merged). Analyze/recommend ONLY from this list — do not add new
-tickers on your own judgment.
+The following candidates were chosen by a Python scanner in two complementary
+streams: PRE-SURGE (base/pullback/RS setups that have NOT yet run — review these
+FIRST) and MOMENTUM (already-surged 5d names — BUY only if not overextended).
+Anchors (SPY/QQQ/DIA) are macro reference, NOT pick slots. Analyze/recommend
+ONLY from this list — do not add new tickers on your own judgment.
 
 {candidate_block}
 
@@ -443,10 +447,15 @@ if positions exist below):
 Rules:
 - Minimum confidence 0.60 (matches the per-horizon logging gate below), maximum 0.85
 - Every prediction needs at least 2 signals
-- Target must be at least 2x stop distance
+- Target must be at least 2x stop distance; reward:risk ≥ 1.5 minimum, else do NOT log (WATCH only)
+- GATE R1 (regime): run `bin/stock-cli regime --market US`. RISK_OFF → log NO new BULL (cap WATCH); NEUTRAL → raise the BUY bar (composite ≥ 9.0) and trim confidence one step.
+- GATE R2 (overextension): from horizon-metrics `overextension_level` — EXTREME → WATCH only, never BULL; ELEVATED → raise the BUY bar + trim confidence.
+- PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
+- COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
 - Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
+- HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W.
 - Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick
-- Use --source LIVE (this is the automated scheduler, not interactive)
+- Use --source LIVE --recalibrate (this is the automated scheduler, not interactive)
 
 After creating predictions, output the full briefing as markdown. Include a
 "## Predictions Logged" section listing each prediction ID returned by
@@ -468,11 +477,12 @@ every section to the Predictions Logged table."""
 
     else:  # KR
         kr_provider = KoreanMarketProvider()
-        kr_candidates = discover_kr_candidates(top_n_output=20, provider=kr_provider)
+        picks, anchors = assemble_blended_candidates("KR", provider=kr_provider)
+        kr_candidates = picks + anchors
         kr_news = fetch_news_for_candidates(kr_candidates, days=7, provider=kr_provider)
         backfill_news_counts(kr_candidates, kr_news)
         kr_themes = cluster_news(kr_news, min_cluster_size=3)
-        candidate_block = format_candidates_for_prompt(kr_candidates)
+        candidate_block = format_blended_for_prompt(picks, anchors, "KR")
         themes_block = format_themes_for_prompt(kr_themes)
         ticker_csv = ",".join(c.ticker for c in kr_candidates) or "005930,000660"
         return f"""Generate a Korean market daily briefing for {today}.
@@ -480,9 +490,10 @@ every section to the Predictions Logged table."""
 Follow the `daily-briefing` and `korean-market-analysis` skills in
 `.claude/skills/`. All data access goes through `bin/stock-cli` via Bash.
 
-다음 후보 종목은 Python 스캐너가 결정했다 (시총 top-200 ∪ 거래대금 top-50
-유니버스 → 5일 |return|≥15% OR 거래량비≥2x 필터 → 3 앵커 병합). LLM은 이
-목록 안에서만 분석/추천을 진행하라 — 자체 판단으로 새 종목을 추가하지 말 것.
+다음 후보 종목은 Python 스캐너가 2개 보완 스트림으로 결정했다: PRE-SURGE
+(아직 안 오른 base/pullback/RS 셋업 — 먼저 검토)와 MOMENTUM (이미 급등한 5일
+종목 — 과열 아닐 때만 BUY). 앵커(005930/000660/069500)는 시장 참고용이며 추천
+슬롯이 아니다. LLM은 이 목록 안에서만 분석/추천하라 — 새 종목 추가 금지.
 
 {candidate_block}
 
@@ -511,14 +522,18 @@ if positions exist below):
 Rules:
 - Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y).
 - Minimum confidence 0.60 (matches the per-horizon logging gate below), maximum 0.85
-- Stop-loss wider than US by ~20%
-- Target at least 2x stop distance
+- Stop-loss wider than US by ~20%; target at least 2x stop distance (reward:risk ≥ 1.5, else WATCH only)
+- GATE R1 (regime): run `bin/stock-cli regime --market KR`. RISK_OFF → log NO new BULL (cap WATCH); NEUTRAL → raise the BUY bar + trim confidence.
+- GATE R2 (overextension): horizon-metrics `overextension_level` EXTREME → WATCH only; ELEVATED → raise the bar + trim.
+- PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
+- COMPONENTS (mandatory): every `predict create` passes `--components` JSON with the pillar scores AND `"overextension"` AND `"return_1m"` (decimal) AND `"discovery_source"` AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly.
+- HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W. (KR default is already 1M.)
 - Consider won/dollar impact on exporters
 - Cross-market: US 반도체·AI·auto-tech 모멘텀은 KR 반도체·전장·SW 통합사로
   통상 1일 지연 전이된다. 위 'Active Themes' 블록이 비어있지 않다면 거기에
   명시된 테마가 가장 활성화된 narrative — 추천 thesis에 직접 인용 가능.
 - Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick (same as US workflow)
-- Use --source LIVE
+- Use --source LIVE --recalibrate
 
 After creating predictions, output the full briefing as markdown. Include a
 "## Predictions Logged" section listing each prediction ID returned by
@@ -783,6 +798,44 @@ def parse_predictions(response: str) -> list[dict]:
     return predictions
 
 
+def _augment_gate_components(pred, providers: dict) -> None:
+    """Ensure a LIVE BULL carries the gate's components (overextension/return_1m).
+
+    In API mode the model returns prediction JSON; if it omits ``components`` the
+    store-level overextension gate would fail open. This recomputes those two
+    fields authoritatively from fresh bars and merges them (without overwriting
+    values the model did supply) so the gate fires regardless. Fail-open: any
+    fetch/compute error leaves the prediction unchanged (never blocks logging).
+
+    Args:
+        pred: The Prediction about to be inserted (mutated in place).
+        providers: ``{"US": USMarketProvider, "KR": KoreanMarketProvider}`` cache.
+    """
+    if pred.source != "LIVE" or pred.direction != "BULL":
+        return
+    comps = dict(pred.components or {})
+    if "overextension" in comps and "return_1m" in comps:
+        return
+    try:
+        from dataclasses import asdict
+
+        provider = providers.get(pred.market)
+        if provider is None:
+            return
+        bars = provider.get_price_history(pred.ticker, days=400)
+        if not bars:
+            return
+        m = compute_horizon_metrics(
+            bars=[asdict(b) for b in bars], ticker=pred.ticker, market=pred.market
+        )
+        comps.setdefault("overextension", m.overextension_level)
+        if m.return_1m is not None:
+            comps.setdefault("return_1m", m.return_1m)
+        pred.components = comps
+    except Exception as e:  # noqa: BLE001 — augmentation is best-effort
+        logger.debug("gate-component augmentation failed for %s: %s", pred.ticker, e)
+
+
 def log_predictions(predictions: list[dict]) -> int:
     """Insert parsed predictions into the database.
 
@@ -797,6 +850,9 @@ def log_predictions(predictions: list[dict]) -> int:
     """
     conn = get_connection()
     logged = 0
+    # Reused across rows so the gate-component augmentation fetch happens on one
+    # provider instance per market, not one per prediction.
+    providers = {"US": USMarketProvider(), "KR": KoreanMarketProvider()}
 
     for p in predictions:
         try:
@@ -839,6 +895,10 @@ def log_predictions(predictions: list[dict]) -> int:
             if not pred.ticker or pred.entry_price <= 0:
                 logger.warning("Skipping invalid prediction: %s", p)
                 continue
+
+            # Populate the overextension gate's components from fresh data when
+            # the model omitted them, so the store gate can't fail open here.
+            _augment_gate_components(pred, providers)
 
             # LIVE BEAR predictions are gated at the store (measured ~0% win
             # rate). Skip them explicitly here so they are an intentional,

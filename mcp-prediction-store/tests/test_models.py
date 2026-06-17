@@ -310,10 +310,59 @@ def test_interactive_bear_is_allowed(db_conn):
 
 
 def test_live_bull_is_allowed(db_conn):
-    """The gate only blocks BEAR — LIVE BULL is unaffected."""
+    """The gate only blocks BEAR — a non-overextended LIVE BULL is unaffected."""
     pred = _pred(direction="BULL", source="LIVE")
     insert_prediction(db_conn, pred)
     assert get_prediction(db_conn, pred.id) is not None
+
+
+def _bull(ticker, components):
+    p = _pred(ticker=ticker, direction="BULL", source="LIVE")
+    p.components = components
+    return p
+
+
+def test_live_bull_extreme_overextension_is_rejected(db_conn):
+    """A LIVE BULL entered on an EXTREME blow-off is hard-gated."""
+    with pytest.raises(ValueError, match="overextended"):
+        insert_prediction(db_conn, _bull("AAA", {"overextension": "EXTREME"}))
+
+
+def test_live_bull_parabolic_trailing_return_is_rejected(db_conn):
+    """A LIVE BULL already up >20% over the trailing month is hard-gated."""
+    with pytest.raises(ValueError, match="overextended"):
+        insert_prediction(
+            db_conn, _bull("BBB", {"overextension": "NONE", "return_1m": 0.25})
+        )
+
+
+def test_live_bull_modest_momentum_is_allowed(db_conn):
+    """The sweet-spot 10-20% band passes the gate."""
+    pred = _bull("CCC", {"overextension": "NONE", "return_1m": 0.12})
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_live_bull_without_components_is_allowed(db_conn):
+    """Fail-open: a create without components is not blocked (legacy/interactive)."""
+    pred = _pred(ticker="DDD", direction="BULL", source="LIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_live_bull_boolean_trailing_return_is_not_treated_as_parabolic(db_conn):
+    """A bool in return_1m must not slip through the int/float check (bool<:int)."""
+    pred = _bull("FFF", {"overextension": "NONE", "return_1m": True})
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_interactive_bull_extreme_is_allowed(db_conn):
+    """Only LIVE is gated — INTERACTIVE may log an overextended BULL deliberately."""
+    p = _pred(ticker="EEE", direction="BULL", source="INTERACTIVE")
+    p.components = {"overextension": "EXTREME"}
+    insert_prediction(db_conn, p)
+    assert get_prediction(db_conn, p.id) is not None
 
 
 def test_duplicate_same_day_open_is_rejected(db_conn):

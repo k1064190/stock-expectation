@@ -98,7 +98,12 @@ Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M, Cycle=1Y.
   NEUTRAL, never BULL
 - If your track record shows you're overconfident on a signal type, lower confidence for those predictions
 - If your track record shows you're underconfident, slightly raise confidence
-- Target should be at least 2x the stop distance (minimum 2:1 reward/risk)
+- Target should be at least 2x the stop distance (minimum 2:1 reward/risk); reward:risk < 1.5 → WATCH only, do not log
+- GATE R1 (regime): if the market regime is RISK_OFF, log NO new BULL (cap WATCH); if NEUTRAL, raise the BUY bar and trim confidence one step
+- GATE R2 (overextension): `overextension_level` EXTREME → WATCH only, never BULL; ELEVATED → raise the bar + trim confidence
+- PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL
+- COMPONENTS: every logged prediction must carry its `overextension`, `return_1m` (decimal), `discovery_source` (presurge/momentum) and `setup_type` — the store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m > 0.20
+- Prefer the PRE-SURGE candidates (not yet extended); treat MOMENTUM names as BUY only when the gates above pass
 - Be specific about price levels, not vague ("should go up")
 
 ## Output Format
