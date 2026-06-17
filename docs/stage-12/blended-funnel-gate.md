@@ -69,7 +69,15 @@ weeks; at 1W it just expires). The prompts/SKILL now encode that horizon rule.
   (both modes wired, imports clean, error path safe) passed.
 - **gemini -m pro**: substantive review landed on WT-A.3 (the EXPIRED gate P0, actioned there); its
   effect on A.2 is the corrected ship-gate framing + the 1M-horizon rule above.
-- Outcome: 1 warning fixed + tested; suggestions (dual-gate error detail) noted, low priority.
+- **codex -m gpt-5.5 (3 P1, actioned)**: (a) a numeric *string* `return_1m: "0.25"` bypassed the
+  gate's `isinstance` check → added float-coercion of string forms. (b) `blend_streams` didn't seed
+  `seen` with anchor tickers → a pre-surge anchor could appear as both pick and anchor → seed fixed.
+  (c) API-mode `log_predictions` inserted LIVE BULL with `components=None` (gate fails open) → added
+  `_augment_gate_components` which recomputes overextension/return_1m from fresh bars before insert
+  (fail-open). 
+- Outcome: 1 warning + 3 P1 fixed & tested; residual: the codex-cli path still trusts the LLM to pass
+  components (mitigated by the SKILL mandate + verified gate); authoritative compute there is noted
+  future hardening.
 
 ## INTEGRATION TODO (post-merge)
 

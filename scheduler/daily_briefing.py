@@ -64,6 +64,7 @@ from metrics import (
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
+from indicators import compute_horizon_metrics
 from telegram_sender import send_briefing
 from blended_funnel import (
     assemble_blended_candidates,
@@ -797,6 +798,44 @@ def parse_predictions(response: str) -> list[dict]:
     return predictions
 
 
+def _augment_gate_components(pred, providers: dict) -> None:
+    """Ensure a LIVE BULL carries the gate's components (overextension/return_1m).
+
+    In API mode the model returns prediction JSON; if it omits ``components`` the
+    store-level overextension gate would fail open. This recomputes those two
+    fields authoritatively from fresh bars and merges them (without overwriting
+    values the model did supply) so the gate fires regardless. Fail-open: any
+    fetch/compute error leaves the prediction unchanged (never blocks logging).
+
+    Args:
+        pred: The Prediction about to be inserted (mutated in place).
+        providers: ``{"US": USMarketProvider, "KR": KoreanMarketProvider}`` cache.
+    """
+    if pred.source != "LIVE" or pred.direction != "BULL":
+        return
+    comps = dict(pred.components or {})
+    if "overextension" in comps and "return_1m" in comps:
+        return
+    try:
+        from dataclasses import asdict
+
+        provider = providers.get(pred.market)
+        if provider is None:
+            return
+        bars = provider.get_price_history(pred.ticker, days=400)
+        if not bars:
+            return
+        m = compute_horizon_metrics(
+            bars=[asdict(b) for b in bars], ticker=pred.ticker, market=pred.market
+        )
+        comps.setdefault("overextension", m.overextension_level)
+        if m.return_1m is not None:
+            comps.setdefault("return_1m", m.return_1m)
+        pred.components = comps
+    except Exception as e:  # noqa: BLE001 — augmentation is best-effort
+        logger.debug("gate-component augmentation failed for %s: %s", pred.ticker, e)
+
+
 def log_predictions(predictions: list[dict]) -> int:
     """Insert parsed predictions into the database.
 
@@ -811,6 +850,9 @@ def log_predictions(predictions: list[dict]) -> int:
     """
     conn = get_connection()
     logged = 0
+    # Reused across rows so the gate-component augmentation fetch happens on one
+    # provider instance per market, not one per prediction.
+    providers = {"US": USMarketProvider(), "KR": KoreanMarketProvider()}
 
     for p in predictions:
         try:
@@ -853,6 +895,10 @@ def log_predictions(predictions: list[dict]) -> int:
             if not pred.ticker or pred.entry_price <= 0:
                 logger.warning("Skipping invalid prediction: %s", p)
                 continue
+
+            # Populate the overextension gate's components from fresh data when
+            # the model omitted them, so the store gate can't fail open here.
+            _augment_gate_components(pred, providers)
 
             # LIVE BEAR predictions are gated at the store (measured ~0% win
             # rate). Skip them explicitly here so they are an intentional,

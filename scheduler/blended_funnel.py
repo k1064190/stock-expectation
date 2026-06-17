@@ -80,7 +80,9 @@ def blend_streams(
     anchors = [c for c in momentum if c.reason == "anchor"]
     mom = [c for c in momentum if c.reason != "anchor"]
 
-    seen: set[str] = set()
+    # Seed with anchor tickers so an anchor that also surfaced in the pre-surge
+    # stream isn't emitted as both a pick and an anchor (codex review).
+    seen: set[str] = {a.ticker for a in anchors}
     ordered: list[Candidate] = []
     for c in [*presurge, *mom]:
         if c.ticker in seen:

@@ -488,6 +488,11 @@ def _check_overextension_gate(pred: Prediction) -> None:
         return
     overext = pred.components.get("overextension")
     trailing = pred.components.get("return_1m")
+    if isinstance(trailing, str):  # tolerate JSON string forms like "0.25"
+        try:
+            trailing = float(trailing)
+        except ValueError:
+            trailing = None
     parabolic = (
         isinstance(trailing, (int, float))
         and not isinstance(
