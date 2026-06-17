@@ -148,7 +148,7 @@ def _format_event_gate_for_prompt(gate) -> str:
         return "\n".join(lines)
     if gate.macro_trim:
         names = ", ".join(
-            f"{e.get('name')} ({e.get('event_date')}, {e.get('trading_days_until')}td)"
+            f"{e.get('name', '?')} ({e.get('event_date', '?')}, {e.get('trading_days_until', '?')}td)"
             for e in (gate.macro_events or [])
         )
         lines.append(

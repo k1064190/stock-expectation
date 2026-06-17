@@ -45,7 +45,11 @@ sector rotation context and the R3 event-risk gate.
 
 ## Review loop
 
-- (to be recorded after the stage review)
+- **code-reviewer-pro**: 0 critical / 0 functional bugs — fail-open correctness (missing FMP key /
+  sector file / failed subprocess all degrade cleanly), subprocess safety (check=False, timeout,
+  capture_output), event-gate formatting, and all 4 call sites verified. 1 minor robustness warning
+  (defensive `None` rendering for malformed macro events) — **applied**; 2 optional suggestions left
+  per surgical-changes. Verdict: merge as-is.
 
 ## Retrospective
 
