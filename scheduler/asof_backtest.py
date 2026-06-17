@@ -289,23 +289,75 @@ def _bootstrap_delta_ci(
     return {"delta": point, "ci_low": lo, "ci_high": hi, "pass": lo > 0}
 
 
+def _bootstrap_delta_ci_blocked(
+    by_date: dict[str, dict],
+    n_resamples: int = 2000,
+    seed: int = 12345,
+    alpha: float = 0.05,
+) -> Optional[dict]:
+    """Block bootstrap CI for the cohort hit-rate delta, resampling by as-of date.
+
+    Picks from the same as-of date share a market regime and forward window, so
+    they are not independent. Resampling individual picks (the naive bootstrap)
+    underestimates the variance and can false-pass the gate. This resamples
+    whole as-of dates with replacement (a moving-block bootstrap over the date
+    clusters), which is the correct unit of independence (codex review).
+
+    Args:
+        by_date: ``{as_of: {"pre": [1/0...], "mom": [1/0...]}}`` outcomes
+            (EXPIRED already encoded as 0).
+        n_resamples / seed / alpha: standard bootstrap controls.
+
+    Returns:
+        ``{delta, ci_low, ci_high, pass, method}`` or None if either cohort is empty.
+    """
+    dates = list(by_date.keys())
+    all_pre = [o for d in dates for o in by_date[d]["pre"]]
+    all_mom = [o for d in dates for o in by_date[d]["mom"]]
+    if not dates or not all_pre or not all_mom:
+        return None
+    rng = random.Random(seed)
+    nd = len(dates)
+    deltas: list[float] = []
+    for _ in range(n_resamples):
+        sampled = [dates[rng.randrange(nd)] for _ in range(nd)]
+        pre = [o for d in sampled for o in by_date[d]["pre"]]
+        mom = [o for d in sampled for o in by_date[d]["mom"]]
+        if not pre or not mom:
+            continue
+        deltas.append(sum(pre) / len(pre) - sum(mom) / len(mom))
+    if not deltas:
+        return None
+    deltas.sort()
+    m = len(deltas)
+    lo = deltas[max(0, ceil((alpha / 2) * m) - 1)]
+    hi = deltas[min(m - 1, ceil((1 - alpha / 2) * m) - 1)]
+    point = (sum(all_pre) / len(all_pre)) - (sum(all_mom) / len(all_mom))
+    return {
+        "delta": point,
+        "ci_low": lo,
+        "ci_high": hi,
+        "pass": lo > 0,
+        "method": "block-bootstrap-by-asof",
+    }
+
+
 def build_report(results: list[SimResult], skipped: int) -> dict:
     """Assemble the full cohort comparison + ship-gate verdict."""
     pre = [r for r in results if r.discovery_source == "presurge"]
     mom = [r for r in results if r.discovery_source == "momentum"]
     # Ship gate counts EXPIRED as a non-hit (0) alongside MISS, over every
     # forward-evaluated pick — so a cohort that expires (dead money) more often
-    # cannot look better via a HIT/(HIT+MISS)-only denominator (gemini review).
-    pre_outcomes = [
-        1 if r.status == "HIT" else 0
-        for r in pre
-        if r.status in ("HIT", "MISS", "EXPIRED")
-    ]
-    mom_outcomes = [
-        1 if r.status == "HIT" else 0
-        for r in mom
-        if r.status in ("HIT", "MISS", "EXPIRED")
-    ]
+    # cannot look better via a HIT/(HIT+MISS)-only denominator (gemini review) —
+    # and resamples by as-of DATE (block bootstrap), since same-date picks share
+    # a regime/forward window and are not independent (codex review).
+    by_date: dict[str, dict] = {}
+    for r in results:
+        if r.status not in ("HIT", "MISS", "EXPIRED"):
+            continue
+        slot = by_date.setdefault(r.as_of, {"pre": [], "mom": []})
+        key = "pre" if r.discovery_source == "presurge" else "mom"
+        slot[key].append(1 if r.status == "HIT" else 0)
     return {
         "total_simulated": len(results),
         "skipped_insufficient_forward": skipped,
@@ -313,7 +365,7 @@ def build_report(results: list[SimResult], skipped: int) -> dict:
         "momentum": _cohort_stats(mom),
         "presurge_by_bucket": _bucket_table(pre),
         "momentum_by_bucket": _bucket_table(mom),
-        "ship_gate": _bootstrap_delta_ci(pre_outcomes, mom_outcomes),
+        "ship_gate": _bootstrap_delta_ci_blocked(by_date),
     }
 
 

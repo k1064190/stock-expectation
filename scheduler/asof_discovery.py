@@ -87,8 +87,13 @@ def discover_momentum_asof(
         volumes = [_volume(b) for b in bars]
         ret5 = _pct_return(closes[-6], closes[-1])
         vr = _vol_ratio(volumes)
-        # BULL cohort: an up-surge OR a volume spike (down-crashes are not BUYs).
-        if not (ret5 >= return_threshold_pct or vr >= vol_ratio_threshold):
+        # BULL cohort: an up-surge, OR a volume spike on a NON-negative move.
+        # The volume arm requires ret5 >= 0 so a down-crash-on-heavy-volume is
+        # not simulated as a BULL long (which would unfairly depress the momentum
+        # cohort and inflate the pre-surge delta) — codex review.
+        if not (
+            ret5 >= return_threshold_pct or (vr >= vol_ratio_threshold and ret5 >= 0)
+        ):
             continue
         picks.append(
             AsofPick(

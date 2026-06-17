@@ -104,6 +104,28 @@ def test_ship_gate_none_when_a_cohort_empty():
     assert ab._bootstrap_delta_ci([], [1, 0]) is None
 
 
+def test_blocked_gate_passes_when_presurge_dominates_across_dates():
+    by_date = {
+        f"2026-01-{d:02d}": {"pre": [1, 1, 1], "mom": [0, 0]} for d in range(1, 9)
+    }
+    gate = ab._bootstrap_delta_ci_blocked(by_date)
+    assert gate["pass"] is True and gate["ci_low"] > 0
+    assert gate["method"] == "block-bootstrap-by-asof"
+
+
+def test_blocked_gate_fails_when_cohorts_equal():
+    by_date = {f"2026-01-{d:02d}": {"pre": [1, 0], "mom": [1, 0]} for d in range(1, 9)}
+    gate = ab._bootstrap_delta_ci_blocked(by_date)
+    assert gate["pass"] is False and gate["ci_low"] <= 0
+
+
+def test_blocked_gate_none_when_a_cohort_empty():
+    assert (
+        ab._bootstrap_delta_ci_blocked({"2026-01-01": {"pre": [], "mom": [1, 0]}})
+        is None
+    )
+
+
 # ---------------------------------------------------------------------------
 # As-of discovery
 # ---------------------------------------------------------------------------

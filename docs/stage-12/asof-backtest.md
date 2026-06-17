@@ -36,15 +36,18 @@ The ship gate counts EXPIRED (target/stop never touched within the horizon) as a
 cohort that mostly *sits* (dead money) can't look good on a HIT/(HIT+MISS)-only rate. (This was a
 gemini-review P0 fix — see Review loop below; it changed the conclusion.)
 
+Gate = block bootstrap by as-of date (codex fix); momentum volume-arm now excludes down-movers (codex fix).
+
 | run | cohort | n | hit_rate (HIT/(HIT+MISS)) | hit_all (EXPIRED=0) | expired | gate |
 |---|---|---|---|---|---|---|
 | **1W**, Sep'25–Jun'26 | presurge | 775 | 72.6% | **29.0%** | 465 (60%) | |
-| | momentum | 170 | 63.7% | **42.4%** | 57 (33%) | **FAIL −13.3pp** CI[−21.3,−5.0] |
+| | momentum | 104 | 60.3% | **45.2%** | 26 (25%) | **FAIL −16.2pp** CI[−30.9,−3.0] |
 | **1M**, Sep'25–May'26 | presurge | 344 | 67.2% | 59.6% | 39 (11%) | |
 | | momentum | 65 | 64.5% | 61.5% | 3 | **FAIL −1.9pp** CI[−14.8,+10.6] |
 
 - **1W is the wrong horizon for pre-surge**: 60% of pre-surge picks **expire dead** (a base/pullback
-  doesn't move +3% in a week), so capital-efficiency-adjusted it is **conclusively worse** (−13.3pp).
+  doesn't move +3% in a week), so capital-efficiency-adjusted it is **conclusively worse** (−16.2pp,
+  whole CI below 0).
 - **1M**: pre-surge expiry collapses to 11% and the cohorts are **statistically tied** (−1.9pp, CI
   spans 0). The momentum **>40% parabolic bucket** remains weak (54.5% at 1W).
 - **Conclusion**: on this data pre-surge **does not beat momentum at any horizon** once dead-money is
@@ -77,8 +80,13 @@ gemini-review P0 fix — see Review loop below; it changed the conclusion.)
   `hit_rate_all` + an `expired` column to the report. **Re-running flipped the verdict** from
   "+8.9pp promising" to "−13.3pp conclusively worse at 1W" — the highest-value review catch of the
   whole effort.
-- Outcome: gemini P0 fixed + re-validated; code-reviewer suggestions (doc clarity) folded into
-  docstrings.
+- **codex -m gpt-5.5 (2 P1, actioned)**: (a) momentum volume-arm admitted down-movers as BULL longs
+  (`vr>=2` ignored `ret5`) — biased momentum down / pre-surge up; fixed by requiring `ret5>=0` on the
+  volume arm. (b) naive per-pick bootstrap ignored as-of clustering (CI too narrow, could false-pass)
+  — replaced with a block bootstrap resampling whole as-of dates. Both re-validated; the verdict held
+  and the CI is now honestly wider.
+- Outcome: gemini P0 + 2 codex P1 fixed & re-validated; code-reviewer suggestions (doc clarity) folded
+  into docstrings.
 
 ## Retrospective
 
