@@ -229,6 +229,10 @@ def _cohort_stats(rows: list[SimResult]) -> dict:
         "miss": misses,
         "expired": expired,
         "hit_rate": (hits / resolved) if resolved else None,
+        # hit_rate_all counts EXPIRED as a non-hit (dead money). Reported so a
+        # cohort that rarely resolves but wins-when-it-does (high HIT/(HIT+MISS)
+        # but capital-inefficient) is visible; this is the ship-gate basis.
+        "hit_rate_all": (hits / n) if n else None,
         "avg_return": (sum(r.ret for r in rows) / n) if n else None,
         "avg_win": avg_win,
         "avg_loss": avg_loss,
@@ -289,11 +293,18 @@ def build_report(results: list[SimResult], skipped: int) -> dict:
     """Assemble the full cohort comparison + ship-gate verdict."""
     pre = [r for r in results if r.discovery_source == "presurge"]
     mom = [r for r in results if r.discovery_source == "momentum"]
+    # Ship gate counts EXPIRED as a non-hit (0) alongside MISS, over every
+    # forward-evaluated pick — so a cohort that expires (dead money) more often
+    # cannot look better via a HIT/(HIT+MISS)-only denominator (gemini review).
     pre_outcomes = [
-        1 if r.status == "HIT" else 0 for r in pre if r.status in ("HIT", "MISS")
+        1 if r.status == "HIT" else 0
+        for r in pre
+        if r.status in ("HIT", "MISS", "EXPIRED")
     ]
     mom_outcomes = [
-        1 if r.status == "HIT" else 0 for r in mom if r.status in ("HIT", "MISS")
+        1 if r.status == "HIT" else 0
+        for r in mom
+        if r.status in ("HIT", "MISS", "EXPIRED")
     ]
     return {
         "total_simulated": len(results),
@@ -321,15 +332,20 @@ def format_report(report: dict, market: str, horizon: str) -> str:
         f"simulated={report['total_simulated']}  "
         f"skipped(insufficient forward)={report['skipped_insufficient_forward']}",
         "",
-        f"{'cohort':<10}{'n':>5}{'hit_rate':>10}{'avg_ret':>10}{'payoff':>9}",
+        f"{'cohort':<10}{'n':>5}{'hit_rate':>10}{'hit_all':>9}{'expired':>9}"
+        f"{'avg_ret':>10}{'payoff':>9}",
     ]
     for name in ("presurge", "momentum"):
         s = report[name]
         payoff = "n/a" if s["payoff_ratio"] is None else f"{s['payoff_ratio']:.2f}"
         lines.append(
             f"{name:<10}{s['n']:>5}{_fmt_rate(s['hit_rate']):>10}"
+            f"{_fmt_rate(s['hit_rate_all']):>9}{s['expired']:>9}"
             f"{_fmt_pct(s['avg_return']):>10}{payoff:>9}"
         )
+    lines.append(
+        "(hit_rate=HIT/(HIT+MISS); hit_all & ship gate count EXPIRED as non-hit)"
+    )
     lines.append("")
     lines.append("trailing-20d bucket hit-rate (presurge | momentum):")
     for label, _, _ in _BUCKETS:

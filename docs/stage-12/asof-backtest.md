@@ -30,23 +30,28 @@ trailing-20d bucket**. Ship gate = bootstrap 95% CI lower-bound > 0 on the
 - 13 offline tests (`scheduler/tests/test_asof_backtest.py`): slicing, simulator HIT/MISS/EXPIRED +
   censoring, bucket boundaries, the gate pass/fail, and the as-of discovery functions.
 
-## Empirical findings (US, live yfinance)
+## Empirical findings (US, live yfinance) — EXPIRED-aware (post-review)
 
-| run | cohort | n | hit-rate | avg-ret | payoff |
-|---|---|---|---|---|---|
-| **1M**, Sep'25–May'26, step 14 | presurge | 344 | 64.2% | +0.4% | 0.70 |
-| | momentum | 71 | **70.0%** | +1.5% | 0.76 |
-| **1W**, Sep'25–Jun'26, step 7 | presurge | 775 | **72.6%** | +0.3% | 0.66 |
-| | momentum | 170 | 63.7% | +0.0% | 0.74 |
+The ship gate counts EXPIRED (target/stop never touched within the horizon) as a **non-hit**, so a
+cohort that mostly *sits* (dead money) can't look good on a HIT/(HIT+MISS)-only rate. (This was a
+gemini-review P0 fix — see Review loop below; it changed the conclusion.)
 
-- **1W**: pre-surge beats momentum by **+8.9pp**; the momentum **>40% parabolic bucket is the
-  worst (54.5%, n=23)** — reproducing the investigation's "parabolic chases lose". But the strict
-  gate still **FAILS** (95% CI = [-1.0, +18.3]pp; lower bound just below 0).
-- **1M** (a strong-bull window): momentum was slightly **better** (70% vs 64%); its >40%/20-40%
-  buckets hit 100%/67%. Chasing works in a sustained uptrend.
-- **Conclusion**: the pre-surge edge is **real but short-horizon and regime-dependent**, and **not
-  statistically conclusive** over these windows. The harness correctly refuses to certify a blanket
-  "pre-surge beats momentum" claim.
+| run | cohort | n | hit_rate (HIT/(HIT+MISS)) | hit_all (EXPIRED=0) | expired | gate |
+|---|---|---|---|---|---|---|
+| **1W**, Sep'25–Jun'26 | presurge | 775 | 72.6% | **29.0%** | 465 (60%) | |
+| | momentum | 170 | 63.7% | **42.4%** | 57 (33%) | **FAIL −13.3pp** CI[−21.3,−5.0] |
+| **1M**, Sep'25–May'26 | presurge | 344 | 67.2% | 59.6% | 39 (11%) | |
+| | momentum | 65 | 64.5% | 61.5% | 3 | **FAIL −1.9pp** CI[−14.8,+10.6] |
+
+- **1W is the wrong horizon for pre-surge**: 60% of pre-surge picks **expire dead** (a base/pullback
+  doesn't move +3% in a week), so capital-efficiency-adjusted it is **conclusively worse** (−13.3pp).
+- **1M**: pre-surge expiry collapses to 11% and the cohorts are **statistically tied** (−1.9pp, CI
+  spans 0). The momentum **>40% parabolic bucket** remains weak (54.5% at 1W).
+- **Conclusion**: on this data pre-surge **does not beat momentum at any horizon** once dead-money is
+  counted; it is *competitive at 1M+* and *dead-money at 1W*. The actionable result: **log pre-surge
+  picks at 1M+**, and the genuine, independently-justified win is the **store-level overextension
+  gate** (kills the parabolic tail) — not a momentum replacement. The earlier "1W +8.9pp" was an
+  artifact of excluding EXPIRED.
 
 ## Implication for WT-A.2 (reshapes it)
 
@@ -62,6 +67,18 @@ trailing-20d bucket**. Ship gate = bootstrap 95% CI lower-bound > 0 on the
 ## Code locations
 
 - `scheduler/asof_backtest.py`, `scheduler/asof_discovery.py`, `scheduler/tests/test_asof_backtest.py`.
+
+## Review loop
+
+- **code-reviewer-pro**: examined look-ahead, MISS-before-HIT, bootstrap indexing — no bugs; noted
+  the EXPIRED denominator was "documented, acceptable".
+- **gemini -m pro (P0, actioned)**: EXPIRED outcomes were excluded from the gate arrays — biasing the
+  delta toward whichever cohort expires more. Fixed by counting EXPIRED as 0 in the gate and adding
+  `hit_rate_all` + an `expired` column to the report. **Re-running flipped the verdict** from
+  "+8.9pp promising" to "−13.3pp conclusively worse at 1W" — the highest-value review catch of the
+  whole effort.
+- Outcome: gemini P0 fixed + re-validated; code-reviewer suggestions (doc clarity) folded into
+  docstrings.
 
 ## Retrospective
 
