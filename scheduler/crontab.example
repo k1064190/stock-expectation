@@ -11,12 +11,13 @@
 #   crontab scheduler/crontab.example
 #
 # Three modes available (pick one per briefing line):
-#   --mode codex-cli (active): Uses `codex exec` CLI. Draws on ChatGPT Plus
-#       credit, no API key needed (see docs/stage-9/codex-cli-mode.md).
-#   --mode claude-code: Uses `claude -p` CLI. No API key needed,
-#       Anthropic subscription. Known risk: headless quota rate-limiting /
-#       silent hangs on cron triggers (the 2026-05-18 symptom that had moved
-#       us to codex-cli). Kept as the commented fallback.
+#   --mode claude-code (active): Uses `claude -p` CLI. No API key needed,
+#       Anthropic subscription. Restored as active on 2026-06-19 by request
+#       (matches the installed crontab). Known historical risk: headless quota
+#       rate-limiting / silent hangs on cron triggers (the 2026-05-18 symptom)
+#       — watch $LOG_DIR/briefing_*.log and fall back to codex-cli if it recurs.
+#   --mode codex-cli: Uses `codex exec` CLI. Draws on ChatGPT Plus credit,
+#       no API key needed (see docs/stage-9/codex-cli-mode.md). Commented fallback.
 #   --mode api: Uses Anthropic API directly. Requires ANTHROPIC_API_KEY
 #       and `uv sync --extra api`. Pay-per-call; most stable.
 #
@@ -44,17 +45,17 @@ TZ=Asia/Seoul
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
-# === Codex CLI mode (active) ===
-# Uses `codex exec` with bin/stock-cli. ChatGPT Plus credit, no Anthropic cost.
-# NOTE: switched back from claude-code on 2026-06-08 by request. Watch
-# $LOG_DIR/briefing_*.log for codex-cli auth/model issues; revert to the
-# claude-code fallback block below if needed.
+# === Claude Code mode (active) ===
+# Uses `claude -p` with bin/stock-cli. No Anthropic API cost (subscription).
+# Restored as active on 2026-06-19 by request (matches the installed crontab).
+# Watch $LOG_DIR/briefing_*.log for the 2026-05-18 headless quota / silent-hang
+# symptom; fall back to the codex-cli block below if it recurs.
 
 # Korean market briefing — 07:00 KST Mon-Fri (before KR market opens 09:00)
-0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
+0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
 
 # US market pre-market briefing — 21:00 KST Mon-Fri (US pre-market starts ~22:00 KST)
-0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
 
 # US market mid-session briefing — 00:00 KST Tue-Sat
 # US regular trading runs 22:30-05:00 KST during EDT (Mar-Nov) and shifts
@@ -65,15 +66,15 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # Day-of-week filter is Tue-Sat (2-6) so we get exactly the five US
 # trading days: Mon trading -> Tue 00:00 KST, ..., Fri trading -> Sat
 # 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
-0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
 
-# === Claude Code mode (commented fallback) ===
-# Uncomment + comment out the codex-cli lines above if codex-cli auth/model
-# availability becomes unreliable. Uses `claude -p`; monitor for the
-# 2026-05-18 headless quota / silent-hang symptom if restored.
-# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
-# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
-# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+# === Codex CLI mode (commented fallback) ===
+# Uncomment + comment out the claude-code lines above if claude-code headless
+# auth/quota becomes unreliable. Uses `codex exec` (ChatGPT Plus credit, no
+# Anthropic cost; see docs/stage-9/codex-cli-mode.md).
+# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
+# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # Outcome tracker — 06:00 KST daily
 # US regular session closes at 05:00 KST. Running outcome tracker at 06:00
