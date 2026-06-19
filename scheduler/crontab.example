@@ -87,6 +87,13 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # and rolls state/calibration-trend.json (last 12 weeks).
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
 
+# Learned-blend capstone readiness monitor — Monday 08:13 KST
+# Pure read; counts CLOSED predictions carrying pillar components and sends a
+# one-shot Telegram ping (then writes state/capstone_ready.flag) once >=100
+# qualify, so the data-blocked learned-blend capstone can be built. Override the
+# threshold with CAPSTONE_MIN_CLOSED. No-op until the threshold is crossed.
+13 8 * * 1 cd $PROJECT && uv run python scheduler/capstone_readiness.py >> $LOG_DIR/capstone_readiness.log 2>&1
+
 # Watchlist monitor — DELAYED / EOD-ish, NOT real-time.
 # Evaluates triggers against the latest CLOSE (provider.get_current_price returns
 # the last bar; KR PyKRX is EOD-oriented), so this is a near-close checkpoint, not

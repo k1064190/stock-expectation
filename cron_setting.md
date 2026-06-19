@@ -11,6 +11,7 @@ Installed on **2026-05-11 by Claude Code session**. Documents the active schedul
 | Tue-Sat 00:00 | `scheduler/daily_briefing.py --market US` | claude-code | US mid-session briefing |
 | Daily 06:00 | `scheduler/outcome_tracker.py` | pure-Python | Judge previous day's HIT/MISS/EXPIRED |
 | Sunday 22:00 | `scheduler/weekly_calibration.py` | pure-Python | Weekly calibration report + 12-week trend |
+| Monday 08:13 | `scheduler/capstone_readiness.py` | pure-Python | Ping when ≥100 components-tagged closed preds exist (learned-blend capstone unblock) |
 
 System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=Asia/Seoul` defensively so a host migration to a different TZ won't silently shift the schedule.
 
