@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Stage 1 — Stock Expectation</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stock Expectation — Stage 1</title>
     <style>
       *,
       *::before,
@@ -13,53 +13,64 @@
         padding: 0;
       }
 
+      :root {
+        --accent: #1d5fa8;
+        --accent-muted: #7daacf;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e2e2de;
+        --text: #1a1a1a;
+        --text-muted: #6b6b6b;
+        --node-size: 38px;
+      }
+
       body {
         font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "Helvetica Neue", Arial, sans-serif;
-        background: #f7f7f5;
-        color: #1a1a1a;
+          "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Malgun Gothic",
+          "Noto Sans KR", sans-serif;
+        background: var(--bg);
+        color: var(--text);
         line-height: 1.65;
-        padding: 0 1rem 4rem;
+        font-size: 15px;
       }
 
-      :root {
-        --accent: #2a6b7c;
-        --accent-muted: #7aabb7;
-        --accent-outline: #2a6b7c;
-        --border: #e0dedd;
-        --card-bg: #ffffff;
-        --muted-text: #6b7280;
-        --node-size: 2.2rem;
-      }
-
+      /* ── Header ── */
       header {
-        max-width: 860px;
-        margin: 0 auto;
-        padding: 2.4rem 0 1.2rem;
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 18px 32px;
         display: flex;
-        align-items: baseline;
+        align-items: center;
         justify-content: space-between;
-        gap: 1rem;
         flex-wrap: wrap;
+        gap: 8px;
       }
 
-      .header-text h1 {
-        font-size: 1.6rem;
+      .brand h1 {
+        font-size: 1.2rem;
         font-weight: 700;
-        color: var(--accent);
-        letter-spacing: -0.02em;
+        color: var(--text);
+        letter-spacing: -0.01em;
       }
 
-      .header-text p {
-        font-size: 0.9rem;
-        color: var(--muted-text);
-        margin-top: 0.2rem;
+      .brand p {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        margin-top: 2px;
       }
 
       nav[aria-label="Language"] {
-        font-size: 0.875rem;
+        font-size: 0.85rem;
         white-space: nowrap;
+      }
+
+      .lang-current {
+        color: var(--text-muted);
+      }
+
+      .lang-sep {
+        color: var(--border);
+        margin: 0 5px;
       }
 
       nav[aria-label="Language"] a {
@@ -72,322 +83,958 @@
         text-decoration: underline;
       }
 
-      nav[aria-label="Language"] .lang-current {
-        color: var(--muted-text);
-        font-weight: 400;
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 32px 22px;
+        overflow-x: auto;
       }
 
-      .timeline {
-        max-width: 860px;
-        margin: 0 auto 2.8rem;
+      nav[aria-label="Stage timeline"] {
         display: flex;
         align-items: center;
         gap: 0;
+        min-width: max-content;
       }
 
-      .timeline-node {
+      .tl-item {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.4rem;
+        gap: 5px;
       }
 
-      .timeline-node .circle {
+      .tl-connector {
+        height: 2px;
+        width: 24px;
+        background: var(--border);
+        flex-shrink: 0;
+        align-self: center;
+        margin-bottom: 22px;
+      }
+
+      .tl-node {
         width: var(--node-size);
         height: var(--node-size);
         border-radius: 50%;
-        border: 2.5px solid var(--accent-outline);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.78rem;
+        font-size: 0.62rem;
         font-weight: 700;
-      }
-
-      .timeline-node.current .circle {
-        background: var(--accent);
-        color: #fff;
-        border-color: var(--accent);
-      }
-
-      .timeline-node.past .circle {
-        background: var(--accent-muted);
-        color: #fff;
-        border-color: var(--accent-muted);
-      }
-
-      .timeline-node.future .circle {
-        background: transparent;
-        color: var(--accent);
-        border-color: var(--accent-outline);
-      }
-
-      .timeline-node .label {
-        font-size: 0.72rem;
-        color: var(--muted-text);
-        font-weight: 500;
+        border: 2px solid transparent;
+        line-height: 1.1;
         text-align: center;
       }
 
-      .timeline-node.current .label {
+      .tl-node.done {
+        background: var(--accent-muted);
+        border-color: var(--accent-muted);
+        color: #fff;
+      }
+
+      .tl-node.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .tl-node.future {
+        background: var(--bg);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .tl-label {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      .tl-item.tl-active .tl-label {
         color: var(--accent);
         font-weight: 700;
       }
 
-      .timeline-node.past .label {
-        color: var(--accent-muted);
-      }
-
-      .timeline-connector {
-        flex: 1;
-        height: 2px;
-        background: var(--border);
-        margin-bottom: 1.4rem;
-      }
-
+      /* ── Main ── */
       main {
-        max-width: 860px;
+        max-width: 1140px;
         margin: 0 auto;
+        padding: 40px 32px 64px;
       }
 
-      section {
-        margin-bottom: 2.8rem;
-      }
-
-      section > h2 {
-        font-size: 1.25rem;
+      .stage-heading h2 {
+        font-size: 1.55rem;
         font-weight: 700;
-        color: var(--accent);
-        margin-bottom: 0.3rem;
-        letter-spacing: -0.01em;
+        color: var(--text);
+        margin-bottom: 6px;
       }
 
       .stage-summary {
-        font-size: 0.92rem;
-        color: var(--muted-text);
-        margin-bottom: 1.4rem;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        margin-bottom: 32px;
+        max-width: 780px;
       }
 
+      /* ── Card grid ── */
       .card-grid {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 1.2rem;
+        grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+        gap: 20px;
       }
 
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+        header {
+          padding: 14px 16px;
+        }
+        .timeline-wrapper {
+          padding: 16px 16px 18px;
+        }
+        main {
+          padding: 24px 16px 48px;
+        }
+      }
+
+      /* ── Article card ── */
       article {
         background: var(--card-bg);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 1.4rem 1.6rem;
+        border-radius: 6px;
+        padding: 22px 22px 18px;
       }
 
       article h3 {
-        font-size: 1rem;
+        font-size: 0.98rem;
         font-weight: 700;
-        color: #111;
-        margin-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 0.5rem;
+        color: var(--accent);
+        margin-bottom: 16px;
+        letter-spacing: -0.01em;
       }
 
       .card-section {
-        margin-bottom: 0.85rem;
+        margin-bottom: 13px;
       }
 
       .card-section:last-child {
         margin-bottom: 0;
       }
 
-      .card-label {
-        font-size: 0.72rem;
+      .section-label {
+        font-size: 0.67rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.07em;
-        color: var(--accent);
-        margin-bottom: 0.3rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
       }
 
       .card-section p,
-      .card-section ul {
-        font-size: 0.9rem;
-        color: #333;
+      .card-section ul,
+      .card-section ol {
+        font-size: 0.87rem;
+        color: var(--text);
       }
 
-      .card-section ul {
-        padding-left: 1.2rem;
+      .card-section ul,
+      .card-section ol {
+        padding-left: 18px;
       }
 
-      .card-section ul li {
-        margin-bottom: 0.25rem;
+      .card-section li {
+        margin-bottom: 3px;
       }
 
       .card-section code {
         font-family:
-          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        font-size: 0.82rem;
-        background: #f0efed;
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.79rem;
+        background: #f0f0ee;
         border-radius: 3px;
-        padding: 0.1em 0.35em;
-        color: #2d4a54;
-        word-break: break-all;
+        padding: 1px 4px;
+      }
+
+      .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .code-list li {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.79rem;
+        background: #f0f0ee;
+        border-radius: 3px;
+        padding: 3px 6px;
+        margin-bottom: 4px;
+        color: var(--text);
       }
 
       .card-section em {
         font-style: italic;
-        color: #444;
+        color: var(--text-muted);
+        font-size: 0.86rem;
       }
 
-      footer {
-        max-width: 860px;
-        margin: 3rem auto 0;
-        font-size: 0.78rem;
-        color: var(--muted-text);
+      hr.sep {
+        border: none;
         border-top: 1px solid var(--border);
-        padding-top: 1rem;
-      }
-
-      @media (max-width: 720px) {
-        .header-text h1 {
-          font-size: 1.3rem;
-        }
-        article {
-          padding: 1rem 1.1rem;
-        }
+        margin: 11px 0;
       }
     </style>
   </head>
   <body>
     <header>
-      <div class="header-text">
+      <div class="brand">
         <h1>Stock Expectation</h1>
         <p>Staged plan progress</p>
       </div>
       <nav aria-label="Language">
         <span class="lang-current">EN</span>
-        &nbsp;|&nbsp;
+        <span class="lang-sep">|</span>
         <a href="index.ko.html">한국어</a>
       </nav>
     </header>
 
-    <div class="timeline" role="list" aria-label="Stage timeline">
-      <div class="timeline-node past" role="listitem">
-        <div class="circle">0</div>
-        <span class="label">Stage 0</span>
-      </div>
-      <div class="timeline-connector"></div>
-      <div class="timeline-node current" role="listitem">
-        <div class="circle">1</div>
-        <span class="label">Stage 1</span>
-      </div>
-      <div class="timeline-connector"></div>
-      <div class="timeline-node future" role="listitem">
-        <div class="circle">2</div>
-        <span class="label">Stage 2</span>
-      </div>
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-item">
+          <div class="tl-node done">0</div>
+          <span class="tl-label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item tl-active">
+          <div class="tl-node active">1</div>
+          <span class="tl-label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">2</div>
+          <span class="tl-label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">3</div>
+          <span class="tl-label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">4</div>
+          <span class="tl-label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">4.1</div>
+          <span class="tl-label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">5</div>
+          <span class="tl-label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">6</div>
+          <span class="tl-label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">7</div>
+          <span class="tl-label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">8</div>
+          <span class="tl-label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">9</div>
+          <span class="tl-label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">11</div>
+          <span class="tl-label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">12</div>
+          <span class="tl-label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">13</div>
+          <span class="tl-label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">14</div>
+          <span class="tl-label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">15</div>
+          <span class="tl-label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">16</div>
+          <span class="tl-label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">17</div>
+          <span class="tl-label">Stage 17</span>
+        </div>
+      </nav>
     </div>
 
     <main>
-      <section aria-labelledby="stage1-heading">
-        <h2 id="stage1-heading">Stage 1</h2>
+      <section>
+        <div class="stage-heading">
+          <h2>Stage 1</h2>
+        </div>
         <p class="stage-summary">
-          Implemented Tier 1 improvements targeting three measured core
-          deficiencies: signal significance testing (S1), risk gate hardening
-          (S2), and confidence recalibration (S3).
+          Five parallel workstreams: trustworthy calibration reporting, dynamic
+          KR candidate discovery, external reference skill analysis, tier-1
+          signal gating with isotonic recalibration, and Toss official Open API
+          portfolio sync.
         </p>
 
         <div class="card-grid">
-          <article aria-labelledby="card-tier1">
-            <h3 id="card-tier1">Tier 1 Signal Gate Recalibration</h3>
+          <!-- Card: calibration-report-trustworthiness -->
+          <article>
+            <h3>Calibration Report Trustworthiness</h3>
 
             <div class="card-section">
-              <div class="card-label">Why</div>
+              <div class="section-label">Why</div>
               <p>
-                Three measured core deficiencies demanded direct fixes:
-                valuation/cycle/mean_reversion signal types sitting at 0%
-                win-rate with no pruning mechanism (S1); 39% LIVE low-quality
-                predictions and BEAR over-generation at 6% (S2); confidence
-                locked near 0.60 as a constant carrying no information (S3).
-                Sources: Vibe-Trading (MIT) signal IC/classification and
-                recalibration philosophy; AutoHedge risk-first gate approach.
+                The weekly calibration report drove operator decisions but had
+                two structural flaws that made its advice misleading. First,
+                calibration buckets and signal-performance tables were always
+                computed over the full prediction history regardless of the
+                selected time window, so the "7-day window" section still showed
+                all-time data (e.g. <code>technical n=445</code>), hiding that
+                recent post-momentum-overhaul signals had recovered (7-day
+                <code>technical</code> ~52% vs. all-history ~38%). Second,
+                buckets were always computed on raw confidence, so the report
+                could not show whether the live isotonic recalibrator was
+                closing the overconfidence gap — and its headline "trim
+                confidence" recommendation would have double-corrected the
+                recalibrator, which already maps raw 0.61 to approximately 0.31
+                on recalibrated rows.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">What</div>
+              <div class="section-label">What</div>
               <ul>
                 <li>
-                  S1: Added per-signal binomial p-value against the 50% null
-                  hypothesis plus a verdict (alive/weak/dead). Real data
-                  correctly identified valuation/cycle/mean_reversion as dead
-                  (p=0.001); remaining signals flagged weak.
+                  <code>get_calibration_report</code> and
+                  <code>get_signal_performance</code> gained an optional
+                  <code>days</code> window filter on <code>outcome_date</code>,
+                  matching the existing <code>get_track_record</code> semantics.
                 </li>
                 <li>
-                  S2: Added risk/edge gates to <code>/expect</code> and
-                  daily-briefing prompts (reward:risk &lt; 1.5 blocks
-                  registration); raised the BEAR bar (&ge;3 signals + macro
-                  confirmation + RR &ge; 2.0; LIVE demoted to NEUTRAL).
+                  <code>get_calibration_report</code> gained
+                  <code>use_raw</code> (default <code>True</code> preserves the
+                  recalibration-training path; <code>False</code> uses
+                  as-logged/post-recalibration confidence).
                 </li>
                 <li>
-                  S3: Fit a monotone recalibration map (isotonic/PAVA) to the
-                  calibration curve and applied it. Real data corrected
-                  over-confidence from 0.626 to 0.50.
-                  <code>recalibration_map</code> exposed in CLI calibration
-                  output.
+                  The report now renders two calibration tables per window (raw
+                  vs. as-logged) when they diverge, collapsing to one table plus
+                  an explanatory note while they still coincide.
+                </li>
+                <li>
+                  The headline overconfidence warning is now based on the
+                  as-logged curve; raw flags retained in
+                  <code>overconfident_buckets_raw</code> for trend-file
+                  plotting.
+                </li>
+                <li>
+                  Live result: 7-day window shows raw drift +0.09 vs. as-logged
+                  +0.02 — the recalibrator is visibly closing the gap on recent
+                  data.
                 </li>
               </ul>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">How</div>
+              <div class="section-label">How</div>
               <p>
-                <code>_binomial_two_sided_p</code> uses
-                <code>math.comb</code> with no added dependencies.
-                <code>_signal_verdict</code> feeds into
-                <code>get_signal_performance</code>, which now returns
-                <code>p_value</code> and <code>verdict</code> as defaulted
-                fields — fully backward-compatible with existing consumers.
-                <code>_isotonic_nondecreasing</code> (PAVA) drives
-                <code>build_recalibration_map</code> and
-                <code>apply_recalibration</code> (linear interpolation; empty
-                map falls back to identity).
-                <code>find_worst_signals</code> strengthened to filter on
-                <code>verdict == "dead"</code>. TDD: 9 new tests; full
-                not-network suite at 287 passing.
+                Test-first (TDD): 7 new failing tests (4 in
+                <code>test_metrics.py</code>, 3 in
+                <code>test_weekly_calibration.py</code>) drove minimal
+                additions. The windowing reuses the exact
+                <code>outcome_date &gt;= datetime('now', ?)</code> predicate
+                already used by <code>get_track_record</code>, so all windowed
+                sections align with the headline number. A
+                <code>_render_bucket_table</code> helper was extracted to remove
+                duplication that two-table rendering would have introduced. A
+                Codex review identified that ISO string lexicographic comparison
+                wrongly included same-cutoff-date rows with an earlier time;
+                fixed by wrapping with <code>datetime(outcome_date)</code> in
+                all new queries and the shared
+                <code>_closed_filter</code> helper.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">Code Locations</div>
+              <div class="section-label">Code locations</div>
+              <ul class="code-list">
+                <li>
+                  mcp-prediction-store/metrics.py — get_calibration_report
+                  (≈467–540), get_signal_performance (≈540–585)
+                </li>
+                <li>
+                  scheduler/weekly_calibration.py — compute_window,
+                  _render_bucket_table, two-table render, headline warning
+                  wording, overconfident_buckets_raw
+                </li>
+                <li>mcp-prediction-store/tests/test_metrics.py</li>
+                <li>scheduler/tests/test_weekly_calibration.py</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <em
+                >Verifying the report's premise before acting paid off: the data
+                showed the "trim confidence" advice would have double-corrected
+                an existing recalibrator. Carry forward: treat advisory reports
+                as hypotheses and confirm against the DB before acting on them.
+                The dual-table view is exactly how to confirm the recalibrator
+                is converging as the 722 open LIVE predictions close — no
+                further code changes needed.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: candidate-discovery -->
+          <article>
+            <h3>Candidate Discovery</h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
               <p>
-                <code>mcp-prediction-store/metrics.py:55</code> &nbsp;
-                <code>mcp-prediction-store/tests/test_metrics.py</code> &nbsp;
-                <code>scheduler/weekly_calibration.py:99</code> &nbsp;
-                <code>stock_cli.py:836</code> &nbsp;
-                <code>.claude/skills/expect/SKILL.md</code> &nbsp;
-                <code>.claude/skills/daily-briefing/SKILL.md</code>
+                The 2026-05-13 cron daily briefing completely missed the
+                "Physical AI" theme surge (Hyundai AutoEver +55%, LG Electronics
+                +34%, Hyundai Motor +30% over 10 days), re-recommending only
+                Samsung / SK Hynix / Hyundai Motor. Root cause:
+                <code>scheduler/daily_briefing.py</code> hard-coded 6 KR
+                blue-chips, placing mid-cap momentum stocks entirely outside the
+                LLM's view. A secondary cause (the briefing skill's framing
+                anchoring the LLM to those names) is addressed in Stage 2. Stage
+                1 removes the hard-coded universe.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">Retrospective</div>
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  New module <code>scheduler/candidate_discovery.py</code> (340
+                  lines): <code>Candidate</code> dataclass,
+                  <code>ANCHORS_KR</code> (3 reference anchors),
+                  <code>enumerate_kr_universe</code> (market-cap top-N ∪
+                  trading-value top-N via single PyKRX call),
+                  <code>score_and_filter</code> (|return_5d| ≥ 15% OR
+                  vol_ratio_5d ≥ 2×), <code>discover_kr_candidates</code>,
+                  <code>format_candidates_for_prompt</code>.
+                </li>
+                <li>
+                  Hard-coded 6 tickers reduced to 3 reference anchors: Samsung
+                  Electronics (005930), SK Hynix (000660), KODEX 200 (069500).
+                </li>
+                <li>
+                  <code>scheduler/daily_briefing.py</code>:
+                  <code>fetch_kr_market_data()</code> rewritten for API mode; KR
+                  Claude Code cron prompt rewritten to inject
+                  <code>{candidate_block}</code> and <code>{ticker_csv}</code>.
+                </li>
+                <li>
+                  <code>.claude/skills/daily-briefing/SKILL.md</code> static
+                  ticker list replaced with guidance that tickers are
+                  dynamically determined with 3 reference anchors.
+                </li>
+                <li>
+                  21 new unit tests (all mocked): enumerate ×4, score_filter ×7,
+                  discover ×5, format ×2, defaults ×1.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <ul>
+                <li>
+                  Universe = market-cap top-N ∪ trading-value top-N. Market-cap
+                  only misses mid-cap surges (Hyundai AutoEver may be outside
+                  top-200 by cap); trading-value only brings too much mega-cap
+                  noise. The union captures both.
+                </li>
+                <li>
+                  Anchors trimmed to 3; the other 3 legacy tickers must pass the
+                  dynamic filter to appear, ensuring only today's meaningful
+                  names are shown.
+                </li>
+                <li>
+                  News count deferred to Stage 2: fetching news for 200
+                  candidates risks timeout. The theme clusterer will backfill
+                  news counts for top-30 candidates only.
+                </li>
+                <li>
+                  PyKRX failure falls back gracefully to anchors-only; cron
+                  never crashes.
+                </li>
+                <li>
+                  Name lookups applied only to filter survivors (~20–30 tickers)
+                  not the full ~250 universe, reducing PyKRX sequential calls.
+                </li>
+                <li>
+                  Provider injectable via
+                  <code>discover_kr_candidates(provider=...)</code> for
+                  unit-test isolation.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Code locations</div>
+              <ul class="code-list">
+                <li>scheduler/candidate_discovery.py — new, 340 lines</li>
+                <li>
+                  scheduler/tests/test_candidate_discovery.py — new, 21 tests
+                </li>
+                <li>scheduler/daily_briefing.py:44-56 — import additions</li>
+                <li>
+                  scheduler/daily_briefing.py:107-149 — fetch_kr_market_data()
+                  rewrite
+                </li>
+                <li>
+                  scheduler/daily_briefing.py:386-410 — KR Claude Code prompt
+                  rewrite
+                </li>
+                <li>
+                  .claude/skills/daily-briefing/SKILL.md:46-56 — KR ticker
+                  guidance replacement
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <em
+                >21 unit tests anchored to the 2026-05-13 missed-scenario
+                fixture give strong regression protection. The
+                <code>score_and_filter</code> fixture is intuitive and easy to
+                reuse when threshold tuning is needed. Watch for PyKRX bulk
+                endpoint KeyErrors in cron — the anchors-only fallback is safe
+                but silently disables dynamic discovery; a static fallback
+                universe CSV is worth considering in a later stage.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: references-and-analysis -->
+          <article>
+            <h3>References And Analysis</h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
               <p>
-                <em>
-                  S1 was extended compatibly by adding fields without touching
-                  stored-value semantics. Exact binomial arithmetic via
-                  <code>math.comb</code> avoided expanding core dependencies (no
-                  scipy). S2 is a prompt change and therefore not auto-testable
-                  — the store-layer BEAR hard gate in Stage 2 serves as the real
-                  defense line, making the two complementary.
-                </em>
+                The <code>/expect</code> redesign needed an evidence base — what
+                patterns are other Claude Code trading skills using, and which
+                are worth borrowing? Without capturing these sources in the
+                repo, future redesigns would have to re-fetch everything from
+                scratch.
               </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  <code>references/README.md</code> — index and reproducible
+                  clone instructions for 8 external skill repos.
+                </li>
+                <li>
+                  <code
+                    >references/articles/kevin-meneses-top5-claude-trading-skills.md</code
+                  >
+                  — Kevin Meneses, "Top 5 Claude Code Skills for Algorithmic
+                  Trading" (DataDrivenInvestor, Apr 2026), captured as markdown
+                  (fair-use summary).
+                </li>
+                <li>
+                  <code>references/repos/</code> — gitignored. 5 full clones
+                  (depth 1) plus 3 sparse-checkouts of relevant skill
+                  subdirectories. Total ~40 MB excluding <code>.git</code>.
+                </li>
+                <li>
+                  <code>docs/external-skills-analysis.md</code> — synthesis
+                  report: per-skill summaries for 8 collections, common patterns
+                  table, data-source convergence table, news/sentiment gap
+                  analysis, ranked borrow/reject pattern lists.
+                </li>
+                <li>
+                  <code>docs/news-api-comparison.md</code> — Finnhub vs. Alpha
+                  Vantage vs. FMP vs. yfinance vs. Open DART vs. Naver scrape:
+                  free-tier limits, auth, sentiment availability, endpoints.
+                </li>
+                <li>
+                  <code>.gitignore</code> — added
+                  <code>references/repos/</code> (large, regenerable).
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <ul>
+                <li>
+                  Lobehub blocked WebFetch (HTTP 403); resolved by accessing the
+                  underlying GitHub repos via <code>gh api</code>.
+                </li>
+                <li>
+                  5 trading-focused repos cloned with
+                  <code>git clone --depth 1 --quiet</code>; 3 large generalist
+                  repos used sparse-checkout (<code>git init</code> +
+                  <code>core.sparseCheckout=true</code>) to pull only the
+                  relevant skill subdirectory.
+                </li>
+                <li>
+                  Synthesis report produced by a general-purpose subagent
+                  reading all 8 repos in one pass; saved verbatim into
+                  <code>docs/external-skills-analysis.md</code>.
+                </li>
+                <li>
+                  Kevin Meneses article: WebFetch returned a structured summary;
+                  saved as markdown with application notes.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Code locations</div>
+              <ul class="code-list">
+                <li>references/README.md</li>
+                <li>
+                  references/articles/kevin-meneses-top5-claude-trading-skills.md
+                </li>
+                <li>docs/external-skills-analysis.md</li>
+                <li>docs/news-api-comparison.md</li>
+                <li>.gitignore line 32–33</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <em
+                >Sparse checkout saved ~150 MB on the 3 large generalist repos.
+                Carry forward: when a lobehub/skillsmp page returns 403, jump
+                straight to the underlying GitHub via
+                <code
+                  >gh api
+                  repos/&lt;owner&gt;/&lt;name&gt;/contents/&lt;path&gt;</code
+                >
+                rather than retrying the SaaS layer. Code review was
+                deliberately skipped for this documentation-only stage.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: tier1-signal-gate-recal -->
+          <article>
+            <h3>Tier1 Signal Gate Recal</h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
+              <p>
+                Three measured defects targeted directly: (S1)
+                valuation/cycle/mean_reversion signal types showing 0% win rate
+                with no pruning mechanism; (S2) 39% of LIVE predictions
+                low-quality and BEAR direction issued at 6% without sufficient
+                gate; (S3) confidence values stuck near 0.60 as a near-constant,
+                carrying no information. Design informed by the Vibe-Trading
+                (MIT) signal IC/classification and recalibration philosophy and
+                the AutoHedge risk-first gate concept.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  S1: Added binomial two-sided p-value and verdict (<code
+                    >alive</code
+                  >
+                  / <code>weak</code> / <code>dead</code>) per signal type to
+                  <code>get_signal_performance</code>. On live data,
+                  valuation/cycle/mean_reversion correctly identified as
+                  <code>dead</code> (p=0.001); the rest are <code>weak</code>.
+                </li>
+                <li>
+                  S2: Added risk/edge gate (reward:risk &lt; 1.5 blocks
+                  registration) and raised the BEAR bar (≥3 signals + macro
+                  confirmation + RR ≥ 2.0; LIVE demoted to NEUTRAL) in
+                  <code>/expect</code> and <code>daily-briefing</code> prompts.
+                </li>
+                <li>
+                  S3: Fitted a monotone recalibration map (isotonic regression /
+                  PAVA) and applied it. Live data: raw 0.626 corrected to 0.50.
+                  Recalibration map exposed via CLI
+                  <code>calibration</code> subcommand output.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <ul>
+                <li>
+                  <code>_binomial_two_sided_p</code> uses
+                  <code>math.comb</code> with no external dependencies; later
+                  rewritten in log-gamma space to handle n ≳ 1100 without
+                  overflow (caught by Codex PR review #27).
+                </li>
+                <li>
+                  <code>_signal_verdict</code> added to
+                  <code>get_signal_performance</code> as backward-compatible new
+                  fields — 4 existing consumers required no changes.
+                </li>
+                <li>
+                  <code>_isotonic_nondecreasing</code> (PAVA) →
+                  <code>build_recalibration_map</code> /
+                  <code>apply_recalibration</code> (linear interpolation; empty
+                  map is identity function).
+                </li>
+                <li>
+                  TDD: 9 new tests (verdict ×3, recalibration ×3, weekly ×1,
+                  existing augmentation ×2). Full
+                  <code>not network</code> suite: 287 passing.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Code locations</div>
+              <ul class="code-list">
+                <li>
+                  mcp-prediction-store/metrics.py:55- — SignalPerformance,
+                  helpers, build_recalibration_map, apply_recalibration
+                </li>
+                <li>
+                  mcp-prediction-store/tests/test_metrics.py — S1/S3 tests
+                </li>
+                <li>
+                  scheduler/weekly_calibration.py:99- — find_worst_signals
+                  verdict
+                </li>
+                <li>
+                  scheduler/tests/test_weekly_calibration.py — verdict tests +
+                  _FakeSignal fields
+                </li>
+                <li>
+                  stock_cli.py:836- — cmd_calibration: verdict +
+                  recalibration_map output
+                </li>
+                <li>
+                  .claude/skills/expect/SKILL.md Step 9 — RULE C2/C3 +
+                  recalibration
+                </li>
+                <li>.claude/skills/daily-briefing/SKILL.md — quality rules</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <em
+                >S1 extended cleanly via additive fields with zero changes to 4
+                existing consumers. Implementing exact binomial without scipy
+                kept core dependencies minimal. S2 is prompt-only and cannot be
+                automatically tested; the Stage 2 store-layer BEAR hard gate is
+                the real enforcement line — S2 and the gate are
+                complementary.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: toss-open-api -->
+          <article>
+            <h3>Toss Open Api</h3>
+
+            <div class="card-section">
+              <div class="section-label">Why</div>
+              <p>
+                <code>portfolio sync</code> depended on the unofficial
+                <code>tossctl</code> CLI, which required browser/QR login, had
+                roughly weekly session expiry, and needed a separate
+                session-expiry monitor with Telegram alerts. Toss Securities now
+                offers an official Open API (OAuth2, REST/JSON), enabling
+                server-side credentials with automatic token refresh and
+                eliminating browser session management entirely.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">What</div>
+              <ul>
+                <li>
+                  New <code>portfolio/toss_api.py</code>: OAuth2
+                  client-credentials client — issues/caches a token, lists
+                  accounts, reads holdings, normalizes each holding into the
+                  dict shape <code>reconcile()</code> already consumes.
+                </li>
+                <li>
+                  <code>portfolio sync</code> prefers the official API and falls
+                  back to <code>tossctl</code> when credentials are absent. New
+                  <code>--source {auto,toss-api,tossctl}</code> flag; output
+                  JSON reports the <code>source</code> actually used.
+                </li>
+                <li>
+                  Removed now-unnecessary session-expiry monitor:
+                  <code>scheduler/toss_auth_check.py</code>, its test, the 07:30
+                  cron line, and all documentation references.
+                </li>
+                <li>
+                  Credentials via <code>.env</code>:
+                  <code>TOSS_CLIENT_ID</code>,
+                  <code>TOSS_CLIENT_SECRET</code> (optional
+                  <code>TOSS_OPENAPI_BASE_URL</code>).
+                </li>
+                <li>
+                  Live verified: token issued, BROKERAGE account, 18 holdings (6
+                  KR + 12 US) synced correctly via
+                  <code>portfolio sync --source toss-api --dry-run</code>.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">How</div>
+              <p>
+                Reconciliation logic, DB schema, and ticker/market normalization
+                are data-source agnostic and were left untouched. The new code
+                sits only at the boundary:
+                <code>toss_api.fetch_toss_positions_api()</code> produces the
+                same normalized positions <code>tossctl</code> used to, so
+                <code>toss_sync.reconcile()</code> is unchanged. A thin
+                dispatcher
+                <code>toss_sync.fetch_positions(source)</code> selects the
+                source. Endpoints were confirmed against the canonical spec at
+                <code
+                  >https://openapi.tossinvest.com/openapi-docs/latest/openapi.json</code
+                >
+                — initial guesses about auth method, path prefix, and the
+                <code>accountSeq</code> header were all wrong and corrected
+                before implementation.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Code locations</div>
+              <ul class="code-list">
+                <li>portfolio/toss_api.py — Open API client and adapter</li>
+                <li>
+                  portfolio/toss_sync.py — fetch_positions() dispatcher
+                  (reconcile unchanged)
+                </li>
+                <li>stock_cli.py — cmd_portfolio_sync + --source flag</li>
+                <li>
+                  portfolio/tests/test_toss_api.py — client/adapter/dispatcher
+                  unit tests
+                </li>
+                <li>
+                  Removed: scheduler/toss_auth_check.py,
+                  scheduler/tests/test_toss_auth_check.py
+                </li>
+                <li>
+                  Docs: CLAUDE.md, .claude/skills/toss-sync/SKILL.md,
+                  scheduler/crontab.example, cron_setting.md, README.md
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">Retrospective</div>
+              <em
+                >Boundary-only design kept the change surgical — reconcile, DB,
+                and existing logic tests were untouched. Pulling the real
+                openapi.json early rather than trusting research guesses was the
+                key unblock: auth method, path prefix, and the accountSeq header
+                were all different from the initial assumptions. The credential
+                mix-up (ID/secret swapped) surfaced as a clean
+                <code>invalid_client</code> error, isolating the issue
+                quickly.</em
+              >
             </div>
           </article>
         </div>
       </section>
     </main>
-
-    <footer>
-      Stock Expectation &mdash; Stage 1 &mdash; Tier 1 Signal Gate Recalibration
-    </footer>
   </body>
 </html>

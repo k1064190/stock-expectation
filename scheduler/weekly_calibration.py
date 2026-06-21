@@ -147,21 +147,28 @@ def find_decaying_signals(decay) -> list[dict]:
 def compute_window(conn, days: int) -> dict:
     """Compute calibration data for a single look-back window.
 
-    Note: ``get_track_record`` accepts a ``days`` filter, but
-    ``get_calibration_report`` and ``get_signal_performance`` operate over the
-    full history. We surface the days-windowed track record alongside the
-    full-history calibration curve / signal performance — combining a
-    short-window win rate with a small-sample calibration curve would be
-    noise. Repeated weekly snapshots build the time series we need.
+    Every windowed view (track record, calibration curve, signal performance)
+    is restricted to predictions that closed within the last ``days`` days, so
+    each report section reflects its own header rather than all-history data.
+    ``get_signal_decay`` is the one exception: its train/test split is an
+    all-history out-of-sample analysis and is intentionally not windowed.
+
+    Two calibration curves are computed per window: ``buckets`` on the model's
+    RAW confidence and ``buckets_recal`` on the as-logged (post-recalibration)
+    confidence. Comparing the two shows whether the isotonic recalibrator is
+    closing the overconfidence gap. The headline overconfidence warning is based
+    on the as-logged curve (what actually ships); the raw flags are kept in
+    ``overconfident_buckets_raw`` for context.
 
     Returns a dict suitable for JSON serialisation; downstream rendering
     converts it into the markdown table.
     """
     track = get_track_record(conn, days=days)
-    buckets = get_calibration_report(conn)
     # Use a low ``min_count`` so the early-life-of-system reports surface
-    # their signal mix; a future Stage-6.1 PR can raise this once volumes grow.
-    signals = get_signal_performance(conn, min_count=3)
+    # their signal mix; a future PR can raise this once volumes grow.
+    buckets = get_calibration_report(conn, days=days)
+    buckets_recal = get_calibration_report(conn, days=days, use_raw=False)
+    signals = get_signal_performance(conn, min_count=3, days=days)
     decay = get_signal_decay(conn, min_count=6)
     # Match the windowed track_record above so the report doesn't pair a
     # windowed point estimate with all-history uncertainty.
@@ -171,8 +178,12 @@ def compute_window(conn, days: int) -> dict:
         "days": days,
         "track_record": asdict(track),
         "buckets": [asdict(b) for b in buckets],
+        "buckets_recal": [asdict(b) for b in buckets_recal],
         "signals": [asdict(s) for s in signals],
-        "overconfident_buckets": find_overconfident_buckets(buckets),
+        # Warn on the as-logged (post-recalibration) curve — the confidence that
+        # actually ships — and retain the raw flags for context.
+        "overconfident_buckets": find_overconfident_buckets(buckets_recal),
+        "overconfident_buckets_raw": find_overconfident_buckets(buckets),
         "worst_signals": find_worst_signals(signals),
         "decaying_signals": find_decaying_signals(decay),
         "robustness": {
@@ -184,6 +195,27 @@ def compute_window(conn, days: int) -> dict:
             "confidence_permutation": conf_perm,
         },
     }
+
+
+def _render_bucket_table(lines: list[str], title: str, buckets: list[dict]) -> None:
+    """Append one calibration table (predicted vs actual + drift) under ``title``.
+
+    ``buckets`` are the JSON-serialised CalibrationBucket dicts produced by
+    ``compute_window``. A drift of +0.10 or more over a bucket of at least 3
+    predictions earns a ⚠️ marker, matching the headline flag threshold.
+    """
+    lines.append(f"### {title}")
+    lines.append("")
+    lines.append("| Range | Predicted | Actual | n | Drift |")
+    lines.append("|---|---|---|---|---|")
+    for b in buckets:
+        drift = b["predicted_confidence"] - b["actual_accuracy"]
+        marker = " ⚠️" if drift >= 0.10 and b["count"] >= 3 else ""
+        lines.append(
+            f"| {b['confidence_range']} | {b['predicted_confidence']:.2f} "
+            f"| {b['actual_accuracy']:.2f} | {b['count']} | {drift:+.2f}{marker} |"
+        )
+    lines.append("")
 
 
 def render_markdown(report_date: str, windows: list[dict]) -> str:
@@ -211,7 +243,7 @@ def render_markdown(report_date: str, windows: list[dict]) -> str:
     lines.append(f"- Current streak: **{tr['current_streak']:+d}**")
     if primary["overconfident_buckets"]:
         lines.append(
-            f"- ⚠️ Overconfident bucket(s): **{', '.join(primary['overconfident_buckets'])}** — output confidence should be trimmed in this band."
+            f"- ⚠️ Overconfident even after recalibration: **{', '.join(primary['overconfident_buckets'])}** — the recalibrator isn't closing the gap in this band; investigate before any manual trim (the isotonic curve already trims raw confidence)."
         )
     if primary["worst_signals"]:
         worst_str = ", ".join(
@@ -239,19 +271,38 @@ def render_markdown(report_date: str, windows: list[dict]) -> str:
         )
         lines.append("")
 
-        if w["buckets"]:
-            lines.append("### Calibration buckets")
-            lines.append("")
-            lines.append("| Range | Predicted | Actual | n | Drift |")
-            lines.append("|---|---|---|---|---|")
-            for b in w["buckets"]:
-                drift = b["predicted_confidence"] - b["actual_accuracy"]
-                marker = " ⚠️" if drift >= 0.10 and b["count"] >= 3 else ""
-                lines.append(
-                    f"| {b['confidence_range']} | {b['predicted_confidence']:.2f} "
-                    f"| {b['actual_accuracy']:.2f} | {b['count']} | {drift:+.2f}{marker} |"
+        raw_buckets = w["buckets"]
+        recal_buckets = w.get("buckets_recal")
+        if raw_buckets:
+            if recal_buckets and recal_buckets != raw_buckets:
+                # Recalibration has diverged from raw — show both curves so the
+                # drift columns reveal whether the recalibrator closed the gap.
+                _render_bucket_table(
+                    lines, "Calibration buckets — raw model confidence", raw_buckets
                 )
-            lines.append("")
+                _render_bucket_table(
+                    lines,
+                    "Calibration buckets — as-logged (after recalibration)",
+                    recal_buckets,
+                )
+            else:
+                _render_bucket_table(lines, "Calibration buckets", raw_buckets)
+                if recal_buckets == raw_buckets:
+                    lines.append(
+                        "_Raw and as-logged confidence coincide — recalibration is "
+                        "not yet diverging in this window._"
+                    )
+                    lines.append("")
+                elif recal_buckets == []:
+                    # Recalibration pulled every as-logged confidence below the
+                    # 0.50 bucket floor, so there is no as-logged curve to show.
+                    lines.append(
+                        "_As-logged (post-recalibration) confidence all fell below "
+                        "the 0.50 bucket floor — recalibration is pulling raw "
+                        "confidence out of the actionable band._"
+                    )
+                    lines.append("")
+                # recal_buckets is None (legacy caller) → no note.
 
         if w["signals"]:
             lines.append("### Signal performance")
@@ -353,6 +404,7 @@ def main() -> int:
         "primary_window_days": primary["days"],
         "track_record": primary["track_record"],
         "overconfident_buckets": primary["overconfident_buckets"],
+        "overconfident_buckets_raw": primary["overconfident_buckets_raw"],
         "worst_signals": primary["worst_signals"],
     }
     update_trend_file(args.state_dir / "calibration-trend.json", trend_entry)
