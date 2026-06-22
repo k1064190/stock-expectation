@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>19단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Arial,
+          sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #1e5f8e;
+        --muted: #888;
+        --border: #e0e0dc;
+        --card-bg: #fafaf8;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #111;
+      }
+      header .brand p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+      nav[aria-label="언어"] {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline strip ── */
+      nav[aria-label="단계 타임라인"] {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        position: relative;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--muted);
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .tl-node.active .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .tl-node .label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.active .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-connector {
+        height: 2px;
+        width: 28px;
+        background: var(--muted);
+        flex-shrink: 0;
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 2.5rem auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      .stage-heading {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+      .stage-summary {
+        color: #444;
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+      }
+
+      /* ── Card ── */
+      article.doc-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+        margin-bottom: 1.5rem;
+      }
+      article.doc-card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .doc-section {
+        margin-bottom: 1.25rem;
+      }
+      .doc-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .doc-section h4 {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+      }
+      .doc-section p {
+        font-size: 0.92rem;
+        color: #333;
+      }
+      .doc-section ul {
+        padding-left: 1.25rem;
+      }
+      .doc-section li {
+        font-size: 0.92rem;
+        color: #333;
+        margin-bottom: 0.25rem;
+      }
+
+      .doc-section.retrospective p,
+      .doc-section.retrospective li {
+        font-style: italic;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.83rem;
+        background: #eeeee9;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        word-break: break-all;
+      }
+      .doc-section.code-locations li {
+        list-style: none;
+        padding-left: 0;
+        margin-bottom: 0.4rem;
+      }
+
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        nav[aria-label="단계 타임라인"] {
+          padding: 1rem;
+        }
+        main {
+          padding: 0 1rem 2rem;
+          margin-top: 1.5rem;
+        }
+        article.doc-card {
+          padding: 1.25rem 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어"><a href="index.html">EN</a> | 한국어</nav>
+    </header>
+
+    <nav aria-label="단계 타임라인">
+      <div class="timeline">
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">0단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">2단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">3단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">4단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">4.1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">5단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">6단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">7단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">8단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">9단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">11단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">12단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">13단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">14단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">15단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">16단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">17단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node active">
+          <div class="circle"></div>
+          <span class="label">19단계</span>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section>
+        <h2 class="stage-heading">19단계</h2>
+        <p class="stage-summary">
+          이미 기록된 LIVE BULL 예측을 실제 시장 가격으로 재현해 실현 P&amp;L,
+          NAV 이력, 그리고 구체적인 알고리즘 튜닝 권고사항을 도출하는 모의투자
+          시뮬레이션 레이어를 도입합니다.
+        </p>
+
+        <article class="doc-card">
+          <h3>Paper Trading System</h3>
+
+          <div class="doc-section">
+            <h4>왜</h4>
+            <p>
+              Doctor Cho는 가상 자금으로 예측 알고리즘을 직접 거래해 성과를
+              측정하고 개선하고자 합니다. 시장별 시뮬레이션 계좌(미국 $100,000,
+              한국 &#8361;100,000,000)를 운영하고, 하루 단위 사이클로 최소 1개월
+              이상의 NAV/수익률을 기록하며, 알고리즘 튜닝을 권고하는 정기 자문
+              보고서를 생성합니다. 실현 P&amp;L은 HIT/MISS 트랙레코드나 보정값이
+              근사적으로만 표현하는 진정한 성과 지표입니다.
+            </p>
+          </div>
+
+          <div class="doc-section">
+            <h4>무엇을</h4>
+            <ul>
+              <li>
+                <strong>models.py</strong> —
+                <code>data/paper_trading.db</code> 스키마 (accounts / positions
+                / trades / nav_history) + 데이터클래스 + CRUD. CRUD는 커밋하지
+                않으며, 호출자가 트랜잭션을 소유해 하루 사이클을 원자적으로
+                처리합니다.
+              </li>
+              <li>
+                <strong>costs.py</strong> — 슬리피지(5 bps), 수수료(미국 0 /
+                한국 0.015%), 한국 매도세 0.18%.
+              </li>
+              <li>
+                <strong>strategy.py</strong> — 순수 함수
+                <code>decide_entries</code>(거래당 리스크 1%, NAV 대비 포지션
+                최대 20%, 하루 신규 최대 5개, 기본 손절 8%, 신뢰도 하한 0.60,
+                종목당 하루 1로트)와 <code>decide_exits</code>(목표가 / 손절가 /
+                보유 기간, 두 조건 동시 발동 시 손절 우선).
+              </li>
+              <li>
+                <strong>engine.py</strong> — <code>run_day</code>: 청산 → 진입 →
+                시가 평가 → NAV 기록을 하나의 커밋 트랜잭션으로 처리; (account,
+                date) 기준 멱등성 보장; 데이터 공백 시 이전 평가액 이월.
+              </li>
+              <li>
+                <strong>review.py</strong> — 순수 지표 계산: 낙폭, Sharpe(표본
+                표준편차), prediction_id 기준 왕복 P&amp;L 매칭, 신뢰도 귀속
+                분석.
+              </li>
+              <li>
+                <strong>scheduler/paper_trading_run.py</strong> — cron 실행 +
+                <code>--replay FROM..TO</code>; 미국/한국 데이터 제공자 재활용;
+                벤치마크 = SPY / KODEX 200 매수 보유.
+              </li>
+              <li>
+                <strong>scheduler/paper_trading_review.py</strong> — 주간 자문
+                보고서
+                <code>reports/paper-trading-review-YYYY-MM-DD.md</code> (튜닝
+                권고 포함).
+              </li>
+              <li>Cron: 매일 06:30 KST 틱, 매주 일요일 22:30 KST 주간 리뷰.</li>
+              <li>
+                <strong>부트스트랩 결과</strong> (2026-04-04~06-22 재현, 약
+                54/52 거래일): 미국 +1.80%(Sharpe 0.61, maxDD −6.94%, 48 왕복,
+                40% 승률) vs SPY +13.4%; 한국 −1.92%(Sharpe −0.05, maxDD −12.5%,
+                63 왕복, 38% 승률) vs KODEX 200 +81%. 핵심 발견: 손절 청산이
+                목표가 청산보다 많고, 고정 목표가 방식이 상승 여력을 제한해
+                급등장에서 패시브 지수에 크게 뒤처집니다.
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section">
+            <h4>어떻게</h4>
+            <ul>
+              <li>
+                신호 소스 = <code>predictions.db</code>의 LIVE BULL 행(모두
+                목표가+손절가 포함). 당일 장 마감가로 체결(미래 데이터 사용
+                없음).
+              </li>
+              <li>
+                예측의 거래소 현지 날짜(<code>signal_local_date</code>, UTC를
+                시장 시간대로 변환)를 해당 날짜 이후 첫 번째 거래
+                세션(<code>effective_entry_date</code>)에 매핑해, 한국 장전
+                07:00 KST 신호가 올바른 세션에 거래됩니다.
+              </li>
+              <li>
+                순수 의사결정/지표 로직은 단위 테스트로 검증하고, 라이브
+                재현으로 연결부를 스모크 테스트합니다.
+              </li>
+              <li>
+                TDD 방식으로 개발: 신규 테스트 41개, 전체 스위트 641개 통과.
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section code-locations">
+            <h4>코드 위치</h4>
+            <ul>
+              <li>
+                <code
+                  >paper_trading/{models,costs,strategy,engine,review}.py</code
+                >
+              </li>
+              <li><code>scheduler/paper_trading_run.py</code></li>
+              <li><code>scheduler/paper_trading_review.py</code></li>
+              <li><code>paper_trading/tests/test_pt_*.py</code></li>
+              <li><code>scheduler/tests/test_paper_trading_run.py</code></li>
+              <li><code>scheduler/crontab.example</code></li>
+              <li>
+                <code
+                  >docs/superpowers/specs/2026-06-23-paper-trading-design.md</code
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section">
+            <h4>리뷰 루프</h4>
+            <ul>
+              <li>
+                <strong>code-reviewer-pro:</strong> 치명적 문제 0건; 경고
+                1건(사이클 중간 충돌 시 멱등성 취약) — <code>run_day</code>를
+                단일 트랜잭션으로 변경해 수정(CRUD가 더 이상 커밋하지 않음).
+                제안 1건(<code>decide_entries</code>에 중복 종목 방어 로직 추가)
+                — 적용 완료.
+              </li>
+              <li>
+                <strong>Codex (gpt-5.5, high):</strong> [BLOCKER] 한국 UTC 날짜
+                오매핑 —
+                <code>signal_local_date</code
+                >/<code>effective_entry_date</code>로 수정(한국 누적 수익률
+                +2.53% → −1.92%로 전환, 편향이 실재했음을 확인); [BLOCKER]
+                비원자적 사이클 — 동일 트랜잭션 수정; [MAJOR] 데이터 공백 시
+                <code>avg_cost</code> 평가액 오염 — 이전값 이월 처리; [MINOR]
+                Sharpe 모집단→표본 표준편차 전환. 네 건 모두 테스트와 함께 수정.
+              </li>
+              <li>
+                <strong>Gemini:</strong> 사용 불가(무료 티어 CLI 지원 종료 —
+                <code>IneligibleTierError</code>).
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section retrospective">
+            <h4>회고</h4>
+            <ul>
+              <li>
+                재현 기능은 즉각적인 효과를 냈습니다. 한 달을 기다리는 대신,
+                이미 기록된 예측에서 약 2.5개월치 NAV를 얻었고, 리뷰를 통해
+                구체적이고 실행 가능한 발견(목표가 청산 + 손절 청산이 추세
+                장세에서 뒤처짐)을 도출했습니다.
+              </li>
+              <li>
+                Codex의 시간대 오류 지적이 중요했습니다 — 한국 수익률을 양수에서
+                음수로 뒤집었습니다. 교훈: 저장된 UTC 타임스탬프는 체결 날짜를
+                확정하기 전에 반드시 거래소 현지 시간대로 변환해야 합니다.
+              </li>
+              <li>
+                이월 과제: 자문 권고사항(신뢰도 하한 상향, ATR 트레일링 스톱,
+                규모보다 신호 품질 우선)이 알고리즘 개선 루프의 첫 번째 구체적
+                입력값입니다. 다음 단계는 그 중 하나를 PR로 실행하고 델타를
+                측정하는 것입니다.
+              </li>
+            </ul>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
