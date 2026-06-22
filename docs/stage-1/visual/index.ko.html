@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>1단계 — Stock Expectation</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stock Expectation — 1단계</title>
     <style>
       *,
       *::before,
@@ -13,58 +13,64 @@
         padding: 0;
       }
 
+      :root {
+        --accent: #1d5fa8;
+        --accent-muted: #7daacf;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e2e2de;
+        --text: #1a1a1a;
+        --text-muted: #6b6b6b;
+        --node-size: 38px;
+      }
+
       body {
         font-family:
-          "Apple SD Gothic Neo",
-          "Malgun Gothic",
-          "Noto Sans KR",
-          -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
-          sans-serif;
-        background: #f7f7f5;
-        color: #1a1a1a;
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+          "Helvetica Neue", Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
         line-height: 1.7;
-        padding: 0 1rem 4rem;
+        font-size: 15px;
       }
 
-      :root {
-        --accent: #2a6b7c;
-        --accent-muted: #7aabb7;
-        --accent-outline: #2a6b7c;
-        --border: #e0dedd;
-        --card-bg: #ffffff;
-        --muted-text: #6b7280;
-        --node-size: 2.2rem;
-      }
-
+      /* ── Header ── */
       header {
-        max-width: 860px;
-        margin: 0 auto;
-        padding: 2.4rem 0 1.2rem;
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 18px 32px;
         display: flex;
-        align-items: baseline;
+        align-items: center;
         justify-content: space-between;
-        gap: 1rem;
         flex-wrap: wrap;
+        gap: 8px;
       }
 
-      .header-text h1 {
-        font-size: 1.6rem;
+      .brand h1 {
+        font-size: 1.2rem;
         font-weight: 700;
-        color: var(--accent);
-        letter-spacing: -0.02em;
+        color: var(--text);
+        letter-spacing: -0.01em;
       }
 
-      .header-text p {
-        font-size: 0.9rem;
-        color: var(--muted-text);
-        margin-top: 0.2rem;
+      .brand p {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        margin-top: 2px;
       }
 
       nav[aria-label="언어"] {
-        font-size: 0.875rem;
+        font-size: 0.85rem;
         white-space: nowrap;
+      }
+
+      .lang-current {
+        color: var(--text-muted);
+      }
+
+      .lang-sep {
+        color: var(--border);
+        margin: 0 5px;
       }
 
       nav[aria-label="언어"] a {
@@ -77,315 +83,932 @@
         text-decoration: underline;
       }
 
-      nav[aria-label="언어"] .lang-current {
-        color: var(--muted-text);
-        font-weight: 400;
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 32px 22px;
+        overflow-x: auto;
       }
 
-      .timeline {
-        max-width: 860px;
-        margin: 0 auto 2.8rem;
+      nav[aria-label="단계 타임라인"] {
         display: flex;
         align-items: center;
         gap: 0;
+        min-width: max-content;
       }
 
-      .timeline-node {
+      .tl-item {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 0.4rem;
+        gap: 5px;
       }
 
-      .timeline-node .circle {
+      .tl-connector {
+        height: 2px;
+        width: 24px;
+        background: var(--border);
+        flex-shrink: 0;
+        align-self: center;
+        margin-bottom: 22px;
+      }
+
+      .tl-node {
         width: var(--node-size);
         height: var(--node-size);
         border-radius: 50%;
-        border: 2.5px solid var(--accent-outline);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.78rem;
+        font-size: 0.62rem;
         font-weight: 700;
-      }
-
-      .timeline-node.current .circle {
-        background: var(--accent);
-        color: #fff;
-        border-color: var(--accent);
-      }
-
-      .timeline-node.past .circle {
-        background: var(--accent-muted);
-        color: #fff;
-        border-color: var(--accent-muted);
-      }
-
-      .timeline-node.future .circle {
-        background: transparent;
-        color: var(--accent);
-        border-color: var(--accent-outline);
-      }
-
-      .timeline-node .label {
-        font-size: 0.72rem;
-        color: var(--muted-text);
-        font-weight: 500;
+        border: 2px solid transparent;
+        line-height: 1.1;
         text-align: center;
       }
 
-      .timeline-node.current .label {
+      .tl-node.done {
+        background: var(--accent-muted);
+        border-color: var(--accent-muted);
+        color: #fff;
+      }
+
+      .tl-node.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .tl-node.future {
+        background: var(--bg);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .tl-label {
+        font-size: 0.6rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+      }
+
+      .tl-item.tl-active .tl-label {
         color: var(--accent);
         font-weight: 700;
       }
 
-      .timeline-node.past .label {
-        color: var(--accent-muted);
-      }
-
-      .timeline-connector {
-        flex: 1;
-        height: 2px;
-        background: var(--border);
-        margin-bottom: 1.4rem;
-      }
-
+      /* ── Main ── */
       main {
-        max-width: 860px;
+        max-width: 1140px;
         margin: 0 auto;
+        padding: 40px 32px 64px;
       }
 
-      section {
-        margin-bottom: 2.8rem;
-      }
-
-      section > h2 {
-        font-size: 1.25rem;
+      .stage-heading h2 {
+        font-size: 1.55rem;
         font-weight: 700;
-        color: var(--accent);
-        margin-bottom: 0.3rem;
-        letter-spacing: -0.01em;
+        color: var(--text);
+        margin-bottom: 6px;
       }
 
       .stage-summary {
-        font-size: 0.92rem;
-        color: var(--muted-text);
-        margin-bottom: 1.4rem;
+        color: var(--text-muted);
+        font-size: 0.88rem;
+        margin-bottom: 32px;
+        max-width: 780px;
       }
 
+      /* ── Card grid ── */
       .card-grid {
         display: grid;
-        grid-template-columns: 1fr;
-        gap: 1.2rem;
+        grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+        gap: 20px;
       }
 
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+        header {
+          padding: 14px 16px;
+        }
+        .timeline-wrapper {
+          padding: 16px 16px 18px;
+        }
+        main {
+          padding: 24px 16px 48px;
+        }
+      }
+
+      /* ── Article card ── */
       article {
         background: var(--card-bg);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 1.4rem 1.6rem;
+        border-radius: 6px;
+        padding: 22px 22px 18px;
       }
 
       article h3 {
-        font-size: 1rem;
+        font-size: 0.98rem;
         font-weight: 700;
-        color: #111;
-        margin-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 0.5rem;
+        color: var(--accent);
+        margin-bottom: 16px;
+        letter-spacing: -0.01em;
       }
 
       .card-section {
-        margin-bottom: 0.85rem;
+        margin-bottom: 13px;
       }
 
       .card-section:last-child {
         margin-bottom: 0;
       }
 
-      .card-label {
-        font-size: 0.72rem;
+      .section-label {
+        font-size: 0.67rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.07em;
-        color: var(--accent);
-        margin-bottom: 0.3rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
       }
 
       .card-section p,
-      .card-section ul {
-        font-size: 0.9rem;
-        color: #333;
+      .card-section ul,
+      .card-section ol {
+        font-size: 0.87rem;
+        color: var(--text);
       }
 
-      .card-section ul {
-        padding-left: 1.2rem;
+      .card-section ul,
+      .card-section ol {
+        padding-left: 18px;
       }
 
-      .card-section ul li {
-        margin-bottom: 0.25rem;
+      .card-section li {
+        margin-bottom: 3px;
       }
 
       .card-section code {
         font-family:
-          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-        font-size: 0.82rem;
-        background: #f0efed;
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.79rem;
+        background: #f0f0ee;
         border-radius: 3px;
-        padding: 0.1em 0.35em;
-        color: #2d4a54;
-        word-break: break-all;
+        padding: 1px 4px;
+      }
+
+      .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .code-list li {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.79rem;
+        background: #f0f0ee;
+        border-radius: 3px;
+        padding: 3px 6px;
+        margin-bottom: 4px;
+        color: var(--text);
       }
 
       .card-section em {
         font-style: italic;
-        color: #444;
+        color: var(--text-muted);
+        font-size: 0.86rem;
       }
 
-      footer {
-        max-width: 860px;
-        margin: 3rem auto 0;
-        font-size: 0.78rem;
-        color: var(--muted-text);
+      hr.sep {
+        border: none;
         border-top: 1px solid var(--border);
-        padding-top: 1rem;
-      }
-
-      @media (max-width: 720px) {
-        .header-text h1 {
-          font-size: 1.3rem;
-        }
-        article {
-          padding: 1rem 1.1rem;
-        }
+        margin: 11px 0;
       }
     </style>
   </head>
   <body>
     <header>
-      <div class="header-text">
+      <div class="brand">
         <h1>Stock Expectation</h1>
         <p>단계별 진행 상황</p>
       </div>
       <nav aria-label="언어">
         <a href="index.html">EN</a>
-        &nbsp;|&nbsp;
+        <span class="lang-sep">|</span>
         <span class="lang-current">한국어</span>
       </nav>
     </header>
 
-    <div class="timeline" role="list" aria-label="단계 타임라인">
-      <div class="timeline-node past" role="listitem">
-        <div class="circle">0</div>
-        <span class="label">0단계</span>
-      </div>
-      <div class="timeline-connector"></div>
-      <div class="timeline-node current" role="listitem">
-        <div class="circle">1</div>
-        <span class="label">1단계</span>
-      </div>
-      <div class="timeline-connector"></div>
-      <div class="timeline-node future" role="listitem">
-        <div class="circle">2</div>
-        <span class="label">2단계</span>
-      </div>
+    <div class="timeline-wrapper">
+      <nav aria-label="단계 타임라인">
+        <div class="tl-item">
+          <div class="tl-node done">0</div>
+          <span class="tl-label">0단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item tl-active">
+          <div class="tl-node active">1</div>
+          <span class="tl-label">1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">2</div>
+          <span class="tl-label">2단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">3</div>
+          <span class="tl-label">3단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">4</div>
+          <span class="tl-label">4단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">4.1</div>
+          <span class="tl-label">4.1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">5</div>
+          <span class="tl-label">5단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">6</div>
+          <span class="tl-label">6단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">7</div>
+          <span class="tl-label">7단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">8</div>
+          <span class="tl-label">8단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">9</div>
+          <span class="tl-label">9단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">11</div>
+          <span class="tl-label">11단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">12</div>
+          <span class="tl-label">12단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">13</div>
+          <span class="tl-label">13단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">14</div>
+          <span class="tl-label">14단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">15</div>
+          <span class="tl-label">15단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">16</div>
+          <span class="tl-label">16단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node future">17</div>
+          <span class="tl-label">17단계</span>
+        </div>
+      </nav>
     </div>
 
     <main>
-      <section aria-labelledby="stage1-heading">
-        <h2 id="stage1-heading">1단계</h2>
+      <section>
+        <div class="stage-heading">
+          <h2>1단계</h2>
+        </div>
         <p class="stage-summary">
-          측정된 핵심 결함 3종(신호 유의성·리스크 게이트·confidence 재보정)을
-          Tier 1 개선으로 직격했습니다.
+          5개의 병렬 작업 흐름: 보정 리포트 신뢰성 개선, 한국 종목 동적 후보
+          발굴, 외부 참조 스킬 분석, Tier-1 신호 게이트 및 isotonic 재보정, Toss
+          공식 Open API 포트폴리오 동기화.
         </p>
 
         <div class="card-grid">
-          <article aria-labelledby="card-tier1-ko">
-            <h3 id="card-tier1-ko">Tier 1 Signal Gate Recalibration</h3>
+          <!-- Card: calibration-report-trustworthiness -->
+          <article>
+            <h3>Calibration Report Trustworthiness</h3>
 
             <div class="card-section">
-              <div class="card-label">왜</div>
+              <div class="section-label">왜</div>
               <p>
-                측정된 핵심 결함 3종을 직격했습니다:
-                valuation/cycle/mean_reversion 승률 0%인데 prune 메커니즘
-                없음(S1); LIVE 39% 저품질 + BEAR 6% 남발(S2); confidence ≈ 0.60
-                상수(정보 없음)(S3). 출처: Vibe-Trading(MIT) 신호 IC/분류·재보정
-                철학, AutoHedge 리스크-퍼스트 게이트 아이디어.
+                주간 보정 리포트는 운용자 의사결정의 근거가 되지만, 두 가지
+                구조적 결함으로 인해 조언이 오해를 불러일으킬 수 있었다. 첫째,
+                보정 버킷과 신호 성과 테이블이 선택된 시간 창과 무관하게 항상
+                전체 예측 이력을 기준으로 계산됐다. "7일 창" 섹션에서도 전체
+                기간 데이터(예: <code>technical n=445</code>)가 표시돼, 최근
+                모멘텀 개편 이후 신호가 회복됐다는 사실(7일
+                <code>technical</code> ~52% vs. 전체 ~38%)이 숨겨졌다. 둘째,
+                버킷이 항상 원시 confidence를 기준으로 계산돼, 라이브 isotonic
+                재보정기가 과신 격차를 줄이고 있는지 리포트가 보여줄 수 없었다.
+                게다가 "confidence를 깎아라"라는 권고는 재보정기를 이중으로
+                교정하는 결과를 낳을 수 있었다 — 재보정기는 이미 원시 0.61을
+                재보정 행 기준 약 0.31로 매핑하고 있었기 때문이다.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">무엇을</div>
+              <div class="section-label">무엇을</div>
               <ul>
                 <li>
-                  S1: 신호별 raw 승률에 50% 귀무가설 대비 이항검정 p-value +
-                  verdict(alive/weak/dead) 추가. 실데이터에서
-                  valuation/cycle/mean_reversion만 dead(p=0.001)로 정확히 식별,
-                  나머지는 weak.
+                  <code>get_calibration_report</code>와
+                  <code>get_signal_performance</code>에
+                  <code>outcome_date</code> 기준 선택적 <code>days</code> 창
+                  필터 추가 — 기존 <code>get_track_record</code> 의미론과 일치.
                 </li>
                 <li>
-                  S2: <code>/expect</code>·daily-briefing 프롬프트에 리스크/엣지
-                  게이트 (reward:risk &lt; 1.5 등록 금지) + BEAR 상향 바 (≥3
-                  signal + 매크로 확인 + RR≥2.0, LIVE는 NEUTRAL 강등) 추가.
+                  <code>get_calibration_report</code>에
+                  <code>use_raw</code> 파라미터 추가 (기본값 <code>True</code> =
+                  원시 confidence, 재보정 훈련 경로 보존; <code>False</code> =
+                  로그 기록값/재보정 후 confidence).
                 </li>
                 <li>
-                  S3: calibration 곡선 → 단조 재보정 맵(isotonic/PAVA) 적합 +
-                  적용 함수. 실데이터 0.626→0.50으로 과신 교정. CLI calibration
-                  출력에
-                  <code>recalibration_map</code> 노출.
+                  두 값이 차이날 경우 창마다 두 개의 보정 테이블(원시 vs. 로그
+                  기록값)을 렌더링하고, 일치할 경우 하나의 테이블과 설명 노트로
+                  축약.
+                </li>
+                <li>
+                  헤드라인 과신 경고는 이제 로그 기록 곡선 기준; 원시 플래그는
+                  추세 파일 플로팅용으로
+                  <code>overconfident_buckets_raw</code>에 유지.
+                </li>
+                <li>
+                  라이브 결과: 7일 창에서 원시 드리프트 +0.09 vs. 로그 기록
+                  +0.02 — 재보정기가 최근 데이터에서 격차를 좁히고 있음을 확인.
                 </li>
               </ul>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">어떻게</div>
+              <div class="section-label">어떻게</div>
               <p>
-                <code>_binomial_two_sided_p</code>는 <code>math.comb</code>만
-                사용, 의존성 없음. <code>_signal_verdict</code> →
-                <code>get_signal_performance</code>가
-                <code>p_value</code>/<code>verdict</code>를 기본값 있는 필드로
-                반환해 기존 consumer와 완전 호환.
-                <code>_isotonic_nondecreasing</code>(PAVA) →
-                <code>build_recalibration_map</code> /
-                <code>apply_recalibration</code> (선형보간, 빈 맵은 identity).
-                <code>find_worst_signals</code>를
-                <code>verdict == "dead"</code> 기준으로 보강. TDD 신규 테스트
-                9개. 전체 not-network 287 통과.
+                테스트 우선(TDD): 먼저 7개의 실패 테스트(<code
+                  >test_metrics.py</code
+                >
+                4개, <code>test_weekly_calibration.py</code> 3개)를 작성하고
+                최소한의 코드로 통과시켰다. 창 처리는
+                <code>get_track_record</code>가 이미 사용하는
+                <code>outcome_date &gt;= datetime('now', ?)</code> 술어를 그대로
+                재사용해 모든 창 섹션이 헤드라인 숫자와 정렬되도록 했다. 두 번째
+                테이블 도입으로 생길 중복을 방지하기 위해
+                <code>_render_bucket_table</code> 헬퍼를 추출했다. Codex
+                리뷰에서 ISO 문자열 사전순 비교가 동일 마감일의 이전 시각 행을
+                잘못 포함하는 버그를 발견했고, 신규 쿼리와 공유
+                <code>_closed_filter</code> 헬퍼 모두에
+                <code>datetime(outcome_date)</code> 래핑으로 수정했다.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">코드 위치</div>
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li>
+                  mcp-prediction-store/metrics.py — get_calibration_report
+                  (≈467–540), get_signal_performance (≈540–585)
+                </li>
+                <li>
+                  scheduler/weekly_calibration.py — compute_window,
+                  _render_bucket_table, 두 테이블 렌더 로직, 헤드라인 경고 문구,
+                  overconfident_buckets_raw
+                </li>
+                <li>mcp-prediction-store/tests/test_metrics.py</li>
+                <li>scheduler/tests/test_weekly_calibration.py</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <em
+                >실행 전 리포트의 전제를 검증한 것이 주효했다 — 데이터가
+                "confidence를 깎아라"라는 권고가 기존 재보정기를 이중 교정할
+                것임을 보여줬다. 앞으로 적용할 원칙: 조언 리포트는 가설로
+                간주하고 DB와 대조해 확인한다. 722개의 열린 LIVE 예측이
+                종결되면서 재보정기 수렴 여부를 추가 코드 변경 없이 이중 테이블
+                뷰로 확인할 수 있다.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: candidate-discovery -->
+          <article>
+            <h3>Candidate Discovery</h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
               <p>
-                <code>mcp-prediction-store/metrics.py:55</code> &nbsp;
-                <code>mcp-prediction-store/tests/test_metrics.py</code> &nbsp;
-                <code>scheduler/weekly_calibration.py:99</code> &nbsp;
-                <code>stock_cli.py:836</code> &nbsp;
-                <code>.claude/skills/expect/SKILL.md</code> &nbsp;
-                <code>.claude/skills/daily-briefing/SKILL.md</code>
+                2026-05-13 cron 일일 브리핑이 "피지컬 AI" 테마 폭등(현대오토에버
+                +55%, LG전자 +34%, 현대차 +30% / 10일)을 완전히 놓치고 Samsung /
+                SK하이닉스 / 현대차만 재추천했다. 근본 원인:
+                <code>scheduler/daily_briefing.py</code>가 KR 블루칩 6종목을
+                하드코딩해 mid-cap 모멘텀 종목이 LLM 시야 밖에 있었다. 브리핑
+                스킬의 프레이밍이 LLM을 앵커링하는 두 번째 원인은 2단계에서
+                다룬다. 1단계는 하드코딩된 유니버스를 제거한다.
               </p>
             </div>
 
+            <hr class="sep" />
+
             <div class="card-section">
-              <div class="card-label">회고</div>
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  신규 모듈
+                  <code>scheduler/candidate_discovery.py</code> (340줄):
+                  <code>Candidate</code> dataclass, <code>ANCHORS_KR</code> (3개
+                  reference 앵커), <code>enumerate_kr_universe</code> (시총
+                  top-N ∪ 거래대금 top-N, PyKRX 1회 호출),
+                  <code>score_and_filter</code> (|return_5d| ≥ 15% 또는
+                  vol_ratio_5d ≥ 2×), <code>discover_kr_candidates</code>,
+                  <code>format_candidates_for_prompt</code>.
+                </li>
+                <li>
+                  하드코딩 6종목을 3개 reference 앵커로 축소: 삼성전자(005930),
+                  SK하이닉스(000660), KODEX 200(069500).
+                </li>
+                <li>
+                  <code>scheduler/daily_briefing.py</code>: API 모드용
+                  <code>fetch_kr_market_data()</code> 재작성; KR Claude Code
+                  cron 프롬프트에 <code>{candidate_block}</code>과
+                  <code>{ticker_csv}</code> 동적 주입.
+                </li>
+                <li>
+                  <code>.claude/skills/daily-briefing/SKILL.md</code> 정적
+                  ticker 리스트를 "3개 앵커를 기준으로 동적 결정됨" 안내로 교체.
+                </li>
+                <li>
+                  신규 단위 테스트 21개(전부 mock): enumerate ×4, score_filter
+                  ×7, discover ×5, format ×2, defaults ×1.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <ul>
+                <li>
+                  유니버스 = 시총 top-N ∪ 거래대금 top-N. 시총만 보면 mid-cap
+                  폭등(현대오토에버는 시총 200위 밖일 수 있음)을 놓치고,
+                  거래대금만 보면 메가캡 노이즈가 너무 많다. 합집합이 둘 다
+                  잡는다.
+                </li>
+                <li>
+                  앵커는 3개로 축소; 나머지 3개 레거시 종목은 동적 필터를
+                  통과해야만 등장 — cron이 "오늘 의미 있는 종목"만 보여주도록.
+                </li>
+                <li>
+                  뉴스 카운트는 2단계로 연기: 200종목 뉴스 fetch는 timeout 위험
+                  → theme clusterer가 상위 30개 후보에만 backfill.
+                </li>
+                <li>
+                  PyKRX 실패 시 anchors-only로 안전하게 fallback; cron이 절대
+                  crash하지 않는다.
+                </li>
+                <li>
+                  종목명 조회는 필터 통과 생존자(~20–30종목)에만 적용해 PyKRX
+                  순차 호출 횟수 절감.
+                </li>
+                <li>
+                  <code>discover_kr_candidates(provider=...)</code>로 단위
+                  테스트에서 fake provider 주입 가능.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li>scheduler/candidate_discovery.py — 신규, 340줄</li>
+                <li>
+                  scheduler/tests/test_candidate_discovery.py — 신규, 21개
+                  테스트
+                </li>
+                <li>scheduler/daily_briefing.py:44-56 — import 추가</li>
+                <li>
+                  scheduler/daily_briefing.py:107-149 — fetch_kr_market_data()
+                  재작성
+                </li>
+                <li>
+                  scheduler/daily_briefing.py:386-410 — KR Claude Code 프롬프트
+                  재작성
+                </li>
+                <li>
+                  .claude/skills/daily-briefing/SKILL.md:46-56 — KR ticker 안내
+                  교체
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <em
+                >2026-05-13 누락 시나리오 fixture에 고정된 21개 단위 테스트가
+                강력한 회귀 방지를 제공한다.
+                <code>score_and_filter</code> fixture는 직관적이어서 임계값 튜닝
+                시 재사용하기 좋다. PyKRX 벌크 엔드포인트 KeyError가 cron
+                환경에서도 발생할 경우 anchors-only fallback은 안전하지만 동적
+                발굴이 무력화된다 — 이후 단계에서 정적 fallback 유니버스 CSV
+                도입을 고려할 가치가 있다.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: references-and-analysis -->
+          <article>
+            <h3>References And Analysis</h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
               <p>
-                <em>
-                  저장값 의미를 바꾸지 않고 필드 추가만으로 S1을 호환성 있게
-                  확장했습니다.
-                  <code>math.comb</code>으로 exact binomial을 구현해 core 의존성
-                  확장을 회피했습니다. S2는 프롬프트 변경이라 자동 테스트 불가 —
-                  2단계의 store 계층 BEAR 하드게이트가 실질 방어선으로
-                  상호보완합니다.
-                </em>
+                <code>/expect</code> 재설계에는 증거 기반이 필요했다 — 다른
+                Claude Code 트레이딩 스킬들이 어떤 패턴을 사용하는지, 그리고
+                어떤 것을 차용할 가치가 있는지. 이 소스들을 저장소에 남겨두지
+                않으면 미래의 재설계 시 처음부터 다시 수집해야 한다.
               </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  <code>references/README.md</code> — 외부 스킬 저장소 8개의
+                  인덱스 및 재현 가능한 클론 명령.
+                </li>
+                <li>
+                  <code
+                    >references/articles/kevin-meneses-top5-claude-trading-skills.md</code
+                  >
+                  — Kevin Meneses, "Top 5 Claude Code Skills for Algorithmic
+                  Trading" (DataDrivenInvestor, 2026년 4월), 마크다운으로 저장.
+                </li>
+                <li>
+                  <code>references/repos/</code> — gitignore 처리. 전체 clone
+                  5개(depth 1) + sparse checkout 3개. 총 ~40 MB (<code
+                    >.git</code
+                  >
+                  제외).
+                </li>
+                <li>
+                  <code>docs/external-skills-analysis.md</code> — 종합 분석
+                  리포트: 8개 컬렉션 스킬별 요약, 공통 패턴 테이블, 데이터 소스
+                  수렴 테이블, 뉴스/감성 갭 분석, 채택/미채택 패턴 순위 목록.
+                </li>
+                <li>
+                  <code>docs/news-api-comparison.md</code> — Finnhub vs. Alpha
+                  Vantage vs. FMP vs. yfinance vs. Open DART vs. Naver
+                  스크레이핑 비교: 무료 티어 한도, 인증, 감성 지표 지원,
+                  엔드포인트.
+                </li>
+                <li>
+                  <code>.gitignore</code> — <code>references/repos/</code> 추가
+                  (용량 크고 재생성 가능).
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <ul>
+                <li>
+                  Lobehub가 WebFetch를 차단(HTTP 403) → <code>gh api</code>로
+                  GitHub 저장소에 직접 접근해 해결.
+                </li>
+                <li>
+                  트레이딩 특화 저장소 5개는
+                  <code>git clone --depth 1 --quiet</code>으로 전체 클론; 범용
+                  대형 저장소 3개는 관련 스킬 하위 디렉토리만 sparse checkout.
+                </li>
+                <li>
+                  종합 리포트는 general-purpose 하위 에이전트가 8개 저장소를 한
+                  번에 읽어 생성; 원문 그대로
+                  <code>docs/external-skills-analysis.md</code>에 저장.
+                </li>
+                <li>
+                  Kevin Meneses 기사: WebFetch가 구조화된 요약 반환 → 적용
+                  노트와 함께 마크다운으로 저장.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li>references/README.md</li>
+                <li>
+                  references/articles/kevin-meneses-top5-claude-trading-skills.md
+                </li>
+                <li>docs/external-skills-analysis.md</li>
+                <li>docs/news-api-comparison.md</li>
+                <li>.gitignore line 32–33</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <em
+                >Sparse checkout으로 범용 저장소 3개에서 ~150 MB를 절약했다.
+                앞으로 적용할 원칙: lobehub/skillsmp 페이지가 403을 반환하면
+                SaaS 계층을 재시도하지 말고
+                <code
+                  >gh api
+                  repos/&lt;owner&gt;/&lt;name&gt;/contents/&lt;path&gt;</code
+                >로 GitHub에 직접 접근한다. 이 단계는 실행 가능한 코드가 없는
+                문서 전용 단계여서 공식 코드 리뷰를 의도적으로 생략했다.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: tier1-signal-gate-recal -->
+          <article>
+            <h3>Tier1 Signal Gate Recal</h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
+              <p>
+                측정된 핵심 결함 3종을 직격했다: (S1)
+                valuation/cycle/mean_reversion 신호 유형의 승률 0%, 프루닝
+                메커니즘 없음; (S2) LIVE 예측의 39%가 저품질이고 BEAR 방향이
+                충분한 게이트 없이 6% 비율로 발행됨; (S3) confidence 값이 ~0.60
+                상수에 고착 — 정보 없음. 설계는 Vibe-Trading(MIT) 신호
+                IC/분류·재보정 철학과 AutoHedge 리스크-퍼스트 게이트
+                아이디어에서 착안했다.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  S1: <code>get_signal_performance</code>에 신호 유형별 이항검정
+                  양측 p-value와 verdict(<code>alive</code> /
+                  <code>weak</code> / <code>dead</code>) 추가. 실데이터에서
+                  valuation/cycle/mean_reversion이 정확히
+                  <code>dead</code>(p=0.001)로 식별됨; 나머지는
+                  <code>weak</code>.
+                </li>
+                <li>
+                  S2: <code>/expect</code> 및
+                  <code>daily-briefing</code> 프롬프트에 리스크/엣지
+                  게이트(reward:risk &lt; 1.5 등록 금지) 및 BEAR 상향 바(신호
+                  ≥3개 + 매크로 확인 + RR ≥ 2.0; LIVE는 NEUTRAL 강등) 추가.
+                </li>
+                <li>
+                  S3: 단조 재보정 맵(isotonic regression / PAVA) 적합 및 적용.
+                  실데이터: 원시 0.626 → 0.50으로 과신 교정. CLI
+                  <code>calibration</code> 서브커맨드 출력에 재보정 맵 노출.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <ul>
+                <li>
+                  <code>_binomial_two_sided_p</code>는 <code>math.comb</code>만
+                  사용해 외부 의존성 없음; 이후 n ≳ 1100에서 overflow 방지를
+                  위해 로그-감마 공간으로 재작성(Codex PR 리뷰 #27에서 발견).
+                </li>
+                <li>
+                  <code>_signal_verdict</code>가
+                  <code>get_signal_performance</code>에 하위 호환 신규 필드로
+                  추가됨 — 기존 consumer 4개 무수정.
+                </li>
+                <li>
+                  <code>_isotonic_nondecreasing</code>(PAVA) →
+                  <code>build_recalibration_map</code> /
+                  <code>apply_recalibration</code>(선형 보간; 빈 맵은 항등
+                  함수).
+                </li>
+                <li>
+                  TDD: 신규 테스트 9개(verdict ×3, recalibration ×3, weekly ×1,
+                  기존 보강 ×2). 전체 <code>not network</code> 스위트: 287개
+                  통과.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li>
+                  mcp-prediction-store/metrics.py:55- — SignalPerformance, 헬퍼,
+                  build_recalibration_map, apply_recalibration
+                </li>
+                <li>
+                  mcp-prediction-store/tests/test_metrics.py — S1/S3 테스트
+                </li>
+                <li>
+                  scheduler/weekly_calibration.py:99- — find_worst_signals
+                  verdict
+                </li>
+                <li>
+                  scheduler/tests/test_weekly_calibration.py — verdict 테스트 +
+                  _FakeSignal 필드
+                </li>
+                <li>
+                  stock_cli.py:836- — cmd_calibration: verdict +
+                  recalibration_map 출력
+                </li>
+                <li>
+                  .claude/skills/expect/SKILL.md Step 9 — RULE C2/C3 + 재보정
+                </li>
+                <li>.claude/skills/daily-briefing/SKILL.md — 품질 규칙</li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <em
+                >S1은 필드 추가만으로 기존 consumer 4개를 무수정 확장 — 하위
+                호환 설계의 효과. scipy 없이 exact binomial로 구현해 core 의존성
+                확장 회피. S2는 프롬프트 변경이라 자동 테스트 불가 — 2단계의
+                store-계층 BEAR 하드 게이트가 실질 방어선이 되며 둘은 상호보완
+                관계다.</em
+              >
+            </div>
+          </article>
+
+          <!-- Card: toss-open-api -->
+          <article>
+            <h3>Toss Open Api</h3>
+
+            <div class="card-section">
+              <div class="section-label">왜</div>
+              <p>
+                <code>portfolio sync</code>가 비공식 <code>tossctl</code> CLI에
+                의존했다 — 브라우저/QR 로그인이 필요하고, 약 주 1회 세션이
+                만료되며, 세션 만료 모니터와 Telegram 알림이 별도로 필요했다.
+                토스증권이 이제 공식 Open API(OAuth2, REST/JSON)를 제공하므로,
+                서버 사이드 자격증명과 자동 토큰 갱신으로 브라우저 세션 관리를
+                완전히 대체할 수 있다.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">무엇을</div>
+              <ul>
+                <li>
+                  신규 <code>portfolio/toss_api.py</code>: OAuth2
+                  client-credentials 클라이언트 — 토큰 발급/캐시, 계좌 목록
+                  조회, 보유 종목 조회, <code>reconcile()</code>이 이미 소비하는
+                  딕셔너리 형태로 각 보유 종목 정규화.
+                </li>
+                <li>
+                  <code>portfolio sync</code>는 공식 API를 우선 사용하고,
+                  자격증명이 없으면 <code>tossctl</code>로 fallback. 신규
+                  <code>--source {auto,toss-api,tossctl}</code> 플래그; 출력
+                  JSON에 실제 사용된 <code>source</code> 기록.
+                </li>
+                <li>
+                  불필요해진 세션 만료 모니터 제거:
+                  <code>scheduler/toss_auth_check.py</code>, 해당 테스트, 07:30
+                  cron 라인, 문서 참조 전체.
+                </li>
+                <li>
+                  <code>.env</code> 경유 자격증명: <code>TOSS_CLIENT_ID</code>,
+                  <code>TOSS_CLIENT_SECRET</code> (선택적
+                  <code>TOSS_OPENAPI_BASE_URL</code>).
+                </li>
+                <li>
+                  라이브 검증 완료: 토큰 발급, BROKERAGE 계좌, 18개 보유 종목(KR
+                  6개 + US 12개)을
+                  <code>portfolio sync --source toss-api --dry-run</code>으로
+                  정상 동기화 확인.
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">어떻게</div>
+              <p>
+                조정(reconciliation) 로직, DB 스키마, ticker/시장 정규화는
+                데이터 소스에 무관하게 설계돼 있어 전혀 수정하지 않았다. 신규
+                코드는 경계부에만 위치한다:
+                <code>toss_api.fetch_toss_positions_api()</code>가
+                <code>tossctl</code>이 반환하던 것과 동일한 정규화된 포지션을
+                생성하므로 <code>toss_sync.reconcile()</code>은 불변. 얇은
+                디스패처 <code>toss_sync.fetch_positions(source)</code>가 소스를
+                선택한다. 엔드포인트는
+                <code
+                  >https://openapi.tossinvest.com/openapi-docs/latest/openapi.json</code
+                >의 정식 스펙으로 확인 — 초기 가정(인증 방식, 경로 prefix,
+                <code>accountSeq</code> 헤더)이 모두 틀렸고 구현 전에 수정했다.
+              </p>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">코드 위치</div>
+              <ul class="code-list">
+                <li>portfolio/toss_api.py — Open API 클라이언트 및 어댑터</li>
+                <li>
+                  portfolio/toss_sync.py — fetch_positions() 디스패처 (reconcile
+                  불변)
+                </li>
+                <li>stock_cli.py — cmd_portfolio_sync + --source 플래그</li>
+                <li>
+                  portfolio/tests/test_toss_api.py — 클라이언트/어댑터/디스패처
+                  단위 테스트
+                </li>
+                <li>
+                  제거됨: scheduler/toss_auth_check.py,
+                  scheduler/tests/test_toss_auth_check.py
+                </li>
+                <li>
+                  문서: CLAUDE.md, .claude/skills/toss-sync/SKILL.md,
+                  scheduler/crontab.example, cron_setting.md, README.md
+                </li>
+              </ul>
+            </div>
+
+            <hr class="sep" />
+
+            <div class="card-section">
+              <div class="section-label">회고</div>
+              <em
+                >경계부 전용 설계 덕분에 변경이 수술적으로 이뤄졌다 — reconcile,
+                DB, 기존 로직 테스트 전혀 미수정. 초기 가정을 믿지 않고 실제
+                openapi.json을 먼저 가져온 것이 핵심 돌파구였다: 인증 방식, 경로
+                prefix, accountSeq 헤더가 모두 달랐다. 자격증명 혼동(ID/secret
+                순서 바뀜)은 깔끔한 <code>invalid_client</code> 오류로 즉시
+                격리됐다.</em
+              >
             </div>
           </article>
         </div>
       </section>
     </main>
-
-    <footer>
-      Stock Expectation &mdash; 1단계 &mdash; Tier 1 Signal Gate Recalibration
-    </footer>
   </body>
 </html>

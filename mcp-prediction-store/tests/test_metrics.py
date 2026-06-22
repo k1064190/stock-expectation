@@ -2,7 +2,7 @@
 
 import json
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -573,3 +573,136 @@ def test_apply_recalibration_corrects_overconfidence(db_conn):
 def test_apply_recalibration_empty_map_is_identity():
     """With no calibration data, recalibration returns the raw confidence."""
     assert apply_recalibration(0.6, []) == 0.6
+
+
+# ---------------------------------------------------------------------------
+# Windowed calibration / signal views + raw-vs-recalibrated calibration
+# ---------------------------------------------------------------------------
+
+
+def _close_at(db_conn, pred, status, days_ago):
+    """Close `pred` and stamp its outcome_date `days_ago` days before now.
+
+    Mirrors how ``get_track_record`` windows on ``outcome_date``; the explicit
+    UTC ISO timestamp lets a test place a closed prediction inside or outside a
+    look-back window deterministically.
+    """
+    update_prediction_outcome(db_conn, pred.id, status, 100.0, 0.0)
+    ts = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    db_conn.execute(
+        "UPDATE predictions SET outcome_date = ? WHERE id = ?", (ts, pred.id)
+    )
+    db_conn.commit()
+
+
+def test_calibration_report_days_window(db_conn):
+    """A days filter restricts the calibration curve to recently-closed rows."""
+    for i in range(4):  # closed 1 day ago — inside a 30-day window
+        p = _make_prediction(f"NEW{i}", confidence=0.65)
+        insert_prediction(db_conn, p)
+        _close_at(db_conn, p, "HIT" if i < 2 else "MISS", days_ago=1)
+    for i in range(4):  # closed 100 days ago — outside the window
+        p = _make_prediction(f"OLD{i}", confidence=0.65)
+        insert_prediction(db_conn, p)
+        _close_at(db_conn, p, "HIT", days_ago=100)
+
+    windowed = get_calibration_report(db_conn, days=30)
+    assert sum(b.count for b in windowed) == 4
+
+    # days=None (the default) preserves the full-history behavior.
+    assert sum(b.count for b in get_calibration_report(db_conn)) == 8
+    assert get_calibration_report(db_conn) == get_calibration_report(db_conn, days=None)
+
+
+def test_calibration_report_window_excludes_same_cutoff_date_earlier_time(db_conn):
+    """A close on the cutoff *date* but earlier in the day is outside the window.
+
+    Guards the timestamp comparison: the stored ISO value (``...T00:00:00+00:00``)
+    must be parsed by ``datetime()`` before comparing, otherwise a raw
+    lexicographic compare includes it because 'T' sorts after the space in
+    ``datetime('now', ?)``.
+    """
+    p = _make_prediction("EDGE", confidence=0.65)
+    insert_prediction(db_conn, p)
+    update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+    # Place the close on the 30-day cutoff date at 00:00 UTC; the cutoff itself
+    # (datetime('now','-30 days')) is at the current time-of-day, so this row is
+    # chronologically before the window opens.
+    edge = (
+        (datetime.now(timezone.utc) - timedelta(days=30))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .isoformat()
+    )
+    db_conn.execute(
+        "UPDATE predictions SET outcome_date = ? WHERE id = ?", (edge, p.id)
+    )
+    db_conn.commit()
+
+    assert sum(b.count for b in get_calibration_report(db_conn, days=30)) == 0
+
+
+def test_calibration_report_buckets_on_raw_vs_logged(db_conn):
+    """use_raw selects which confidence column the curve buckets on.
+
+    A recalibrated row keeps the model's raw 0.85 in ``raw_confidence`` while
+    the trimmed 0.55 lands in ``confidence``; the two views must bucket it
+    differently so the report can show whether recalibration closed the gap.
+    """
+    p = Prediction(
+        ticker="RECAL",
+        market="US",
+        direction="BULL",
+        confidence=0.55,
+        raw_confidence=0.85,
+        timeframe="1W",
+        reasoning="x",
+        entry_price=100.0,
+        signals_used=["technical"],
+        source="LIVE",
+    )
+    insert_prediction(db_conn, p)
+    update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+
+    raw = get_calibration_report(db_conn, use_raw=True)
+    assert [b.confidence_range for b in raw] == ["0.80-0.90"]
+    assert raw[0].predicted_confidence == pytest.approx(0.85)
+
+    logged = get_calibration_report(db_conn, use_raw=False)
+    assert [b.confidence_range for b in logged] == ["0.50-0.60"]
+    assert logged[0].predicted_confidence == pytest.approx(0.55)
+
+
+def test_calibration_report_legacy_row_uses_confidence_for_both_views(db_conn):
+    """Rows without raw_confidence fall back to `confidence` in both views."""
+    p = _make_prediction("LEGACY", confidence=0.75)  # raw_confidence stays None
+    insert_prediction(db_conn, p)
+    update_prediction_outcome(db_conn, p.id, "HIT", 110.0, 10.0)
+
+    raw = get_calibration_report(db_conn, use_raw=True)
+    logged = get_calibration_report(db_conn, use_raw=False)
+    assert [b.confidence_range for b in raw] == ["0.70-0.80"]
+    assert [b.confidence_range for b in logged] == ["0.70-0.80"]
+
+
+def test_signal_performance_days_window(db_conn):
+    """A days filter restricts signal win-rate aggregation to recent closes."""
+    p = _make_prediction("NEW", signals=["momentum"])
+    insert_prediction(db_conn, p)
+    _close_at(db_conn, p, "HIT", days_ago=1)
+    for i in range(3):
+        p = _make_prediction(f"OLD{i}", signals=["momentum"])
+        insert_prediction(db_conn, p)
+        _close_at(db_conn, p, "MISS", days_ago=100)
+
+    windowed = get_signal_performance(db_conn, min_count=1, days=30)
+    m = next(s for s in windowed if s.signal == "momentum")
+    assert m.total == 1
+    assert m.win_rate == 1.0
+
+    full = next(
+        s
+        for s in get_signal_performance(db_conn, min_count=1)
+        if s.signal == "momentum"
+    )
+    assert full.total == 4
+    assert full.win_rate == pytest.approx(0.25)

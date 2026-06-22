@@ -152,7 +152,7 @@ def test_render_markdown_uses_30d_as_primary_when_present():
     assert "Total closed: **40**" in md
     assert "Win rate: **63.0%** (24W / 14L / 2E)" in md
     assert "Brier score: **0.210**" in md
-    assert "Overconfident bucket(s): **0.70-0.80**" in md
+    assert "Overconfident even after recalibration: **0.70-0.80**" in md
 
 
 def test_render_markdown_handles_no_data():
@@ -246,6 +246,106 @@ def test_compute_window_uses_metrics_helpers():
     assert window["track_record"]["win_rate"] == 0.67
     assert window["buckets"][0]["confidence_range"] == "0.60-0.70"
     assert window["signals"][0]["signal"] == "technical"
+
+
+def test_compute_window_separates_raw_and_recalibrated_buckets():
+    """compute_window keeps a raw and an as-logged calibration curve, and bases
+    the overconfidence warning on the as-logged (post-recalibration) curve."""
+    fake_track = _FakeTrack(10, 6, 3, 1, 0.67, 0.02, 2, 0.19)
+    raw_buckets = [_FakeBucket("0.80-0.90", 0.85, 0.40, 5)]  # overconfident raw
+    recal_buckets = [
+        _FakeBucket("0.50-0.60", 0.55, 0.52, 5)
+    ]  # well-calibrated as-logged
+    fake_ci = _FakeTrackCI(0, None, None, None, None, None)
+    fake_perm = {"n": 0, "observed_diff": 0.0, "p_value": 1.0}
+
+    def calib_side_effect(conn, days=None, use_raw=True):
+        return raw_buckets if use_raw else recal_buckets
+
+    with (
+        patch("weekly_calibration.get_track_record", return_value=fake_track),
+        patch(
+            "weekly_calibration.get_calibration_report", side_effect=calib_side_effect
+        ),
+        patch("weekly_calibration.get_signal_performance", return_value=[]),
+        patch("weekly_calibration.get_signal_decay", return_value=[]),
+        patch("weekly_calibration.get_track_record_ci", return_value=fake_ci),
+        patch("weekly_calibration.permutation_test_confidence", return_value=fake_perm),
+    ):
+        window = wc.compute_window(conn=None, days=30)
+
+    assert window["buckets"][0]["confidence_range"] == "0.80-0.90"  # raw
+    assert window["buckets_recal"][0]["confidence_range"] == "0.50-0.60"  # as-logged
+    # Warning is driven by the as-logged curve (clean here) → no flag, even though
+    # the raw curve overshoots. The raw overconfidence is retained for context.
+    assert window["overconfident_buckets"] == []
+    assert window["overconfident_buckets_raw"] == ["0.80-0.90"]
+
+
+def test_render_markdown_shows_both_calibration_tables_when_recal_diverges():
+    """When raw and as-logged curves differ, the report renders both tables."""
+    windows = [
+        {
+            "days": 30,
+            "track_record": asdict_helper(
+                _FakeTrack(40, 24, 14, 2, 0.63, 0.015, 3, 0.21)
+            ),
+            "buckets": [asdict_helper(_FakeBucket("0.80-0.90", 0.85, 0.40, 10))],
+            "buckets_recal": [asdict_helper(_FakeBucket("0.50-0.60", 0.55, 0.52, 10))],
+            "signals": [],
+            "overconfident_buckets": [],
+            "worst_signals": [],
+        }
+    ]
+    md = wc.render_markdown("2026-06-21", windows)
+    assert "raw model confidence" in md
+    assert "after recalibration" in md
+    assert "0.80-0.90" in md
+    assert "0.50-0.60" in md
+
+
+def test_render_markdown_collapses_to_one_table_when_recal_matches_raw():
+    """Until recalibration diverges, the two curves coincide → one table + note."""
+    same = [asdict_helper(_FakeBucket("0.60-0.70", 0.65, 0.40, 20))]
+    windows = [
+        {
+            "days": 30,
+            "track_record": asdict_helper(
+                _FakeTrack(20, 8, 12, 0, 0.40, -0.02, -2, 0.30)
+            ),
+            "buckets": same,
+            "buckets_recal": [dict(b) for b in same],
+            "signals": [],
+            "overconfident_buckets": [],
+            "worst_signals": [],
+        }
+    ]
+    md = wc.render_markdown("2026-06-21", windows)
+    assert md.count("### Calibration buckets") == 1
+    assert "coincide" in md.lower()
+
+
+def test_render_markdown_notes_when_recal_falls_below_bucket_floor():
+    """When recalibration pushed every as-logged confidence below the 0.50 floor,
+    recal buckets are empty → one raw table + an explanatory note (no empty
+    second table, and not the 'coincide' note)."""
+    windows = [
+        {
+            "days": 30,
+            "track_record": asdict_helper(
+                _FakeTrack(20, 8, 12, 0, 0.40, -0.02, -2, 0.30)
+            ),
+            "buckets": [asdict_helper(_FakeBucket("0.60-0.70", 0.65, 0.40, 20))],
+            "buckets_recal": [],
+            "signals": [],
+            "overconfident_buckets": [],
+            "worst_signals": [],
+        }
+    ]
+    md = wc.render_markdown("2026-06-21", windows)
+    assert md.count("### Calibration buckets") == 1
+    assert "below the 0.50 bucket floor" in md
+    assert "coincide" not in md.lower()
 
 
 def asdict_helper(obj):

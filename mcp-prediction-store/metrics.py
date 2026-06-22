@@ -206,7 +206,10 @@ def get_track_record(
         conditions.append("source = ?")
         params.append(source)
 
-    conditions.append("outcome_date >= datetime('now', ?)")
+    # datetime() normalizes the stored ISO timestamp so the window compares
+    # chronologically (see _closed_filter / get_calibration_report for the same
+    # predicate), not by raw lexicographic order.
+    conditions.append("datetime(outcome_date) >= datetime('now', ?)")
     params.append(f"-{days} days")
 
     where = " AND ".join(conditions)
@@ -313,7 +316,11 @@ def _closed_filter(
         conditions.append("timeframe = ?")
         params.append(timeframe)
     if days is not None:
-        conditions.append("outcome_date >= datetime('now', ?)")
+        # datetime() normalizes the stored ISO timestamp (e.g. ...T12:00:00+00:00)
+        # so the window compares chronologically against datetime('now', ?) rather
+        # than by raw lexicographic order — where the ISO 'T' sorts after the
+        # space separator, wrongly including same-cutoff-date rows.
+        conditions.append("datetime(outcome_date) >= datetime('now', ?)")
         params.append(f"-{days} days")
     return " AND ".join(conditions), params
 
@@ -469,6 +476,8 @@ def get_calibration_report(
     source: Optional[str] = None,
     timeframe: Optional[str] = None,
     buckets: int = 5,
+    days: Optional[int] = None,
+    use_raw: bool = True,
 ) -> list[CalibrationBucket]:
     """Compute calibration curve: predicted confidence vs actual accuracy.
 
@@ -480,6 +489,14 @@ def get_calibration_report(
             timeframe — useful because short- and long-horizon predictions
             have very different base rates and shouldn't share buckets.
         buckets: Number of confidence buckets. Defaults to 5 (0.5-0.6, ..., 0.9-1.0).
+        days: Optional look-back window. When set, only predictions whose
+            ``outcome_date`` falls within the last ``days`` days are counted
+            (matching ``get_track_record``); ``None`` uses the full history.
+        use_raw: When True (default), bucket on the model's RAW confidence
+            (``COALESCE(raw_confidence, confidence)``) so the curve trains on
+            pre-recalibration input. When False, bucket on the as-logged
+            ``confidence`` column — i.e. the value actually emitted after
+            ``--recalibrate`` — to reveal whether recalibration closed the gap.
 
     Returns:
         List of CalibrationBucket, one per confidence range.
@@ -492,15 +509,28 @@ def get_calibration_report(
     if timeframe:
         conditions.append("timeframe = ?")
         params.append(timeframe)
+    if days is not None:
+        # datetime() normalizes the stored ISO timestamp (e.g. ...T12:00:00+00:00)
+        # so the window compares chronologically against datetime('now', ?) rather
+        # than by raw lexicographic order — where the ISO 'T' sorts after the
+        # space separator, wrongly including same-cutoff-date rows.
+        conditions.append("datetime(outcome_date) >= datetime('now', ?)")
+        params.append(f"-{days} days")
 
     where = " AND ".join(conditions)
-    # Calibrate on RAW model confidence: once --recalibrate is in use the
-    # ``confidence`` column holds recalibrated values, so training the curve on
-    # it would feed recalibrated output back as input (a recursive loop that
-    # collapses the map's domain). ``raw_confidence`` preserves the original;
-    # COALESCE falls back to ``confidence`` for legacy/non-recalibrated rows.
+    # ``use_raw`` (default) calibrates on RAW model confidence: once
+    # --recalibrate is in use the ``confidence`` column holds recalibrated
+    # values, so training the curve on it would feed recalibrated output back as
+    # input (a recursive loop that collapses the map's domain). ``raw_confidence``
+    # preserves the original; COALESCE falls back to ``confidence`` for
+    # legacy/non-recalibrated rows. ``use_raw=False`` buckets on the as-logged
+    # ``confidence`` instead — used only for reporting how the emitted (post-
+    # recalibration) confidence calibrates, never to train the map.
+    confidence_expr = (
+        "COALESCE(raw_confidence, confidence)" if use_raw else "confidence"
+    )
     rows = conn.execute(
-        f"SELECT COALESCE(raw_confidence, confidence) AS confidence, status "
+        f"SELECT {confidence_expr} AS confidence, status "
         f"FROM predictions WHERE {where}",
         params,
     ).fetchall()
@@ -537,6 +567,7 @@ def get_calibration_report(
 def get_signal_performance(
     conn: sqlite3.Connection,
     min_count: int = 10,
+    days: Optional[int] = None,
 ) -> list[SignalPerformance]:
     """Compute win rate per analysis signal.
 
@@ -546,12 +577,26 @@ def get_signal_performance(
     Args:
         conn: SQLite connection.
         min_count: Minimum predictions per signal to report. Defaults to 10.
+        days: Optional look-back window. When set, only predictions whose
+            ``outcome_date`` falls within the last ``days`` days are counted
+            (matching ``get_track_record``); ``None`` uses the full history.
 
     Returns:
         List of SignalPerformance, sorted by win_rate descending.
     """
+    conditions = ["status IN ('HIT', 'MISS')"]
+    params: list = []
+    if days is not None:
+        # datetime() normalizes the stored ISO timestamp (e.g. ...T12:00:00+00:00)
+        # so the window compares chronologically against datetime('now', ?) rather
+        # than by raw lexicographic order — where the ISO 'T' sorts after the
+        # space separator, wrongly including same-cutoff-date rows.
+        conditions.append("datetime(outcome_date) >= datetime('now', ?)")
+        params.append(f"-{days} days")
+    where = " AND ".join(conditions)
     rows = conn.execute(
-        "SELECT signals_used, status FROM predictions WHERE status IN ('HIT', 'MISS')"
+        f"SELECT signals_used, status FROM predictions WHERE {where}",
+        params,
     ).fetchall()
 
     import json
