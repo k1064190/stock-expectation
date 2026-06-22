@@ -141,15 +141,17 @@ def trading_dates(benchmark_map: dict, frm: str, to: str) -> list[str]:
 
 
 def benchmark_nav(
-    initial_capital: float, benchmark_map: dict, on_date: str, first_date: str
+    initial_capital: float, benchmark_map: dict, on_date: str, baseline_close: float
 ) -> float | None:
-    """Passive index buy-and-hold NAV: initial capital scaled by index move."""
-    if on_date not in benchmark_map or first_date not in benchmark_map:
+    """Passive index buy-and-hold NAV: initial capital scaled from a fixed baseline.
+
+    ``baseline_close`` is the benchmark close at the book's inception (recovered
+    by the caller so it stays constant across runs), keeping the benchmark series
+    continuous rather than re-anchoring to each run's first date.
+    """
+    if on_date not in benchmark_map or not baseline_close or baseline_close <= 0:
         return None
-    base = benchmark_map[first_date]["close"]
-    if base <= 0:
-        return None
-    return initial_capital * benchmark_map[on_date]["close"] / base
+    return initial_capital * benchmark_map[on_date]["close"] / baseline_close
 
 
 # --------------------------------------------------------------------------- #
@@ -183,6 +185,7 @@ def _fetch_bull_predictions(market: str, frm: str, to: str) -> list[dict]:
             "created_at, entry_price, target_price, stop_price, id "
             "FROM predictions "
             "WHERE source='LIVE' AND direction='BULL' AND market=? "
+            "AND status != 'CANCELLED' "  # retracted signals never reach the paper book
             "AND date(created_at) BETWEEN ? AND ?",
             (market, frm_pad, to_pad),
         ).fetchall()
@@ -241,11 +244,27 @@ def run_range(market: str, frm: str, to: str, params: StrategyParams) -> dict:
             all_dates = {d for t in price_map for d in price_map[t]}
             dates = sorted(d for d in all_dates if frm <= d <= to)
         first_bench = next((d for d in dates if d in bmap), None)
+        # Anchor the benchmark to the book's inception so SPY/KODEX scaling stays
+        # continuous across a later forward-window run (whose `dates` start mid-book).
+        # Recover the inception close from any existing NAV row in this run's price
+        # window; for a fresh book use this range's first benchmark date.
+        baseline_close = None
+        for r in pt.get_nav_history(conn, account.id):
+            if r.benchmark_nav and r.benchmark_nav > 0 and r.date in bmap:
+                baseline_close = (
+                    bmap[r.date]["close"] * account.initial_capital / r.benchmark_nav
+                )
+                break
+        if baseline_close is None and first_bench:
+            baseline_close = bmap[first_bench]["close"]
 
         # Map each signal to the first trading session on/after its local date;
-        # the lot's horizon is measured from that actual entry session.
+        # the lot's horizon is measured from that actual entry session. Drop
+        # signals whose local date precedes the window (their session was earlier).
         preds_by_day: dict[str, list[dict]] = {}
         for r in rows:
+            if r["cdate"] < frm:
+                continue
             eff = effective_entry_date(r["cdate"], dates)
             if eff is not None:
                 r["entry_date"] = eff
@@ -267,8 +286,8 @@ def run_range(market: str, frm: str, to: str, params: StrategyParams) -> dict:
                 if t in price_map and d in price_map[t]
             }
             bnav = (
-                benchmark_nav(account.initial_capital, bmap, d, first_bench)
-                if first_bench
+                benchmark_nav(account.initial_capital, bmap, d, baseline_close)
+                if baseline_close
                 else None
             )
             engine.run_day(

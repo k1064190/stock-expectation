@@ -138,10 +138,11 @@ def test_trading_dates_filters_to_range_sorted():
 
 def test_benchmark_nav_tracks_index_buy_and_hold():
     bmap = {"2026-05-01": {"close": 100.0}, "2026-05-02": {"close": 110.0}}
-    assert ptr.benchmark_nav(
-        100_000.0, bmap, "2026-05-01", "2026-05-01"
-    ) == pytest.approx(100_000.0)
+    # baseline_close = inception close (100); ratio 1.0 → unchanged.
+    assert ptr.benchmark_nav(100_000.0, bmap, "2026-05-01", 100.0) == pytest.approx(
+        100_000.0
+    )
     # +10% index move → +10% benchmark NAV.
-    assert ptr.benchmark_nav(
-        100_000.0, bmap, "2026-05-02", "2026-05-01"
-    ) == pytest.approx(110_000.0)
+    assert ptr.benchmark_nav(100_000.0, bmap, "2026-05-02", 100.0) == pytest.approx(
+        110_000.0
+    )
