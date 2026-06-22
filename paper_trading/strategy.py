@@ -142,13 +142,22 @@ def decide_entries(
         if qty < 1:
             continue
 
+        # Drop a take-profit that is already at/below the fill — a stale target
+        # (computed from an older entry_price) would otherwise trigger an instant
+        # losing "target_hit" on the next bar. The lot then exits on stop/horizon.
+        target = (
+            c.target_price
+            if (c.target_price is not None and c.target_price > c.ref_price)
+            else None
+        )
+
         orders.append(
             EntryOrder(
                 ticker=c.ticker,
                 qty=qty,
                 ref_price=c.ref_price,
                 stop_price=stop,
-                target_price=c.target_price,
+                target_price=target,
                 prediction_id=c.prediction_id,
                 horizon_end_date=c.horizon_end_date,
             )

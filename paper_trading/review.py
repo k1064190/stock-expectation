@@ -34,7 +34,15 @@ def book_metrics(nav_rows: list) -> dict:
             "benchmark_return": None,
         }
     navs = [r.nav for r in nav_rows]
-    cumulative_return = navs[-1] / navs[0] - 1 if navs[0] else None
+    # Prefer the engine's stored cumulative return (vs seeded capital), which
+    # includes day-one P&L; the first NAV row already reflects day-one fills, so
+    # navs[-1]/navs[0] would silently drop it. Fall back only if unset.
+    stored_cum = nav_rows[-1].cumulative_return
+    cumulative_return = (
+        stored_cum
+        if stored_cum is not None
+        else (navs[-1] / navs[0] - 1 if navs[0] else None)
+    )
 
     peak = navs[0]
     max_dd = 0.0

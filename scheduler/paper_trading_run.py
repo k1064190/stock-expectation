@@ -52,6 +52,10 @@ KR_TZ = ZoneInfo("Asia/Seoul")
 # dated to the session it should actually trade into, not the prior one.
 MARKET_TZ = {"US": ZoneInfo("America/New_York"), "KR": ZoneInfo("Asia/Seoul")}
 INITIAL_CAPITAL = {"US": 100_000.0, "KR": 100_000_000.0}
+# Forward (cron) mode processes this trailing window of sessions ending at as_of,
+# so a daily tick catches the last completed session even though "today" hasn't
+# closed yet; already-recorded days are idempotent no-ops.
+FORWARD_WINDOW_DAYS = 7
 BENCHMARK_TICKER = {"US": "SPY", "KR": "069500"}  # SPY / KODEX 200
 TIMEFRAME_CALENDAR_DAYS = {"1W": 7, "2W": 14, "1M": 30, "3M": 90, "6M": 180, "1Y": 365}
 
@@ -110,7 +114,11 @@ def day_candidates(rows: list[dict]) -> list[Candidate]:
             prediction_id=r["id"],
             stop_price=r["stop_price"],
             target_price=r["target_price"],
-            horizon_end_date=horizon_end(r["cdate"], r["timeframe"]),
+            # Measure the horizon from the actual entry session (which may be
+            # delayed past a weekend/holiday), not the raw signal date.
+            horizon_end_date=horizon_end(
+                r.get("entry_date", r["cdate"]), r["timeframe"]
+            ),
         )
         for r in best.values()
     ]
@@ -200,36 +208,49 @@ def run_range(market: str, frm: str, to: str, params: StrategyParams) -> dict:
             r["created_at"], market
         )  # exchange-local signal date
 
-    tickers = sorted({r["ticker"] for r in rows} | {BENCHMARK_TICKER[market]})
-    lookback = (date.fromisoformat(to) - date.fromisoformat(frm)).days + 7
-    provider = _provider(market)
-    logger.info(
-        "[%s] fetching prices for %d tickers (%d-day lookback)",
-        market,
-        len(tickers),
-        lookback,
-    )
-    price_map = _fetch_price_map(provider, tickers, lookback)
-
-    bmap = price_map.get(BENCHMARK_TICKER[market], {})
-    dates = trading_dates(bmap, frm, to)
-    if not dates:
-        # No benchmark calendar — fall back to the union of all tickers' dates.
-        all_dates = {d for t in price_map for d in price_map[t]}
-        dates = sorted(d for d in all_dates if frm <= d <= to)
-    first_bench = next((d for d in dates if d in bmap), None)
-
-    # Map each signal to the first trading session on/after its local date.
-    preds_by_day: dict[str, list[dict]] = {}
-    for r in rows:
-        eff = effective_entry_date(r["cdate"], dates)
-        if eff is not None:
-            preds_by_day.setdefault(eff, []).append(r)
-
     conn = pt.get_connection()
     try:
         account = pt.seed_account(conn, market, INITIAL_CAPITAL[market])
         conn.commit()  # persist the seed even if the loop below runs zero days
+        # Include already-held tickers so multi-day lots (whose ticker may no
+        # longer appear in the prediction window) still get fresh bars for
+        # exits and marking.
+        held_now = {p.ticker for p in pt.get_open_positions(conn, account.id)}
+
+        tickers = sorted(
+            {r["ticker"] for r in rows} | held_now | {BENCHMARK_TICKER[market]}
+        )
+        # Providers treat ``days`` as a lookback from today, so span today back to
+        # ``frm`` (not just the range length) — otherwise a past replay fetches
+        # recent bars instead of the requested window.
+        today = datetime.now(KR_TZ).date()
+        lookback = (today - date.fromisoformat(frm)).days + 7
+        provider = _provider(market)
+        logger.info(
+            "[%s] fetching prices for %d tickers (%d-day lookback)",
+            market,
+            len(tickers),
+            lookback,
+        )
+        price_map = _fetch_price_map(provider, tickers, lookback)
+
+        bmap = price_map.get(BENCHMARK_TICKER[market], {})
+        dates = trading_dates(bmap, frm, to)
+        if not dates:
+            # No benchmark calendar — fall back to the union of all tickers' dates.
+            all_dates = {d for t in price_map for d in price_map[t]}
+            dates = sorted(d for d in all_dates if frm <= d <= to)
+        first_bench = next((d for d in dates if d in bmap), None)
+
+        # Map each signal to the first trading session on/after its local date;
+        # the lot's horizon is measured from that actual entry session.
+        preds_by_day: dict[str, list[dict]] = {}
+        for r in rows:
+            eff = effective_entry_date(r["cdate"], dates)
+            if eff is not None:
+                r["entry_date"] = eff
+                preds_by_day.setdefault(eff, []).append(r)
+
         last_close: dict[str, float] = (
             {}
         )  # most recent close per ticker (carry-forward marks)
@@ -292,8 +313,16 @@ def main() -> int:
     if args.replay:
         frm, to = args.replay.split("..")
     else:
+        # Forward (cron) mode processes a short trailing WINDOW ending at as_of,
+        # not just as_of itself: at 06:30 KST "today" hasn't closed (and the last
+        # US session is the prior NY date), so a single-day run would find no
+        # session. The window catches the last completed session(s); run_day is
+        # idempotent per (account, date), so already-recorded days are no-ops.
         as_of = args.as_of or datetime.now(KR_TZ).strftime("%Y-%m-%d")
-        frm = to = as_of
+        frm = (
+            date.fromisoformat(as_of) - timedelta(days=FORWARD_WINDOW_DAYS)
+        ).isoformat()
+        to = as_of
 
     for market in markets:
         summary = run_range(market, frm, to, params)

@@ -126,10 +126,15 @@ def _render_book(conn, market: str) -> str:
     sym = CURRENCY_FMT.get(account.base_currency, "")
 
     lines = [f"## {market} book ({account.base_currency})", ""]
-    if nav_rows:
+    if not nav_rows:
         lines.append(
-            f"- Period: **{nav_rows[0].date} → {nav_rows[-1].date}** ({metrics['days']} trading days)"
+            f"_Seeded with {sym}{account.initial_capital:,.0f} but no NAV history yet "
+            f"(no trading sessions processed)._\n"
         )
+        return "\n".join(lines)
+    lines.append(
+        f"- Period: **{nav_rows[0].date} → {nav_rows[-1].date}** ({metrics['days']} trading days)"
+    )
     lines.append(
         f"- Final NAV: **{sym}{metrics['final_nav']:,.0f}** "
         f"(initial {sym}{account.initial_capital:,.0f})"

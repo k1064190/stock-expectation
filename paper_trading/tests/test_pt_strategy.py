@@ -133,6 +133,26 @@ def test_entry_limits_count_and_prefers_highest_confidence():
     assert {o.ticker for o in orders} == {"T6", "T5", "T4", "T3", "T2"}
 
 
+def test_entry_drops_target_at_or_below_fill():
+    """A stale target <= fill is dropped so it can't trigger an instant target_hit."""
+    stale = strategy.decide_entries(
+        nav=100_000,
+        cash=100_000,
+        held_tickers=set(),
+        candidates=[_cand("AAA", 100.0, 0.7, stop_price=90.0, target_price=95.0)],
+        params=P,
+    )
+    assert stale[0].target_price is None
+    valid = strategy.decide_entries(
+        nav=100_000,
+        cash=100_000,
+        held_tickers=set(),
+        candidates=[_cand("BBB", 100.0, 0.7, stop_price=90.0, target_price=120.0)],
+        params=P,
+    )
+    assert valid[0].target_price == pytest.approx(120.0)
+
+
 # --- exits ----------------------------------------------------------------- #
 
 

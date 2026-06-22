@@ -88,6 +88,27 @@ def test_day_candidates_dedups_ticker_keeping_highest_confidence():
     assert by_ticker["AAA"].horizon_end_date == "2026-05-08"  # 1W from 2026-05-01
 
 
+def test_day_candidates_horizon_from_entry_date_when_delayed():
+    """A weekend/holiday-delayed signal measures its horizon from the entry session."""
+    rows = [
+        {
+            "ticker": "AAA",
+            "conf": 0.7,
+            "timeframe": "1W",
+            "cdate": "2026-05-01",  # signal date (a Friday, say)
+            "entry_date": "2026-05-04",  # actual fill session (next Monday)
+            "entry_price": 100.0,
+            "target_price": 120.0,
+            "stop_price": 90.0,
+            "id": "p1",
+        }
+    ]
+    cand = ptr.day_candidates(rows)[0]
+    assert (
+        cand.horizon_end_date == "2026-05-11"
+    )  # 1W from entry 05-04, not signal 05-01
+
+
 def test_build_price_map_nests_by_ticker_then_date():
     batch = {
         "AAA": [
