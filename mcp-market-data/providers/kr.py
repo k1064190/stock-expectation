@@ -255,8 +255,19 @@ class KoreanMarketProvider(MarketDataProvider):
             name = self._company_name(ticker)
             if name:
                 try:
-                    return self._fetch_naver_search_news(
+                    api_items = self._fetch_naver_search_news(
                         name, client_id, client_secret, limit, since_days
+                    )
+                    if api_items:
+                        return api_items
+                    # Empty after relevance/since_days filtering is inconclusive
+                    # (possible over-filtering), so try the scrape as a last
+                    # resort rather than returning nothing.
+                    logger.info(
+                        "Naver Search API returned no items for %s (%s); "
+                        "trying scrape",
+                        ticker,
+                        name,
                     )
                 except Exception as e:
                     logger.warning(

@@ -583,6 +583,37 @@ def test_kr_news_falls_back_to_scrape_when_no_company_name(monkeypatch):
     assert items == sentinel
 
 
+def test_kr_news_falls_back_to_scrape_when_api_all_filtered(monkeypatch):
+    """API succeeds but every item is filtered out (irrelevant/old) → scrape."""
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: "삼성전자")
+    all_filtered = _naver_search_payload(
+        [
+            {  # irrelevant: company name in neither title nor description
+                "title": "무관한 뉴스",
+                "originallink": "https://a.com/1",
+                "link": "l1",
+                "description": "관계없음",
+                "pubDate": _rfc822(1),
+            }
+        ]
+    )
+    sentinel = [
+        NewsItem(headline="scraped", source="naver", date="2026-06-22", url="u")
+    ]
+    with (
+        patch("providers.kr.httpx.get", return_value=_mock_response(all_filtered)),
+        patch.object(
+            KoreanMarketProvider, "_scrape_naver_news", return_value=sentinel
+        ) as scrape,
+    ):
+        items = provider.get_news("005930", limit=5, since_days=7)
+    scrape.assert_called_once()
+    assert items == sentinel
+
+
 # ---------------------------------------------------------------------------
 # KR disclosures — Open DART
 # ---------------------------------------------------------------------------

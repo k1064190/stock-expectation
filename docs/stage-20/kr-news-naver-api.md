@@ -16,8 +16,9 @@ removes the DB-rights/UCPA legal risk of crawling Naver.
   `NAVER_CLIENT_SECRET` are set: it resolves the ticker's Korean name (pykrx
   `get_market_ticker_name`) and queries by keyword, mapping results to the
   unchanged `NewsItem` shape (headline, source=publisher domain, ISO date, url).
-- Robust fallback: missing keys, no resolvable name, or any API error → the
-  legacy HTML scrape (no regression). Scrape is now the safety net, not the path.
+- Robust fallback: missing keys, no resolvable name, any API error, or an
+  empty filtered result (possible over-filtering) → the legacy HTML scrape (no
+  regression). Scrape is now the safety net, not the primary path.
 - Helpers: `_company_name`, `_fetch_naver_search_news`, `_clean_html` (strip
   `<b>` + `html.unescape`), `_domain`, `_parse_rfc822` (tz-aware).
 - `sentiment_score=None` (Naver supplies none; computed downstream by /expect).
