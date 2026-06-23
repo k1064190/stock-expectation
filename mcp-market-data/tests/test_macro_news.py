@@ -227,7 +227,42 @@ def test_timespan_to_days_maps_to_rss_window():
     assert macro_news._timespan_to_days("2w") == 14
     assert macro_news._timespan_to_days("2m") == 60  # months, not 2 days
     assert macro_news._timespan_to_days("1y") == 365
+    # GDELT word units, not just short forms:
+    assert macro_news._timespan_to_days("24hours") == 1
+    assert macro_news._timespan_to_days("10minutes") == 1
+    assert macro_news._timespan_to_days("2weeks") == 14
+    assert macro_news._timespan_to_days("2months") == 60
+    assert macro_news._timespan_to_days("3days") == 3
     assert macro_news._timespan_to_days("garbage") == 2
+
+
+def test_fetch_macro_news_fetches_when_cache_dir_unmakeable(tmp_path):
+    """A read-only/un-creatable cache dir must not abort the fetch (never raises)."""
+    with (
+        patch("macro_news.Path.mkdir", side_effect=OSError("read-only")),
+        patch("macro_news.httpx.get", return_value=_resp(GDELT_PAYLOAD)),
+    ):
+        items = macro_news.fetch_macro_news(
+            timespan="24h", limit=20, cache_dir=tmp_path, ttl_seconds=0
+        )
+    assert len(items) == 2
+
+
+def test_fetch_macro_news_refetches_when_cache_missing_items(tmp_path):
+    """A fresh cache file lacking an items list must trigger a refetch, not []."""
+    path = macro_news._cache_file(tmp_path, macro_news.DEFAULT_MACRO_QUERY, "24h", 20)
+    path.write_text(
+        '{"fetched_at": 9999999999}', encoding="utf-8"
+    )  # fresh but no items
+    with patch("macro_news.httpx.get", return_value=_resp(GDELT_PAYLOAD)) as g:
+        items = macro_news.fetch_macro_news(
+            query=macro_news.DEFAULT_MACRO_QUERY,
+            timespan="24h",
+            limit=20,
+            cache_dir=tmp_path,
+        )
+    assert g.call_count == 1  # malformed fresh cache did not suppress the fetch
+    assert len(items) == 2
 
 
 def test_fetch_macro_news_returns_items_when_cache_write_fails(tmp_path):

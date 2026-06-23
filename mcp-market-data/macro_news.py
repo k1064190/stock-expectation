@@ -82,9 +82,16 @@ def _cache_is_fresh(entry: dict, ttl_seconds: int) -> bool:
 
 
 def _items_from_cache(entry: dict) -> Optional[list[NewsItem]]:
-    """Reconstruct NewsItems from a cache entry; None if the shape is invalid."""
+    """Reconstruct NewsItems from a cache entry; None if the shape is invalid.
+
+    Requires an actual ``items`` list — a missing or null ``items`` is treated as
+    a malformed cache (None → refetch), not a valid empty result.
+    """
+    items = entry.get("items")
+    if not isinstance(items, list):
+        return None
     try:
-        return [NewsItem(**d) for d in entry.get("items", [])]
+        return [NewsItem(**d) for d in items]
     except (TypeError, AttributeError):
         return None
 
@@ -123,7 +130,10 @@ def fetch_macro_news(
         hit returns the cached items; on a fetch error returns the last cached
         result if any, else an empty list — never raises.
     """
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning("macro-news cache dir unavailable (%s); caching disabled", e)
     path = _cache_file(cache_dir, query, timespan, limit)
 
     cached = _read_cache(path)
@@ -258,25 +268,27 @@ def _timespan_to_days(timespan: str) -> int:
     """Approximate any GDELT timespan as whole days for the day-granular RSS
     window (minimum 1; defaults to 2 if unparseable).
 
-    GDELT units: min (minutes), h, d, w, m (months), y. Checked longest-suffix
-    first so 'min' isn't mistaken for 'm' (months).
+    Handles both short and word units GDELT accepts — min/minutes, h/hours,
+    d/days, w/weeks, m/months, y/years — by extracting the alpha unit so e.g.
+    '24hours' isn't read as 24 days and 'min' isn't mistaken for months.
     """
     try:
         ts = timespan.strip().lower()
         n = int("".join(ch for ch in ts if ch.isdigit()) or "0")
         if not n:
             return 2
-        if ts.endswith("min"):
-            return 1  # sub-day → a 1-day RSS window
-        if ts.endswith("h"):
+        unit = "".join(ch for ch in ts if ch.isalpha())
+        if unit.startswith("min"):  # minutes (sub-day)
+            return 1
+        if unit in ("h", "hour", "hours"):
             return max(1, -(-n // 24))  # ceil hours → days
-        if ts.endswith("w"):
+        if unit in ("w", "week", "weeks"):
             return max(1, n * 7)
-        if ts.endswith("m"):
-            return max(1, n * 30)  # months
-        if ts.endswith("y"):
+        if unit in ("m", "month", "months"):
+            return max(1, n * 30)
+        if unit in ("y", "year", "years"):
             return max(1, n * 365)
-        return max(1, n)  # days (or bare number)
+        return max(1, n)  # d/day/days or a bare number
     except Exception:
         return 2
 
