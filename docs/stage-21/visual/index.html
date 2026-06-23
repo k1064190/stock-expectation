@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 21 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f1e26;
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+      header nav[aria-label="Language"] {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      header nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      header nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: #444;
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #0f1e26;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: #f0f3f6;
+        border: 1px solid #dde2e6;
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #555;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">EN | <a href="index.ko.html">한국어</a></nav>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 21</h2>
+        <p>
+          Global macro and geopolitical news integration via GDELT and
+          wire-service RSS, injected into daily briefings.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>Macro News</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            The per-ticker news feeds (Finnhub for US, Naver Search for KR) miss
+            broad, market-moving world news — wars (e.g. the Strait of Hormuz
+            crisis), oil/energy shocks, central-bank surprises, tariffs. Macro
+            context previously came only from the LLM's training knowledge
+            (stale after cutoff) and the scheduled economic calendar. A verified
+            deep-research pass identified GDELT (free, no key) as the best
+            global source, with wire-service RSS as a reliable no-key
+            alternative.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>mcp-market-data/macro_news.py</code> — market-agnostic
+              macro-news fetcher:
+              <ul>
+                <li>
+                  <code>fetch_macro_news</code> — GDELT DOC 2.0 artlist
+                  (User-Agent, file cache with TTL and serve-stale-on-error,
+                  retry honoring GDELT's 1-req/5s limit).
+                </li>
+                <li>
+                  <code>fetch_rss_macro_news</code> — no-key wire RSS (BBC
+                  business/world, CNBC economy, Yonhap English): dedup, strict
+                  tz-aware <code>since_days</code> cutoff, sort by publish time,
+                  per-feed error skip.
+                </li>
+                <li>
+                  <code>get_macro_news</code> — orchestrator returning
+                  <code>(items, source)</code>.
+                </li>
+              </ul>
+            </li>
+            <li>
+              <code>stock-cli macro-news</code> —
+              <code>--timespan / --limit / --query</code>, JSON out.
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> —
+              <code>_macro_block()</code> injected into the US and KR prompts
+              (degrades to <code>""</code> on any error, never blocking the
+              briefing).
+            </li>
+            <li>
+              Cache dir <code>data/cache/</code> gitignored. No API key
+              required.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            RSS is the primary, GDELT the fallback — reversed from the initial
+            plan after live evidence: GDELT 429s frequently from this host's
+            shared IP (1-req/5s, hit by other traffic) and its broad
+            multilingual query returns noisy off-topic results, whereas the RSS
+            wires are reliable, English, and editorially curated. GDELT (with an
+            English-only, single-OR-group query) is used only when RSS yields
+            nothing. Built TDD (13 macro tests + 2 daily-briefing wiring tests);
+            full suite 662 passing.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li><code>mcp-market-data/macro_news.py</code></li>
+            <li><code>mcp-market-data/tests/test_macro_news.py</code></li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_macro_news</code> +
+              <code>macro-news</code> subparser
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> —
+              <code>_macro_block()</code> +
+              <code>{macro_block}</code> injections
+            </li>
+            <li>
+              <code>.gitignore</code> (<code>data/cache/</code>),
+              <code>CLAUDE.md</code>, <code>README.md</code>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review Loop</h4>
+          <ul>
+            <li>
+              <strong>code-reviewer-pro:</strong> 0 critical / 0 warnings —
+              "ship as-is"; its 2 suggestions (RSS sort stability, missing-date
+              fallback) overlapped Codex's RSS minor findings and were applied.
+            </li>
+            <li>
+              <strong>Codex (gpt-5.5, high):</strong> [MAJOR] GDELT query
+              wrapped the OR-group in an extra outer paren — GDELT forbids
+              nested OR groups, so the outer wrap was removed. [MINOR] cache
+              only handled malformed JSON, not wrong-shape valid JSON —
+              <code>_read_cache</code> now rejects non-dict;
+              <code>_cache_is_fresh</code>/<code>_items_from_cache</code> catch
+              type errors and treat a bad cache as absent. [MINOR] RSS
+              missing/bad pubDate bypassed the cutoff and date-string sort
+              ignored time — now requires a parseable date and sorts by the
+              tz-aware datetime.
+            </li>
+            <li>
+              <strong>Gemini:</strong> unavailable (deprecated free-tier CLI).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Live testing changed the design: the research's "GDELT is best
+              free" held in the abstract, but integration evidence (persistent
+              429 and multilingual noise from a shared IP) made editorial RSS
+              the better primary. Lesson: validate a chosen source against the
+              actual runtime environment, not just its spec. GDELT's graceful
+              degradation (cache, serve-stale, empty-not-crash) means a throttle
+              or outage never blocks a briefing — the value of building
+              resilience in from the start.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>21단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.65;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #0f1e26;
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+      header nav[aria-label="언어"] {
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      header nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      header nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="단계 타임라인"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: #444;
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #0f1e26;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: #f0f3f6;
+        border: 1px solid #dde2e6;
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: #555;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어"><a href="index.html">EN</a> | 한국어</nav>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="단계 타임라인">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">0단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">2단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">3단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">4단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">4.1단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">5단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">6단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">7단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">8단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">9단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">11단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">12단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">13단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">14단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">15단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">16단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">17단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">19단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">20단계</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current">
+          <div class="circle">21</div>
+          <span class="label">21단계</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>21단계</h2>
+        <p>
+          GDELT 및 와이어 서비스 RSS를 통한 글로벌 거시경제·지정학적 뉴스 통합
+          및 일일 브리핑 주입.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>Macro News</h3>
+
+        <div class="card-section">
+          <h4>왜</h4>
+          <p>
+            종목별 뉴스 피드(미국은 Finnhub, 한국은 Naver Search)는 전쟁(예:
+            호르무즈 해협 위기), 유가/에너지 충격, 중앙은행 서프라이즈, 관세 등
+            시장 전체에 영향을 미치는 세계적 뉴스를 놓칩니다. 기존에는 거시경제
+            맥락이 LLM의 학습 지식(컷오프 이후 오래된 정보)과 예정된 경제
+            캘린더에서만 제공되었습니다. 심층 리서치를 통해 GDELT(무료, API 키
+            불필요)가 최적의 글로벌 소스이며, 와이어 서비스 RSS가 키 없이 사용할
+            수 있는 신뢰할 만한 대안임을 확인했습니다.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>무엇을</h4>
+          <ul>
+            <li>
+              <code>mcp-market-data/macro_news.py</code> — 시장 무관 거시경제
+              뉴스 페처:
+              <ul>
+                <li>
+                  <code>fetch_macro_news</code> — GDELT DOC 2.0 artlist
+                  (User-Agent, TTL 포함 파일 캐시 및 오류 시 stale 제공, GDELT의
+                  1요청/5초 제한을 준수한 재시도).
+                </li>
+                <li>
+                  <code>fetch_rss_macro_news</code> — 키 없는 와이어 RSS (BBC
+                  business/world, CNBC economy, Yonhap English): 중복 제거,
+                  엄격한 tz-aware <code>since_days</code> 컷오프, 발행 시각 기준
+                  정렬, 피드별 오류 시 건너뜀.
+                </li>
+                <li>
+                  <code>get_macro_news</code> — <code>(items, source)</code>를
+                  반환하는 오케스트레이터.
+                </li>
+              </ul>
+            </li>
+            <li>
+              <code>stock-cli macro-news</code> —
+              <code>--timespan / --limit / --query</code>, JSON 출력.
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> —
+              <code>_macro_block()</code>을 미국 및 한국 프롬프트에 주입 (오류
+              발생 시 <code>""</code>로 저하, 브리핑을 블로킹하지 않음).
+            </li>
+            <li>
+              캐시 디렉터리 <code>data/cache/</code>는 gitignore 처리. API 키
+              불필요.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>어떻게</h4>
+          <p>
+            RSS를 기본, GDELT를 폴백으로 사용 — 초기 계획에서 역전된 구성으로,
+            실운영 결과에 근거합니다. GDELT는 이 호스트의 공유 IP에서 빈번하게
+            429 오류를 반환하고(1요청/5초, 다른 트래픽과 경합) 광범위한 다국어
+            쿼리가 노이즈가 많은 비관련 결과를 반환하는 반면, RSS 와이어는
+            안정적이고 영문이며 편집자가 큐레이션합니다. GDELT(영어 전용, 단일
+            OR 그룹 쿼리)는 RSS에서 결과가 없을 때만 사용합니다. TDD로
+            개발(거시경제 테스트 13개 + 일일 브리핑 연결 테스트 2개), 전체
+            스위트 662개 통과.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>코드 위치</h4>
+          <ul class="code-list">
+            <li><code>mcp-market-data/macro_news.py</code></li>
+            <li><code>mcp-market-data/tests/test_macro_news.py</code></li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_macro_news</code> +
+              <code>macro-news</code> 서브파서
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> —
+              <code>_macro_block()</code> + <code>{macro_block}</code> 주입
+            </li>
+            <li>
+              <code>.gitignore</code> (<code>data/cache/</code>),
+              <code>CLAUDE.md</code>, <code>README.md</code>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>리뷰 루프</h4>
+          <ul>
+            <li>
+              <strong>code-reviewer-pro:</strong> 치명적 오류 0건 / 경고 0건 —
+              "그대로 배포"; 2개의 제안사항 (RSS 정렬 안정성, 날짜 누락 폴백)은
+              Codex의 RSS 마이너 사항과 겹쳐 함께 적용되었습니다.
+            </li>
+            <li>
+              <strong>Codex (gpt-5.5, high):</strong> [주요] GDELT 쿼리가 OR
+              그룹을 추가 외부 괄호로 감쌌음 — GDELT는 중첩 OR 그룹을 금지하므로
+              외부 괄호를 제거. [마이너] 캐시가 잘못된 형식의 JSON만 처리하고,
+              형태가 잘못된 유효한 JSON은 처리하지 못함 —
+              <code>_read_cache</code>가 비-딕셔너리를 거부하도록 수정;
+              <code>_cache_is_fresh</code>/<code>_items_from_cache</code>가 타입
+              오류를 포착하여 손상된 캐시를 없는 것으로 처리. [마이너] RSS의
+              pubDate 누락/오류 시 컷오프를 우회하고 날짜 문자열 정렬이 시간을
+              무시함 — 파싱 가능한 날짜를 필수로 요구하고 tz-aware datetime
+              기준으로 정렬.
+            </li>
+            <li>
+              <strong>Gemini:</strong> 사용 불가 (무료 티어 CLI 지원 중단).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>회고</h4>
+          <p>
+            <em
+              >실운영 테스트가 설계를 바꿨습니다. 리서치에서 "GDELT이 최고의
+              무료 소스"라는 결론은 추상적으로는 맞았지만, 통합 결과(공유
+              IP에서의 지속적인 429 오류 및 다국어 노이즈)로 인해 편집자
+              큐레이션 RSS가 더 나은 기본 소스가 되었습니다. 교훈: 선택한 소스를
+              사양만이 아닌 실제 런타임 환경에서 검증해야 합니다. GDELT의 점진적
+              저하(캐시, stale 제공, 빈 응답이 크래시 유발 안 함) 덕분에
+              스로틀이나 장애가 발생해도 브리핑이 차단되지 않습니다 — 처음부터
+              복원력을 내장한 가치가 입증된 것입니다.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
