@@ -217,3 +217,24 @@ def test_get_macro_news_falls_back_to_gdelt_when_rss_empty():
         items, source = macro_news.get_macro_news()
     assert source == "gdelt"
     assert items == gdelt_items
+
+
+def test_timespan_to_days_maps_to_rss_window():
+    assert macro_news._timespan_to_days("24h") == 1
+    assert macro_news._timespan_to_days("1h") == 1
+    assert macro_news._timespan_to_days("3d") == 3
+    assert macro_news._timespan_to_days("2w") == 14
+    assert macro_news._timespan_to_days("garbage") == 2
+
+
+def test_get_macro_news_maps_timespan_onto_rss_window():
+    captured = {}
+
+    def fake_rss(limit=20, since_days=2):
+        captured["since_days"] = since_days
+        return [NewsItem(headline="r", source="BBC", date="2026-06-24", url="u")]
+
+    with patch("macro_news.fetch_rss_macro_news", side_effect=fake_rss):
+        items, source = macro_news.get_macro_news(timespan="3d")
+    assert captured["since_days"] == 3  # timespan honored on the RSS path
+    assert source == "rss"

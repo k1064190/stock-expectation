@@ -246,12 +246,28 @@ def fetch_rss_macro_news(
     return [item for _, item in dated[:limit]]
 
 
+def _timespan_to_days(timespan: str) -> int:
+    """Approximate a GDELT timespan ('24h', '3d', '2w', '1h') as whole days for
+    the day-granular RSS window (minimum 1; defaults to 2 if unparseable)."""
+    try:
+        ts = timespan.strip().lower()
+        n = int("".join(ch for ch in ts if ch.isdigit()) or "0")
+        if not n:
+            return 2
+        if ts.endswith("h"):
+            return max(1, -(-n // 24))  # ceil hours → days
+        if ts.endswith("w"):
+            return max(1, n * 7)
+        return max(1, n)  # days (or bare number)
+    except Exception:
+        return 2
+
+
 def get_macro_news(
     query: str = DEFAULT_MACRO_QUERY,
     timespan: str = DEFAULT_TIMESPAN,
     limit: int = 20,
     cache_dir: Path = CACHE_DIR,
-    since_days: int = 2,
 ) -> tuple[list[NewsItem], str]:
     """Best-available macro news: editorial RSS primary, GDELT fallback.
 
@@ -260,10 +276,14 @@ def get_macro_news(
     like GDELT (which 429s frequently from shared IPs). GDELT is the breadth
     fallback used only when RSS returns nothing.
 
+    ``timespan`` is honored on both paths — passed verbatim to GDELT and mapped to
+    a whole-day window for RSS. ``query`` only constrains the GDELT path (RSS is a
+    fixed curated feed set, not keyword-queryable).
+
     Returns ``(items, source)`` where source is "rss", "gdelt", or "none" — so
     callers can see which path served.
     """
-    rss = fetch_rss_macro_news(limit=limit, since_days=since_days)
+    rss = fetch_rss_macro_news(limit=limit, since_days=_timespan_to_days(timespan))
     if rss:
         return rss, "rss"
     gdelt = fetch_macro_news(

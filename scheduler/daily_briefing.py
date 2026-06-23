@@ -885,6 +885,10 @@ def build_api_prompt(market: str) -> str:
         market_data = fetch_kr_market_data()
         prompt_template = (PROMPTS_DIR / "briefing_kr.md").read_text()
 
+    macro = _macro_block()  # global macro/geopolitical context (API mode too)
+    if macro:
+        market_data = f"{market_data}\n\n{macro}"
+
     track_record = get_track_record_context()
     prompt = prompt_template.replace("{market_data}", market_data)
     prompt = prompt.replace("{track_record}", track_record)

@@ -2334,7 +2334,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--query",
         default=DEFAULT_MACRO_QUERY,
-        help="Override the GDELT Boolean query (default: curated macro/geopolitical set)",
+        help="GDELT Boolean query (GDELT fallback only; RSS primary is a fixed feed set)",
     )
     p.set_defaults(func=cmd_macro_news)
 
