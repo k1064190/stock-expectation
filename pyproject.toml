@@ -42,7 +42,7 @@ graph = [
 stock-cli = "stock_cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "mcp-market-data/tests", "mcp-prediction-store/tests", "scheduler/tests", "portfolio/tests"]
+testpaths = ["tests", "mcp-market-data/tests", "mcp-prediction-store/tests", "scheduler/tests", "portfolio/tests", "paper_trading/tests"]
 asyncio_mode = "auto"
 markers = [
     "network: tests that require network access (deselect with '-m not network')",

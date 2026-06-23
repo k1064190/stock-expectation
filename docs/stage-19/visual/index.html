@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 19 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #1e5f8e;
+        --muted: #888;
+        --border: #e0e0dc;
+        --card-bg: #fafaf8;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #111;
+      }
+      header .brand p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+      nav[aria-label="Language"] {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline strip ── */
+      nav[aria-label="Stage timeline"] {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        position: relative;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--muted);
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .tl-node.active .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .tl-node .label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.active .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-connector {
+        height: 2px;
+        width: 28px;
+        background: var(--muted);
+        flex-shrink: 0;
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 900px;
+        margin: 2.5rem auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      .stage-heading {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+      .stage-summary {
+        color: #444;
+        font-size: 0.95rem;
+        margin-bottom: 2rem;
+      }
+
+      /* ── Card ── */
+      article.doc-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+        margin-bottom: 1.5rem;
+      }
+      article.doc-card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .doc-section {
+        margin-bottom: 1.25rem;
+      }
+      .doc-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .doc-section h4 {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+      }
+      .doc-section p {
+        font-size: 0.92rem;
+        color: #333;
+      }
+      .doc-section ul {
+        padding-left: 1.25rem;
+      }
+      .doc-section li {
+        font-size: 0.92rem;
+        color: #333;
+        margin-bottom: 0.25rem;
+      }
+
+      .doc-section.retrospective p,
+      .doc-section.retrospective li {
+        font-style: italic;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.83rem;
+        background: #eeeee9;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        word-break: break-all;
+      }
+      .doc-section.code-locations li {
+        list-style: none;
+        padding-left: 0;
+        margin-bottom: 0.4rem;
+      }
+
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        nav[aria-label="Stage timeline"] {
+          padding: 1rem;
+        }
+        main {
+          padding: 0 1rem 2rem;
+          margin-top: 1.5rem;
+        }
+        article.doc-card {
+          padding: 1.25rem 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">EN | <a href="index.ko.html">한국어</a></nav>
+    </header>
+
+    <nav aria-label="Stage timeline">
+      <div class="timeline">
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node">
+          <div class="circle"></div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node active">
+          <div class="circle"></div>
+          <span class="label">Stage 19</span>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <section>
+        <h2 class="stage-heading">Stage 19</h2>
+        <p class="stage-summary">
+          Introduces a paper-trading simulation layer that replays logged LIVE
+          BULL predictions against real market prices to produce realized
+          P&amp;L, NAV history, and concrete algorithm-tuning recommendations.
+        </p>
+
+        <article class="doc-card">
+          <h3>Paper Trading System</h3>
+
+          <div class="doc-section">
+            <h4>Why</h4>
+            <p>
+              Doctor Cho wants to measure and improve the prediction algorithm
+              by trading it with fake money: one simulated book per market (US
+              $100,000, KR &#8361;100,000,000), a daily cycle, at least one
+              month of logged NAV/returns, and a periodic advisory report that
+              recommends algorithm tuning. Realized P&amp;L is the ultimate
+              scoreboard that the HIT/MISS track record and calibration only
+              approximate.
+            </p>
+          </div>
+
+          <div class="doc-section">
+            <h4>What</h4>
+            <ul>
+              <li>
+                <strong>models.py</strong> —
+                <code>data/paper_trading.db</code> schema (accounts / positions
+                / trades / nav_history) + dataclasses + CRUD. CRUD does not
+                commit; the caller owns the transaction so a daily cycle is
+                atomic.
+              </li>
+              <li>
+                <strong>costs.py</strong> — slippage (5 bps), commission (US 0 /
+                KR 0.015%), KR sell tax 0.18%.
+              </li>
+              <li>
+                <strong>strategy.py</strong> — pure
+                <code>decide_entries</code> (risk 1%/trade, max 20%
+                NAV/position, max 5 new/day, fallback stop 8%, confidence floor
+                0.60, one lot/ticker/day) and <code>decide_exits</code> (target
+                / stop / horizon, stop-priority when both touched).
+              </li>
+              <li>
+                <strong>engine.py</strong> — <code>run_day</code>: exits then
+                entries then mark-to-market then record NAV, as one committed
+                transaction; idempotent per (account, date); carry-forward marks
+                on data gaps.
+              </li>
+              <li>
+                <strong>review.py</strong> — pure metrics: drawdown, Sharpe
+                (sample stdev), round-trip P&amp;L pairing by prediction_id,
+                confidence attribution.
+              </li>
+              <li>
+                <strong>scheduler/paper_trading_run.py</strong> — cron +
+                <code>--replay FROM..TO</code>; reuses the US/KR providers;
+                benchmark = SPY / KODEX 200 buy-and-hold.
+              </li>
+              <li>
+                <strong>scheduler/paper_trading_review.py</strong> — weekly
+                advisory report
+                <code>reports/paper-trading-review-YYYY-MM-DD.md</code> with
+                tuning recommendations.
+              </li>
+              <li>
+                Cron: daily tick 06:30 KST, weekly review Sunday 22:30 KST.
+              </li>
+              <li>
+                <strong>Bootstrapped result</strong> (replay 2026-04-04 to
+                06-22, approx. 54/52 trading days): US +1.80% (Sharpe 0.61,
+                maxDD −6.94%, 48 round-trips, 40% win) vs SPY +13.4%; KR −1.92%
+                (Sharpe −0.05, maxDD −12.5%, 63 round-trips, 38% win) vs KODEX
+                200 +81%. The headline finding: stop-outs outnumber target-hits,
+                and fixed target exits cap upside — the long signal badly lags
+                passive indices in a melt-up.
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section">
+            <h4>How</h4>
+            <ul>
+              <li>
+                Signal source = <code>predictions.db</code> LIVE BULL rows (all
+                carry target+stop). Fills at the signal day's session close (no
+                look-ahead).
+              </li>
+              <li>
+                A prediction's exchange-local date
+                (<code>signal_local_date</code>, UTC to market timezone) maps to
+                the first trading session on or after it
+                (<code>effective_entry_date</code>), so a pre-open KR 07:00 KST
+                signal trades the correct session.
+              </li>
+              <li>
+                Pure decision/metric logic is unit-tested; the live replay
+                smoke-tests the wiring.
+              </li>
+              <li>Built TDD: 41 new tests; full suite 641 passing.</li>
+            </ul>
+          </div>
+
+          <div class="doc-section code-locations">
+            <h4>Code Locations</h4>
+            <ul>
+              <li>
+                <code
+                  >paper_trading/{models,costs,strategy,engine,review}.py</code
+                >
+              </li>
+              <li><code>scheduler/paper_trading_run.py</code></li>
+              <li><code>scheduler/paper_trading_review.py</code></li>
+              <li><code>paper_trading/tests/test_pt_*.py</code></li>
+              <li><code>scheduler/tests/test_paper_trading_run.py</code></li>
+              <li><code>scheduler/crontab.example</code></li>
+              <li>
+                <code
+                  >docs/superpowers/specs/2026-06-23-paper-trading-design.md</code
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section">
+            <h4>Review Loop</h4>
+            <ul>
+              <li>
+                <strong>code-reviewer-pro:</strong> 0 critical; 1 warning
+                (idempotency fragility on mid-cycle crash) — fixed by making
+                <code>run_day</code> one transaction (CRUD no longer commits). 1
+                suggestion (defensive duplicate-ticker guard in
+                <code>decide_entries</code>) — applied.
+              </li>
+              <li>
+                <strong>Codex (gpt-5.5, high):</strong> [BLOCKER] KR UTC date
+                mis-mapping — fixed with <code>signal_local_date</code>/<code
+                  >effective_entry_date</code
+                >
+                (KR cumulative shifted +2.53% to −1.92%, confirming the bias was
+                real); [BLOCKER] non-atomic cycle — same transaction fix;
+                [MAJOR] stale <code>avg_cost</code> mark on gaps — carry-forward
+                marks; [MINOR] Sharpe population to sample stdev. All four fixed
+                with tests.
+              </li>
+              <li>
+                <strong>Gemini:</strong> unavailable (free-tier CLI deprecated —
+                <code>IneligibleTierError</code>).
+              </li>
+            </ul>
+          </div>
+
+          <div class="doc-section retrospective">
+            <h4>Retrospective</h4>
+            <ul>
+              <li>
+                The replay paid off immediately: instead of waiting a month,
+                approximately 2.5 months of NAV came from already-logged
+                predictions, and the review surfaced a concrete, actionable
+                finding (target exits + stop-outs lag a trending tape).
+              </li>
+              <li>
+                The Codex timezone catch mattered — it flipped KR from positive
+                to negative. Lesson: always convert stored UTC timestamps to
+                exchange-local before dating fills.
+              </li>
+              <li>
+                Carry forward: the advisory recommendations (raise confidence
+                floor, ATR trailing stop, signal quality over sizing) are the
+                first concrete inputs to the algorithm-improvement loop; next is
+                acting on one via PR and measuring the delta.
+              </li>
+            </ul>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
