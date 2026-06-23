@@ -142,7 +142,7 @@ def fetch_macro_news(
                     "mode": "artlist",
                     "format": "json",
                     "timespan": timespan,
-                    "maxrecords": limit,
+                    "maxrecords": min(limit, 250),  # GDELT caps ArticleList at 250
                     "sort": "datedesc",
                 },
                 headers={"User-Agent": USER_AGENT},
@@ -160,13 +160,21 @@ def fetch_macro_news(
                 for a in data.get("articles", [])
                 if (a.get("title") or "").strip()
             ]
-            path.write_text(
-                json.dumps(
-                    {"fetched_at": time.time(), "items": [asdict(i) for i in items]},
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
+            # Cache write is best-effort: a permissions/disk error must not
+            # discard freshly-fetched headlines (it's inside the fetch try).
+            try:
+                path.write_text(
+                    json.dumps(
+                        {
+                            "fetched_at": time.time(),
+                            "items": [asdict(i) for i in items],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+            except OSError as e:
+                logger.warning("macro-news cache write failed: %s", e)
             return items
         except Exception as e:  # network / 429 / bad JSON
             last_error = e
@@ -247,17 +255,27 @@ def fetch_rss_macro_news(
 
 
 def _timespan_to_days(timespan: str) -> int:
-    """Approximate a GDELT timespan ('24h', '3d', '2w', '1h') as whole days for
-    the day-granular RSS window (minimum 1; defaults to 2 if unparseable)."""
+    """Approximate any GDELT timespan as whole days for the day-granular RSS
+    window (minimum 1; defaults to 2 if unparseable).
+
+    GDELT units: min (minutes), h, d, w, m (months), y. Checked longest-suffix
+    first so 'min' isn't mistaken for 'm' (months).
+    """
     try:
         ts = timespan.strip().lower()
         n = int("".join(ch for ch in ts if ch.isdigit()) or "0")
         if not n:
             return 2
+        if ts.endswith("min"):
+            return 1  # sub-day → a 1-day RSS window
         if ts.endswith("h"):
             return max(1, -(-n // 24))  # ceil hours → days
         if ts.endswith("w"):
             return max(1, n * 7)
+        if ts.endswith("m"):
+            return max(1, n * 30)  # months
+        if ts.endswith("y"):
+            return max(1, n * 365)
         return max(1, n)  # days (or bare number)
     except Exception:
         return 2

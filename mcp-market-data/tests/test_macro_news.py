@@ -222,9 +222,38 @@ def test_get_macro_news_falls_back_to_gdelt_when_rss_empty():
 def test_timespan_to_days_maps_to_rss_window():
     assert macro_news._timespan_to_days("24h") == 1
     assert macro_news._timespan_to_days("1h") == 1
+    assert macro_news._timespan_to_days("15min") == 1  # minutes, not 15 days
     assert macro_news._timespan_to_days("3d") == 3
     assert macro_news._timespan_to_days("2w") == 14
+    assert macro_news._timespan_to_days("2m") == 60  # months, not 2 days
+    assert macro_news._timespan_to_days("1y") == 365
     assert macro_news._timespan_to_days("garbage") == 2
+
+
+def test_fetch_macro_news_returns_items_when_cache_write_fails(tmp_path):
+    """A cache-write error (e.g. read-only dir) must not discard fetched items."""
+    with (
+        patch("macro_news.httpx.get", return_value=_resp(GDELT_PAYLOAD)),
+        patch("macro_news.Path.write_text", side_effect=OSError("read-only")),
+    ):
+        items = macro_news.fetch_macro_news(
+            timespan="24h", limit=20, cache_dir=tmp_path, ttl_seconds=0
+        )
+    assert len(items) == 2  # freshly fetched, returned despite cache-write failure
+
+
+def test_fetch_macro_news_clamps_maxrecords_to_250(tmp_path):
+    captured = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured.update(params=params)
+        return _resp(GDELT_PAYLOAD)
+
+    with patch("macro_news.httpx.get", side_effect=fake_get):
+        macro_news.fetch_macro_news(
+            timespan="24h", limit=500, cache_dir=tmp_path, ttl_seconds=0
+        )
+    assert captured["params"]["maxrecords"] == 250  # GDELT's cap
 
 
 def test_get_macro_news_maps_timespan_onto_rss_window():
