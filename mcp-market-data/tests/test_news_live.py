@@ -212,18 +212,19 @@ def test_yfinance_fallback_works_without_any_keys():
 
 @pytest.mark.network
 def test_naver_scrape_returns_real_kr_news_for_samsung():
-    """Naver Finance must return news for 005930 (Samsung Electronics)
-    with limit and since-days filters honoured.
+    """The Naver Finance scrape must return news for 005930 (Samsung).
 
-    Samsung is the most liquid KR ticker — there is *always* news for it
-    in any 7-day window. A zero-item return here means Naver's layout
-    actually changed (the fragile selector regression we explicitly want
-    this test to catch), not a quiet day. **Failing**, not skipping.
+    Calls ``_scrape_naver_news`` directly (not ``get_news``) so it exercises
+    the scrape selectors regardless of whether the Naver Search API keys are
+    set — its whole purpose is to catch the fragile selector/Referer/clusterId
+    regression. Samsung is the most liquid KR ticker — there is *always* news
+    for it in any 7-day window, so a zero-item return means the layout actually
+    changed. **Failing**, not skipping.
     """
     from datetime import datetime, timedelta
 
     provider = KoreanMarketProvider()
-    items = provider.get_news("005930", limit=5, since_days=7)
+    items = provider._scrape_naver_news("005930", limit=5, since_days=7)
     assert items, (
         "Naver returned 0 items for 005930 over 7 days — selector or "
         "Referer/clusterId workaround likely regressed. "
@@ -242,6 +243,33 @@ def test_naver_scrape_returns_real_kr_news_for_samsung():
         assert (
             item.date >= cutoff
         ), f"item dated {item.date} predates since_days=7 cutoff {cutoff}"
+
+
+@pytest.mark.network
+@pytest.mark.skipif(
+    not (_have("NAVER_CLIENT_ID") and _have("NAVER_CLIENT_SECRET")),
+    reason="NAVER_CLIENT_ID and NAVER_CLIENT_SECRET required",
+)
+def test_naver_search_api_returns_real_kr_news_for_samsung():
+    """Live Naver Search API path for 005930 via get_news (keys present).
+
+    Pins the contract /expect depends on: limited count, recent dates, non-empty
+    headline + http url, no sentiment. (May legitimately fall back to the scrape
+    if the API yields nothing relevant; the assertions hold either way.)
+    """
+    from datetime import datetime, timedelta
+
+    provider = KoreanMarketProvider()
+    items = provider.get_news("005930", limit=5, since_days=7)
+    if not items:
+        pytest.skip("Naver Search API returned no items for 005930")
+    assert len(items) <= 5, f"limit=5 not honoured: got {len(items)} items"
+    cutoff = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
+    for item in items:
+        assert item.headline.strip(), "empty headline"
+        assert item.url.startswith("http"), f"non-http url: {item.url!r}"
+        assert item.sentiment_score is None  # Naver supplies none
+        assert item.date >= cutoff, f"item dated {item.date} predates cutoff {cutoff}"
 
 
 # ---------------------------------------------------------------------------
