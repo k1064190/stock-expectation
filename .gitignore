@@ -56,3 +56,8 @@ data/cache/
 
 # External repos cloned for benchmarking/analysis (not part of this project)
 research/external/
+
+# Generated dated reports (cron artifacts; regenerable). Hand-authored
+# reports/external-analysis/* stays tracked.
+reports/weekly-calibration-*.md
+reports/paper-trading-review-*.md
