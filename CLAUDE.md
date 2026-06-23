@@ -148,6 +148,7 @@ crontab scheduler/crontab.example
 - `FINNHUB_API_KEY` — US news headlines (optional, free 60 req/min) — used by `stock-cli news --market US`
 - `ALPHA_VANTAGE_API_KEY` — US news sentiment scores (optional, free 25/day) — merged into Finnhub items by URL match
 - `OPEN_DART_API_KEY` — KR regulatory disclosures (optional, free) — used by `stock-cli disclosure`. First call downloads the corp_code mapping to `data/dart_corp_codes.csv`.
+- `NAVER_CLIENT_ID` + `NAVER_CLIENT_SECRET` — 네이버 검색 API (뉴스) for KR per-ticker news (optional, free ~25,000 calls/day). Issued at Naver Developers (developers.naver.com). When set, `stock-cli news --market KR` queries the official Search API by the ticker's Korean name; otherwise it falls back to the legacy finance.naver.com HTML scrape. No sentiment (computed downstream).
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — for Telegram delivery
 - `TOSS_CLIENT_ID` + `TOSS_CLIENT_SECRET` — 토스증권 공식 Open API (OAuth2) for `portfolio sync`. Issued in the Toss Securities app (더보기 → Open API). When set, `portfolio sync` uses the official API; otherwise it falls back to the legacy `tossctl` CLI. Optional `TOSS_OPENAPI_BASE_URL` overrides the default base URL.
 - `ANTHROPIC_API_KEY` — only needed with `--mode api`

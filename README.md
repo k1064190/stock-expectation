@@ -258,6 +258,8 @@ FINNHUB_API_KEY="your_key"             # US 뉴스 primary, 무료 60 req/min
 ALPHA_VANTAGE_API_KEY="your_key"       # US 뉴스 sentiment merge, 무료 25 req/day
                                        # ※ 오타 주의: ALPHA_VATAGE_API_KEY(X)
 OPEN_DART_API_KEY="your_key"           # KR 공시 (감자/유상증자/관리종목 등), 무료
+NAVER_CLIENT_ID="your_id"              # KR 뉴스 (네이버 검색 API), 무료 ~25,000 req/day
+NAVER_CLIENT_SECRET="your_secret"      # 미설정 시 finance.naver.com 스크레이프로 폴백
 
 # 자동화/알림
 TELEGRAM_BOT_TOKEN="your_bot_token"    # Telegram 알림 (선택)

@@ -8,6 +8,8 @@ require network access.
 import io
 import sys
 import zipfile
+from datetime import datetime, timedelta
+from email.utils import format_datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -397,7 +399,10 @@ NAVER_HTML_FIXTURE = """
 """
 
 
-def test_kr_naver_scrape_parses_table():
+def test_kr_naver_scrape_parses_table(monkeypatch):
+    # No Naver Search API keys → falls back to the HTML scrape under test here.
+    monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
     provider = KoreanMarketProvider()
 
     mock_resp = MagicMock(spec=httpx.Response)
@@ -415,7 +420,9 @@ def test_kr_naver_scrape_parses_table():
     assert items[0].date == "2026-05-10"
 
 
-def test_kr_naver_filters_by_since_days():
+def test_kr_naver_filters_by_since_days(monkeypatch):
+    monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
     provider = KoreanMarketProvider()
 
     mock_resp = MagicMock(spec=httpx.Response)
@@ -430,11 +437,181 @@ def test_kr_naver_filters_by_since_days():
     assert "아주 오래된 기사" not in headlines
 
 
-def test_kr_naver_failure_returns_empty():
+def test_kr_naver_failure_returns_empty(monkeypatch):
+    monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
     provider = KoreanMarketProvider()
     with patch("providers.kr.httpx.get", side_effect=httpx.HTTPError("network")):
         items = provider.get_news("005930", limit=5)
     assert items == []
+
+
+# ---------------------------------------------------------------------------
+# KR news — official Naver Search API (preferred when keys are set)
+# ---------------------------------------------------------------------------
+
+
+def _naver_search_payload(items):
+    return {"lastBuildDate": "x", "total": len(items), "items": items}
+
+
+def _rfc822(days_ago):
+    """An RFC-822 pubDate string `days_ago` days before now (for since_days tests)."""
+    return format_datetime(datetime.now().astimezone() - timedelta(days=days_ago))
+
+
+def test_kr_news_uses_naver_search_api_when_keys_set(monkeypatch):
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: "삼성전자")
+
+    payload = _naver_search_payload(
+        [
+            {
+                "title": "<b>삼성전자</b>, 3분기 &quot;깜짝 실적&quot;",
+                "originallink": "https://www.hankyung.com/article/1",
+                "link": "https://n.news.naver.com/article/1",
+                "description": "<b>삼성전자</b>가 호실적을 발표했다",
+                "pubDate": _rfc822(1),
+            }
+        ]
+    )
+    captured = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured.update(url=url, params=params, headers=headers)
+        return _mock_response(payload)
+
+    with patch("providers.kr.httpx.get", side_effect=fake_get):
+        items = provider.get_news("005930", limit=5, since_days=7)
+
+    assert captured["url"].startswith("https://openapi.naver.com/v1/search/news")
+    assert captured["headers"]["X-Naver-Client-Id"] == "cid"
+    assert captured["headers"]["X-Naver-Client-Secret"] == "secret"
+    assert len(items) == 1
+    # <b> tags stripped, &quot; unescaped.
+    assert items[0].headline == '삼성전자, 3분기 "깜짝 실적"'
+    assert (
+        items[0].url == "https://www.hankyung.com/article/1"
+    )  # originallink preferred
+    assert items[0].source == "hankyung.com"
+    assert items[0].sentiment_score is None
+
+
+def test_kr_news_filters_irrelevant_and_old(monkeypatch):
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: "삼성전자")
+
+    payload = _naver_search_payload(
+        [
+            {
+                "title": "삼성전자 신제품 공개",
+                "originallink": "https://a.com/1",
+                "link": "l1",
+                "description": "삼성전자 신제품",
+                "pubDate": _rfc822(1),
+            },
+            {  # irrelevant: company name in neither title nor description
+                "title": "무관한 정치 뉴스",
+                "originallink": "https://b.com/2",
+                "link": "l2",
+                "description": "관계없는 내용",
+                "pubDate": _rfc822(1),
+            },
+            {  # too old for since_days=7
+                "title": "삼성전자 작년 기사",
+                "originallink": "https://c.com/3",
+                "link": "l3",
+                "description": "삼성전자 옛날 뉴스",
+                "pubDate": _rfc822(400),
+            },
+        ]
+    )
+    with patch("providers.kr.httpx.get", return_value=_mock_response(payload)):
+        items = provider.get_news("005930", limit=10, since_days=7)
+    assert [i.headline for i in items] == ["삼성전자 신제품 공개"]
+
+
+def test_kr_news_falls_back_to_scrape_without_keys(monkeypatch):
+    monkeypatch.delenv("NAVER_CLIENT_ID", raising=False)
+    monkeypatch.delenv("NAVER_CLIENT_SECRET", raising=False)
+    provider = KoreanMarketProvider()
+    sentinel = [
+        NewsItem(headline="scraped", source="naver", date="2026-06-22", url="u")
+    ]
+    with patch.object(
+        KoreanMarketProvider, "_scrape_naver_news", return_value=sentinel
+    ) as scrape:
+        items = provider.get_news("005930", limit=5, since_days=7)
+    scrape.assert_called_once()
+    assert items == sentinel
+
+
+def test_kr_news_falls_back_to_scrape_on_api_error(monkeypatch):
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: "삼성전자")
+    sentinel = [
+        NewsItem(headline="scraped", source="naver", date="2026-06-22", url="u")
+    ]
+    with (
+        patch("providers.kr.httpx.get", side_effect=httpx.HTTPError("boom")),
+        patch.object(KoreanMarketProvider, "_scrape_naver_news", return_value=sentinel),
+    ):
+        items = provider.get_news("005930", limit=5, since_days=7)
+    assert items == sentinel
+
+
+def test_kr_news_falls_back_to_scrape_when_no_company_name(monkeypatch):
+    """Keys set but the ticker resolves to no Korean name → fall back to scrape."""
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: None)
+    sentinel = [
+        NewsItem(headline="scraped", source="naver", date="2026-06-22", url="u")
+    ]
+    with patch.object(
+        KoreanMarketProvider, "_scrape_naver_news", return_value=sentinel
+    ) as scrape:
+        items = provider.get_news("005930", limit=5, since_days=7)
+    scrape.assert_called_once()
+    assert items == sentinel
+
+
+def test_kr_news_falls_back_to_scrape_when_api_all_filtered(monkeypatch):
+    """API succeeds but every item is filtered out (irrelevant/old) → scrape."""
+    monkeypatch.setenv("NAVER_CLIENT_ID", "cid")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "secret")
+    provider = KoreanMarketProvider()
+    monkeypatch.setattr(provider, "_company_name", lambda t: "삼성전자")
+    all_filtered = _naver_search_payload(
+        [
+            {  # irrelevant: company name in neither title nor description
+                "title": "무관한 뉴스",
+                "originallink": "https://a.com/1",
+                "link": "l1",
+                "description": "관계없음",
+                "pubDate": _rfc822(1),
+            }
+        ]
+    )
+    sentinel = [
+        NewsItem(headline="scraped", source="naver", date="2026-06-22", url="u")
+    ]
+    with (
+        patch("providers.kr.httpx.get", return_value=_mock_response(all_filtered)),
+        patch.object(
+            KoreanMarketProvider, "_scrape_naver_news", return_value=sentinel
+        ) as scrape,
+    ):
+        items = provider.get_news("005930", limit=5, since_days=7)
+    scrape.assert_called_once()
+    assert items == sentinel
 
 
 # ---------------------------------------------------------------------------

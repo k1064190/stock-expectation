@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 20 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #222;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #ddd;
+        --card-bg: #fdfdfc;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      header h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #111;
+      }
+      header p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline ── */
+      nav[aria-label="Stage timeline"] {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .tl-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .tl-connector {
+        width: 2rem;
+        height: 2px;
+        background: var(--muted);
+        flex-shrink: 0;
+        align-self: center;
+        margin-bottom: 1.25rem; /* align with node center */
+      }
+
+      .tl-node {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 2px solid var(--muted);
+        background: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .tl-node.active {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .tl-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        margin-top: 0.35rem;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .tl-label.active {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .stage-heading {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+      .stage-summary {
+        color: #555;
+        margin-bottom: 1.75rem;
+        font-size: 0.95rem;
+      }
+
+      /* ── Card ── */
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.5rem;
+      }
+      article h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .card-section {
+        margin-bottom: 1.2rem;
+      }
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      .card-section p {
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+      .card-section li {
+        font-size: 0.9rem;
+        color: #333;
+        margin-bottom: 0.2rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #eef2f5;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        color: #1a3a4a;
+      }
+
+      .retro {
+        font-style: italic;
+        color: #444;
+        font-size: 0.9rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+        main {
+          padding: 1rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">EN | <a href="index.ko.html">한국어</a></nav>
+    </header>
+
+    <nav aria-label="Stage timeline">
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 0</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 1</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 2</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 3</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 4</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 4.1</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 5</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 6</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 7</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 8</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 9</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 11</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 12</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 13</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 14</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 15</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 16</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 17</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">Stage 19</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node active"></div>
+          <div class="tl-label active">Stage 20</div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <h2 class="stage-heading">Stage 20</h2>
+      <p class="stage-summary">
+        Replace fragile HTML scraping of Korean stock news with the official
+        Naver Search API, preserving the existing NewsItem interface and the
+        scrape as a fallback.
+      </p>
+
+      <article>
+        <h3>Kr News Naver Api</h3>
+
+        <div class="card-section">
+          <div class="section-label">Why</div>
+          <p>
+            KR per-ticker news was fetched by scraping finance.naver.com HTML
+            (<code>KoreanMarketProvider.get_news</code>), which degraded
+            silently to an empty list on any layout change or block — the
+            recurring "latest news" failure for Korean stocks. A deep-research
+            pass (verified, 22/25 claims) recommended the official Naver Search
+            API for News as the best free, stable replacement; it also removes
+            the DB-rights/UCPA legal risk of crawling Naver.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">What</div>
+          <ul>
+            <li>
+              <code>get_news</code> now prefers the Naver Search API
+              (<code>https://openapi.naver.com/v1/search/news.json</code>) when
+              <code>NAVER_CLIENT_ID</code> +
+              <code>NAVER_CLIENT_SECRET</code> are set: it resolves the ticker's
+              Korean name (pykrx <code>get_market_ticker_name</code>) and
+              queries by keyword, mapping results to the unchanged
+              <code>NewsItem</code> shape (headline, source=publisher domain,
+              ISO date, url).
+            </li>
+            <li>
+              Robust fallback: missing keys, no resolvable name, or any API
+              error causes the legacy HTML scrape to run (no regression). The
+              scrape is now the safety net, not the path.
+            </li>
+            <li>
+              Helpers: <code>_company_name</code>,
+              <code>_fetch_naver_search_news</code>,
+              <code>_clean_html</code> (strip <code>&lt;b&gt;</code> +
+              html.unescape), <code>_domain</code>,
+              <code>_parse_rfc822</code> (tz-aware).
+            </li>
+            <li>
+              <code>sentiment_score=None</code> (Naver supplies none; computed
+              downstream by /expect).
+            </li>
+            <li>
+              Docs: <code>NAVER_CLIENT_ID</code>/<code
+                >NAVER_CLIENT_SECRET</code
+              >
+              added to CLAUDE.md API Keys and README .env.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">How</div>
+          <p>
+            Keyword search is noisy, so the fetch over-fetches (<code
+              >display=min(100, max(limit*3,30))</code
+            >, <code>sort=date</code>) then keeps only recent items whose
+            company name appears in the title or summary, parsing RFC-822
+            <code>pubDate</code> to a tz-aware datetime for a
+            host-timezone-independent <code>since_days</code> cutoff. Built TDD
+            (8 KR-news tests: API parse/relevance/since_days + 3 fallback paths
+            + cleaning).
+          </p>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">Code Locations</div>
+          <ul>
+            <li>
+              <code>mcp-market-data/providers/kr.py</code> —
+              <code>get_news</code> rewrite + <code>_company_name</code>,
+              <code>_fetch_naver_search_news</code>, <code>_clean_html</code>,
+              <code>_domain</code>, <code>_parse_rfc822</code>;
+              <code>NAVER_SEARCH_NEWS_URL</code> constant.
+            </li>
+            <li>
+              <code>mcp-market-data/tests/test_news.py</code> — Naver Search API
+              tests + fallback tests.
+            </li>
+            <li>
+              <code>CLAUDE.md</code> (API Keys), <code>README.md</code> (.env).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">Review Loop</div>
+          <ul>
+            <li>
+              <strong>code-reviewer-pro:</strong> 0 critical; flagged a missing
+              test for the <code>_company_name</code> → None fallback (added) +
+              a docstring clarity nit on unparseable dates (added). Confirmed
+              fallback routing, credential safety (secret never logged), and no
+              ReDoS in <code>_clean_html</code>.
+            </li>
+            <li>
+              <strong>Codex (gpt-5.5, high):</strong> [MAJOR] —
+              <code>since_days</code> compared a tz-stripped pubDate against
+              local <code>datetime.now()</code>, skewing the window on non-KST
+              hosts. Fixed: <code>_parse_rfc822</code> keeps the datetime
+              tz-aware and the cutoff uses UTC.
+            </li>
+            <li>
+              <strong>Gemini:</strong> unavailable (free-tier CLI deprecated).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">Retrospective</div>
+          <p class="retro">
+            The research-to-integrate handoff worked: the verified
+            recommendation mapped cleanly onto the existing
+            <code>NewsItem</code> interface, so the change was contained to one
+            provider with the scrape preserved as a fallback. Keyword search
+            means relevance filtering and a ticker-to-name lookup are now part
+            of the path; if precision proves weak (e.g. 삼성 vs 삼성전자
+            disambiguation), tighten the relevance check or add DeepSearch
+            (paid, per-symbol) later.
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
