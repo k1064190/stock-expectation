@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>20단계 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          "Apple SD Gothic Neo",
+          "Malgun Gothic",
+          "Noto Sans KR",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f7f7f5;
+        color: #222;
+        line-height: 1.65;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #ddd;
+        --card-bg: #fdfdfc;
+      }
+
+      /* ── Header ── */
+      header {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      header h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #111;
+      }
+      header p {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.875rem;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      /* ── Timeline ── */
+      nav[aria-label="단계 타임라인"] {
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        overflow-x: auto;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        min-width: max-content;
+      }
+
+      .tl-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+      }
+
+      .tl-connector {
+        width: 2rem;
+        height: 2px;
+        background: var(--muted);
+        flex-shrink: 0;
+        align-self: center;
+        margin-bottom: 1.25rem;
+      }
+
+      .tl-node {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 2px solid var(--muted);
+        background: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .tl-node.active {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .tl-label {
+        font-size: 0.65rem;
+        color: var(--muted);
+        margin-top: 0.35rem;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .tl-label.active {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .stage-heading {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+      .stage-summary {
+        color: #555;
+        margin-bottom: 1.75rem;
+        font-size: 0.95rem;
+      }
+
+      /* ── Card ── */
+      article {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.5rem;
+      }
+      article h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #111;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .card-section {
+        margin-bottom: 1.2rem;
+      }
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.4rem;
+      }
+
+      .card-section p {
+        font-size: 0.9rem;
+        color: #333;
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+      }
+      .card-section li {
+        font-size: 0.9rem;
+        color: #333;
+        margin-bottom: 0.2rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        background: #eef2f5;
+        padding: 0.1em 0.35em;
+        border-radius: 3px;
+        color: #1a3a4a;
+      }
+
+      .retro {
+        font-style: italic;
+        color: #444;
+        font-size: 0.9rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
+        }
+        main {
+          padding: 1rem;
+        }
+        article {
+          padding: 1rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Stock Expectation</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어"><a href="index.html">EN</a> | 한국어</nav>
+    </header>
+
+    <nav aria-label="단계 타임라인">
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">0단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">1단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">2단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">3단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">4단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">4.1단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">5단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">6단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">7단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">8단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">9단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">11단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">12단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">13단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">14단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">15단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">16단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">17단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node"></div>
+          <div class="tl-label">19단계</div>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-item">
+          <div class="tl-node active"></div>
+          <div class="tl-label active">20단계</div>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <h2 class="stage-heading">20단계</h2>
+      <p class="stage-summary">
+        한국 주식 뉴스 수집 방식을 불안정한 HTML 스크래핑에서 공식 Naver Search
+        API로 교체하고, 기존 NewsItem 인터페이스와 스크래핑 폴백을 그대로
+        유지합니다.
+      </p>
+
+      <article>
+        <h3>Kr News Naver Api</h3>
+
+        <div class="card-section">
+          <div class="section-label">왜</div>
+          <p>
+            한국 종목별 뉴스는 finance.naver.com HTML을 스크래핑하는 방식
+            (<code>KoreanMarketProvider.get_news</code>)으로 수집되었는데,
+            레이아웃 변경이나 차단이 발생할 때마다 빈 목록을 반환하며 조용히
+            실패하는 문제가 반복되었습니다. 심층 리서치(22/25개 주장 검증)를
+            통해 공식 Naver Search API for News가 무료이면서 안정적인 최선의
+            대안으로 권고되었으며, Naver 크롤링에 따른 데이터베이스 권리/UCPA
+            법적 위험도 함께 제거됩니다.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">무엇을</div>
+          <ul>
+            <li>
+              <code>get_news</code>는 이제 <code>NAVER_CLIENT_ID</code> +
+              <code>NAVER_CLIENT_SECRET</code>가 설정된 경우 Naver Search API
+              (<code>https://openapi.naver.com/v1/search/news.json</code>)를
+              우선 사용합니다. pykrx <code>get_market_ticker_name</code>으로
+              종목의 한글 회사명을 조회한 뒤 키워드 검색하며, 결과를 기존의
+              변경되지 않은 <code>NewsItem</code> 형태 (headline, source=발행사
+              도메인, ISO 날짜, url)로 매핑합니다.
+            </li>
+            <li>
+              강건한 폴백: 키가 없거나, 회사명을 확인할 수 없거나, API 오류가
+              발생하면 기존 HTML 스크래핑으로 전환합니다(회귀 없음). 스크래핑은
+              이제 주경로가 아닌 안전망입니다.
+            </li>
+            <li>
+              헬퍼 함수: <code>_company_name</code>,
+              <code>_fetch_naver_search_news</code>,
+              <code>_clean_html</code> (<code>&lt;b&gt;</code> 태그 제거 +
+              html.unescape), <code>_domain</code>,
+              <code>_parse_rfc822</code> (타임존 인식).
+            </li>
+            <li>
+              <code>sentiment_score=None</code> (Naver는 감성 점수를 제공하지
+              않으며, 하위 /expect에서 계산됩니다).
+            </li>
+            <li>
+              문서:
+              <code>NAVER_CLIENT_ID</code>/<code>NAVER_CLIENT_SECRET</code>를
+              CLAUDE.md API Keys 및 README .env에 추가했습니다.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">어떻게</div>
+          <p>
+            키워드 검색은 노이즈가 많아 과잉 수집 방식을 사용합니다 (<code
+              >display=min(100, max(limit*3,30))</code
+            >, <code>sort=date</code>). 이후 제목 또는 요약에 회사명이 포함된
+            최근 항목만 남기며, RFC-822 <code>pubDate</code>를 타임존 인식
+            datetime으로 파싱해 호스트 타임존에 무관한
+            <code>since_days</code> 기준을 적용합니다. TDD 방식으로 작성(총 8개
+            KR 뉴스 테스트: API 파싱/관련성/since_days + 폴백 경로 3가지 + 정제
+            처리).
+          </p>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">코드 위치</div>
+          <ul>
+            <li>
+              <code>mcp-market-data/providers/kr.py</code> —
+              <code>get_news</code> 재작성 + <code>_company_name</code>,
+              <code>_fetch_naver_search_news</code>, <code>_clean_html</code>,
+              <code>_domain</code>, <code>_parse_rfc822</code>;
+              <code>NAVER_SEARCH_NEWS_URL</code> 상수.
+            </li>
+            <li>
+              <code>mcp-market-data/tests/test_news.py</code> — Naver Search API
+              테스트 + 폴백 테스트.
+            </li>
+            <li>
+              <code>CLAUDE.md</code> (API Keys), <code>README.md</code> (.env).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">리뷰 루프</div>
+          <ul>
+            <li>
+              <strong>code-reviewer-pro:</strong> 치명적 결함 0건.
+              <code>_company_name</code> → None 폴백에 대한 테스트 누락
+              지적(추가 완료) + 파싱 불가 날짜에 관한 docstring 명확성 지적(추가
+              완료). 폴백 라우팅, 자격증명 안전성(시크릿 미기록),
+              <code>_clean_html</code>
+              ReDoS 부재를 확인했습니다.
+            </li>
+            <li>
+              <strong>Codex (gpt-5.5, high):</strong> [MAJOR] —
+              <code>since_days</code>가 타임존이 제거된 pubDate를 로컬
+              <code>datetime.now()</code>와 비교해 KST 이외 호스트에서 기간이
+              틀어지는 문제. 수정: <code>_parse_rfc822</code>가 datetime의
+              타임존을 유지하고, 기준 시각은 UTC를 사용합니다.
+            </li>
+            <li><strong>Gemini:</strong> 사용 불가 (무료 티어 CLI 종료됨).</li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">회고</div>
+          <p class="retro">
+            리서치-통합 인계 방식이 효과적으로 작동했습니다. 검증된 권고안이
+            기존
+            <code>NewsItem</code> 인터페이스에 깔끔하게 맞아 떨어져 변경 범위가
+            단일 프로바이더로 한정되었고, 스크래핑은 폴백으로 보존되었습니다.
+            키워드 검색을 사용하므로 관련성 필터링과 종목→회사명 조회가 처리
+            경로에 포함됩니다. 정밀도가 낮아지는 경우(예: 삼성 vs 삼성전자
+            모호성)에는 관련성 검사를 강화하거나 DeepSearch(유료, 종목별)를
+            도입하는 방향을 고려할 수 있습니다.
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

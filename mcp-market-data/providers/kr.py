@@ -5,6 +5,7 @@ News: Naver Finance scrape. Disclosures: Open DART API.
 """
 
 import csv
+import html
 import io
 import logging
 import os
@@ -12,9 +13,11 @@ import re
 import xml.etree.ElementTree as ET
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -30,6 +33,10 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 NAVER_NEWS_URL = "https://finance.naver.com/item/news_news.naver"
+# Official Naver Search API (news) — authenticated REST/JSON, ~25k calls/day.
+# Preferred over the finance.naver.com HTML scrape: stable, and avoids the
+# DB-rights/UCPA exposure of crawling Naver. Keyword-queried by company name.
+NAVER_SEARCH_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
 DART_BASE_URL = "https://opendart.fss.or.kr/api"
 DART_REPORT_URL_TEMPLATE = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo={}"
 
@@ -224,29 +231,150 @@ class KoreanMarketProvider(MarketDataProvider):
     def get_news(
         self, ticker: str, limit: int = 10, since_days: int = 7
     ) -> list[NewsItem]:
-        """Scrape recent news headlines from Naver Finance.
+        """Recent news headlines for a Korean ticker.
 
-        Naver does not expose a JSON API, so we parse the per-stock news
-        page (HTML). The layout is stable enough that a small set of CSS
-        selectors covers it; failures degrade silently to an empty list.
+        Prefers the official Naver Search API (authenticated REST/JSON) when
+        ``NAVER_CLIENT_ID`` + ``NAVER_CLIENT_SECRET`` are set — queried by the
+        ticker's Korean company name. Falls back to the legacy finance.naver.com
+        HTML scrape when keys are absent, no company name resolves, or the API
+        errors, so behavior never regresses.
 
         Args:
             ticker: 6-digit KRX ticker code.
             limit: Max items to return.
-            since_days: Filter to items within last N days (best-effort —
-                Naver date strings are sometimes "MM.DD HH:MM" without year,
-                so the cutoff is approximate).
+            since_days: Filter to items published within the last N days.
 
         Returns:
-            List of NewsItem, newest first. No sentiment field (Naver
-            doesn't supply scores).
+            List of NewsItem, newest first. No sentiment field (computed
+            downstream); Naver does not supply scores.
         """
         ticker = self._normalize_ticker(ticker)
+        client_id = os.environ.get("NAVER_CLIENT_ID", "")
+        client_secret = os.environ.get("NAVER_CLIENT_SECRET", "")
+        if client_id and client_secret:
+            name = self._company_name(ticker)
+            if name:
+                try:
+                    return self._fetch_naver_search_news(
+                        name, client_id, client_secret, limit, since_days
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Naver Search API news failed for %s (%s): %s; "
+                        "falling back to scrape",
+                        ticker,
+                        name,
+                        e,
+                    )
+            else:
+                logger.warning(
+                    "No KRX name for %s; falling back to Naver Finance scrape",
+                    ticker,
+                )
+
         try:
             return self._scrape_naver_news(ticker, limit, since_days)
         except Exception as e:
             logger.warning("Naver news scrape failed for %s: %s", ticker, e)
             return []
+
+    def _company_name(self, ticker: str) -> Optional[str]:
+        """KRX-listed Korean name for a ticker (the keyword for the news query)."""
+        try:
+            from pykrx import stock as krx_stock
+
+            name = krx_stock.get_market_ticker_name(ticker)
+            return name or None
+        except Exception as e:
+            logger.warning("KRX name lookup failed for %s: %s", ticker, e)
+            return None
+
+    def _fetch_naver_search_news(
+        self,
+        company_name: str,
+        client_id: str,
+        client_secret: str,
+        limit: int,
+        since_days: int,
+    ) -> list[NewsItem]:
+        """Query the Naver Search API and map results to NewsItem.
+
+        Over-fetches (the API filters nothing for us) and then keeps only
+        recent items whose company name actually appears in the title or
+        summary, since keyword search returns general matches rather than a
+        curated per-stock feed.
+        """
+        display = min(100, max(limit * 3, 30))
+        resp = httpx.get(
+            NAVER_SEARCH_NEWS_URL,
+            params={"query": company_name, "display": display, "sort": "date"},
+            headers={
+                "X-Naver-Client-Id": client_id,
+                "X-Naver-Client-Secret": client_secret,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # tz-aware cutoff so the window is correct regardless of host timezone
+        # (pubDate carries +0900; comparing aware-to-aware avoids an offset skew).
+        cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+        items: list[NewsItem] = []
+        for entry in data.get("items", []):
+            headline = self._clean_html(entry.get("title", ""))
+            summary = self._clean_html(entry.get("description", ""))
+            if not headline:
+                continue
+            # Relevance: keyword search is noisy, so require the company name.
+            if company_name not in headline and company_name not in summary:
+                continue
+            iso_date, dt_obj = self._parse_rfc822(entry.get("pubDate", ""))
+            if dt_obj and dt_obj < cutoff:
+                continue
+            url = entry.get("originallink") or entry.get("link") or ""
+            items.append(
+                NewsItem(
+                    headline=headline,
+                    source=self._domain(url) or "Naver",
+                    date=iso_date,
+                    url=url,
+                )
+            )
+            if len(items) >= limit:
+                break
+        return items
+
+    @staticmethod
+    def _clean_html(raw: str) -> str:
+        """Strip Naver's <b> highlight tags and unescape HTML entities."""
+        return html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+
+    @staticmethod
+    def _domain(url: str) -> str:
+        """Publisher domain (sans www.) used as the source label."""
+        try:
+            host = urlparse(url).netloc
+            return host[4:] if host.startswith("www.") else host
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _parse_rfc822(raw: str) -> tuple[str, Optional[datetime]]:
+        """Parse a Naver pubDate (RFC 822) into (ISO date, tz-aware datetime).
+
+        The ISO date is the article's local (+0900) calendar date; the datetime
+        is kept tz-aware so the since_days cutoff is host-timezone-independent.
+        Returns ("", None) for an unparseable date; such items have no datetime,
+        so they pass the since_days filter (kept rather than silently dropped).
+        """
+        try:
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo is None:  # RFC-822 string lacked an offset
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.date().isoformat(), dt
+        except Exception:
+            return "", None
 
     def get_disclosures(
         self, ticker: str, since_days: int = 7, limit: int = 30
