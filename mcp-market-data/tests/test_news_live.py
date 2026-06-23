@@ -251,18 +251,25 @@ def test_naver_scrape_returns_real_kr_news_for_samsung():
     reason="NAVER_CLIENT_ID and NAVER_CLIENT_SECRET required",
 )
 def test_naver_search_api_returns_real_kr_news_for_samsung():
-    """Live Naver Search API path for 005930 via get_news (keys present).
+    """Live Naver Search API path for 005930.
 
-    Pins the contract /expect depends on: limited count, recent dates, non-empty
-    headline + http url, no sentiment. (May legitimately fall back to the scrape
-    if the API yields nothing relevant; the assertions hold either way.)
+    Calls ``_fetch_naver_search_news`` directly (not ``get_news``) so a
+    regression in the authenticated Search API path is actually caught, rather
+    than masked by ``get_news``'s scrape fallback. Samsung always has news in a
+    7-day window, so zero items is a real regression — **failing**, not skipping.
     """
     from datetime import datetime, timedelta
 
     provider = KoreanMarketProvider()
-    items = provider.get_news("005930", limit=5, since_days=7)
-    if not items:
-        pytest.skip("Naver Search API returned no items for 005930")
+    name = provider._company_name("005930") or "삼성전자"
+    items = provider._fetch_naver_search_news(
+        name,
+        os.environ["NAVER_CLIENT_ID"],
+        os.environ["NAVER_CLIENT_SECRET"],
+        limit=5,
+        since_days=7,
+    )
+    assert items, f"Naver Search API returned 0 items for {name} over 7 days"
     assert len(items) <= 5, f"limit=5 not honoured: got {len(items)} items"
     cutoff = (datetime.now() - timedelta(days=8)).strftime("%Y-%m-%d")
     for item in items:
