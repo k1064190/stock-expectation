@@ -304,6 +304,9 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 ./bin/stock-cli news NVDA --market US --limit 5 --since-days 7
 ./bin/stock-cli news 005930 --market KR --limit 5 --since-days 7
 
+# 글로벌 매크로/지정학 뉴스 (키 불필요: 와이어 RSS + GDELT 폴백)
+./bin/stock-cli macro-news --limit 10
+
 # KR 공시 (Stage 2, Open DART)
 ./bin/stock-cli disclosure 005930 --since-days 14
 

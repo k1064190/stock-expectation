@@ -48,6 +48,9 @@ data/memory/
 # Stage 7-B Neo4j data + plugins
 data/neo4j/
 
+# Macro-news (GDELT) response cache — runtime artifact, regenerable
+data/cache/
+
 # Local env (NEO4J_PASSWORD etc.)
 .env
 

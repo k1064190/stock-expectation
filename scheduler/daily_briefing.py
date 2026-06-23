@@ -72,6 +72,7 @@ from blended_funnel import (
 )
 from candidate_discovery import _load_sector_verdicts
 from events import evaluate_gate
+from macro_news import format_macro_for_prompt, get_macro_news
 from theme_clusterer import (
     backfill_news_counts,
     cluster_news,
@@ -480,6 +481,20 @@ def get_portfolio_context(market: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _macro_block() -> str:
+    """Global macro / geopolitical headlines block for the briefing prompt.
+
+    Market-agnostic (fetched once per call); degrades to an empty string on any
+    error so a macro-news outage never blocks the briefing.
+    """
+    try:
+        items, _ = get_macro_news(limit=15)
+        return format_macro_for_prompt(items)
+    except Exception as e:
+        logger.warning("macro-news block unavailable: %s", e)
+        return ""
+
+
 def build_claude_code_prompt(market: str) -> str:
     """Build the briefing prompt for the LLM CLI subprocess.
 
@@ -515,6 +530,7 @@ def build_claude_code_prompt(market: str) -> str:
         candidate_block = format_blended_for_prompt(picks, anchors, "US")
         themes_block = format_themes_for_prompt(us_themes)
         event_gate_block = _event_gate_block("US", [c.ticker for c in picks])
+        macro_block = _macro_block()
         ticker_csv = ",".join(c.ticker for c in us_candidates) or "SPY,QQQ,DIA"
         return f"""Generate a US market daily briefing for {today}.
 
@@ -532,6 +548,8 @@ ONLY from this list — do not add new tickers on your own judgment.
 {themes_block}
 
 {event_gate_block}
+
+{macro_block}
 
 Specifically:
 1. Fetch each candidate's price/volume:
@@ -593,6 +611,7 @@ every section to the Predictions Logged table."""
         candidate_block = format_blended_for_prompt(picks, anchors, "KR")
         themes_block = format_themes_for_prompt(kr_themes)
         event_gate_block = _event_gate_block("KR", [c.ticker for c in picks])
+        macro_block = _macro_block()
         ticker_csv = ",".join(c.ticker for c in kr_candidates) or "005930,000660"
         return f"""Generate a Korean market daily briefing for {today}.
 
@@ -609,6 +628,8 @@ Follow the `daily-briefing` and `korean-market-analysis` skills in
 {event_gate_block}
 
 {themes_block}
+
+{macro_block}
 
 Specifically:
 1. Fetch each candidate's price/volume:

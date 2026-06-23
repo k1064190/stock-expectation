@@ -199,3 +199,27 @@ def test_event_gate_block_no_risk_note():
     gate = EventGate(asof="2026-06-18", market="US", by_ticker={"NVDA": {"cap_label": None, "confidence_trim": 0.0, "next_earnings_date": None, "trading_days_until": None}})
     out = _format_event_gate_for_prompt(gate)
     assert "no imminent earnings/macro risk" in out
+
+
+# ---------------------------------------------------------------------------
+# Macro-news block (GDELT/RSS) wiring into the briefing prompt
+# ---------------------------------------------------------------------------
+
+
+def test_macro_block_renders_via_get_macro_news(monkeypatch):
+    """_macro_block fetches macro news and formats it for the prompt."""
+    monkeypatch.setattr(daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss"))
+    monkeypatch.setattr(
+        daily_briefing, "format_macro_for_prompt", lambda items: "MACRO_BLOCK_OK"
+    )
+    assert daily_briefing._macro_block() == "MACRO_BLOCK_OK"
+
+
+def test_macro_block_empty_on_error(monkeypatch):
+    """A macro-news outage degrades to an empty string, never blocking the briefing."""
+
+    def boom(limit=15):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(daily_briefing, "get_macro_news", boom)
+    assert daily_briefing._macro_block() == ""

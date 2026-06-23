@@ -102,6 +102,7 @@ from events import (
     _fetch_macro_window,
 )
 from news_features import summarize_news
+from macro_news import DEFAULT_MACRO_QUERY, get_macro_news
 from llm_context import validate_llm_context, score_from_debate
 
 from portfolio.db import (
@@ -748,6 +749,36 @@ def cmd_news(args) -> int:
                 "since_days": args.since_days,
                 "count": len(items),
                 "signal": asdict(signal),
+                "items": [asdict(n) for n in items],
+            }
+        )
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_macro_news(args) -> int:
+    """Fetch global macro/geopolitical headlines from GDELT (free, no API key).
+
+    Market-agnostic context (wars, oil/energy, central banks, tariffs) for the
+    macro / LLM_CONTEXT layer — distinct from the per-ticker `news` command.
+
+    Returns:
+        0 on success (even if 0 items), 1 on unexpected error.
+    """
+    try:
+        items, source = get_macro_news(
+            query=args.query, timespan=args.timespan, limit=args.limit
+        )
+        now = datetime.now()
+        _print_json(
+            {
+                "source": source,  # "gdelt" | "rss" (fallback) | "none"
+                "generated_at": now.isoformat(timespec="seconds"),
+                "timespan": args.timespan,
+                "query": args.query,
+                "count": len(items),
                 "items": [asdict(n) for n in items],
             }
         )
@@ -2291,6 +2322,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only items within last N days (default 7)",
     )
     p.set_defaults(func=cmd_news)
+
+    p = sub.add_parser(
+        "macro-news",
+        help="Global macro/geopolitical headlines via GDELT (free, no API key)",
+    )
+    p.add_argument(
+        "--timespan", default="24h", help="Look-back window, e.g. 24h, 1h, 3d"
+    )
+    p.add_argument("--limit", type=_positive_int, default=20)
+    p.add_argument(
+        "--query",
+        default=DEFAULT_MACRO_QUERY,
+        help="Override the GDELT Boolean query (default: curated macro/geopolitical set)",
+    )
+    p.set_defaults(func=cmd_macro_news)
 
     # --- disclosure (KR only) ---
     p = sub.add_parser(
