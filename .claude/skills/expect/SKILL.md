@@ -12,7 +12,7 @@ Per stock:
 - A **transmission chain** of exactly 3 facts: one technical, one news/fundamental, one risk
 - A **composite score** in the range -12 .. +14 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
 - An **LLM context score** (-5 .. +3) with reasoning text capturing macro regime, sector lifecycle, and narrative that the deterministic table can't see
-- Independent **multi-horizon predictions** (1W / 1M / 6M / 1Y) logged to `data/predictions.db`
+- Independent **multi-horizon predictions** (1W / 1M / 6M — the Cycle 1Y call is analysis-only, never logged; see RULE C4) logged to `data/predictions.db`
 - An **outcome-telemetry sidecar** at `state/last-outcome-expect.json` for the weekly calibration loop
 
 The label is the headline. The horizon predictions are the audit trail. The sidecar feeds future skill improvement.
@@ -374,7 +374,7 @@ Independent of the composite label, produce 4 horizon-level direction calls per 
 | Short | 1W | RSI14, MA20 position, `return_1w`, news sentiment | Momentum |
 | Medium | 1M | MA50 position, `return_1m`, P/E, upcoming earnings | Trend |
 | Long | 6M | MA200 position, `return_6m`, sector | Trend confirmation |
-| Cycle | 1Y | `return_1y`, `pct_from_52w_high`, `max_drawdown_1y`, valuation | Mean-reversion |
+| Cycle | 1Y | `return_1y`, `pct_from_52w_high`, `max_drawdown_1y`, valuation | Mean-reversion (analysis-only — never logged; RULE C4) |
 
 Direction = BULL / BEAR / NEUTRAL. Confidence ∈ [0.50, 0.85] using the 4-signal-alignment rule (4 aligned → 0.75-0.85, 3 → 0.60-0.74, 2 → 0.50-0.59, mixed → 0.50 NEUTRAL).
 
@@ -384,7 +384,9 @@ Direction = BULL / BEAR / NEUTRAL. Confidence ∈ [0.50, 0.85] using the 4-signa
 
 **BEAR edge bar (RULE C3 — higher bar for downside calls):** Our measured BEAR hit rate is ~6% vs ~61% for BULL — the system cannot reliably forecast declines. Therefore a BEAR horizon may only be logged when **all** of: (a) ≥3-signal alignment, (b) macro/cycle confirmation present (`LLM_CONTEXT_SCORE ≤ −2.0` **or** `cycle_risk_flag == True`), and (c) reward:risk ≥ 2.0. Otherwise emit NEUTRAL instead of BEAR. Note: under `--source LIVE` the prediction store **hard-rejects BEAR rows** (they error out), so for scheduler/cron runs always resolve a would-be BEAR to NEUTRAL rather than attempting to save it.
 
-Save each horizon ≥ 0.60 confidence (after RULE C2/C3) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Pass your raw confidence and add `--recalibrate`** — the CLI maps it through the isotonic recalibration curve deterministically before storing (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6. Do **not** hand-apply the map yourself; the flag does it consistently (and is a safe no-op until ≥30 closed predictions of that source exist):
+**1Y logging gate (RULE C4 — Cycle horizon is analysis-only):** Our measured LIVE 1Y track record is 0/12 hits with average outcome return −23.8% (vs 6M −7.1%, 1M −3.3%, 1W −0.8%) — the system cannot forecast a year out. Still compute the Cycle (1Y) direction (it feeds RULE C1 and the per-stock narrative), but **never save a 1Y prediction row** — cap the longest logged horizon at 6M. Note: the prediction store **hard-rejects LIVE 1Y rows** (they error out); INTERACTIVE remains a deliberate manual override.
+
+Save each horizon ≥ 0.60 confidence (after RULE C2/C3/C4) as a separate prediction row, all sharing the same `--analysis-group-id` UUID per stock. **Pass your raw confidence and add `--recalibrate`** — the CLI maps it through the isotonic recalibration curve deterministically before storing (e.g. raw 0.62 in an overconfident band → logged ~0.50), so logged confidence reflects observed accuracy rather than a near-constant ~0.6. Do **not** hand-apply the map yourself; the flag does it consistently (and is a safe no-op until ≥30 closed predictions of that source exist):
 
 ```bash
 GROUP_ID=$(uv run python -c "import uuid; print(uuid.uuid4())")
@@ -477,7 +479,7 @@ Each pick object:
 | `llm_context_score` | float in [-5.0, +3.0], 1 decimal | yes — NOT `llm_score` or `context_score` |
 | `llm_context_reasoning` | str, 1-3 sentences citing macro/sector/narrative signals | yes (use "Neutral; no specific context." when score is 0) |
 | `transmission_chain` | object with `tech`, `news`, `risk` | yes for BUY/WATCH/SELL; optional for HOLD/AVOID |
-| `horizons_logged` | list of `"1W"`/`"1M"`/`"6M"`/`"1Y"` | yes (empty list if none ≥ 0.60 conf) |
+| `horizons_logged` | list of `"1W"`/`"1M"`/`"6M"` (`"1Y"` is never logged — RULE C4) | yes (empty list if none ≥ 0.60 conf) |
 | `analysis_group_id` | UUID str or null | yes — null when no horizons were logged |
 
 Before writing the file, mental-check the keys against this table. If you used `algo` instead of `algo_score`, fix it before serialising — downstream parsers don't gracefully degrade.
@@ -539,7 +541,7 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 - Short (1W) — BULL 0.72 → logged
 - Medium (1M) — BULL 0.65 → logged
 - Long (6M) — NEUTRAL 0.55 → not logged
-- Cycle (1Y) — BULL 0.62 → logged
+- Cycle (1Y) — BULL 0.62 → narrative only (RULE C4: LIVE 1Y store-gated)
 
 **Bias check:** none triggered.
 

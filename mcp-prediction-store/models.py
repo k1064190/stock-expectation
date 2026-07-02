@@ -516,16 +516,20 @@ def _check_overextension_gate(pred: Prediction) -> None:
 def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
     """Insert a new prediction into the database.
 
-    Three guards run before insertion:
+    Four guards run before insertion:
 
     1. LIVE BEAR predictions are hard-rejected. The track record shows a ~0%
        hit rate for automated BEAR calls, so the scheduler must not log them.
        Manual (INTERACTIVE) BEAR is still allowed as a deliberate override.
-    2. LIVE BULL predictions on a parabolic blow-off entry (overextension EXTREME
+    2. LIVE 1Y predictions are hard-rejected. The 30-day closed window shows
+       0/12 hits with an average outcome return of -23.8% for automated 1Y
+       calls — the worst horizon by far (6M -7.1%, 1M -3.3%, 1W -0.8%).
+       BACKTEST and INTERACTIVE 1Y are still allowed.
+    3. LIVE BULL predictions on a parabolic blow-off entry (overextension EXTREME
        or trailing 21-day return >20%, read from ``components``) are hard-rejected
        — the cron-surviving enforcement of the briefing's parabolic cap
        (see :func:`_check_overextension_gate`).
-    3. Same-day duplicates are rejected: a second OPEN row matching an existing
+    4. Same-day duplicates are rejected: a second OPEN row matching an existing
        one on (ticker, market, direction, timeframe, source, created date)
        indicates a re-run logging the same call twice. Different timeframes
        (normal multi-horizon rows) and re-predictions after the prior one
@@ -539,13 +543,20 @@ def insert_prediction(conn: sqlite3.Connection, pred: Prediction) -> Prediction:
         The inserted Prediction.
 
     Raises:
-        ValueError: If the prediction is a LIVE BEAR call, an overextended
-            LIVE BULL, or a same-day duplicate of an existing OPEN prediction.
+        ValueError: If the prediction is a LIVE BEAR call, a LIVE 1Y call,
+            an overextended LIVE BULL, or a same-day duplicate of an existing
+            OPEN prediction.
     """
     if pred.source == "LIVE" and pred.direction == "BEAR":
         raise ValueError(
             "LIVE BEAR predictions are gated (measured win rate ~0%); "
             "use direction NEUTRAL or source INTERACTIVE."
+        )
+
+    if pred.source == "LIVE" and pred.timeframe == "1Y":
+        raise ValueError(
+            "LIVE 1Y predictions are gated (measured 0/12 hits, avg outcome "
+            "return -23.8%); use timeframe 6M or source INTERACTIVE."
         )
 
     _check_overextension_gate(pred)

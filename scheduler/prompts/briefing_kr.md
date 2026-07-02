@@ -40,9 +40,11 @@ Based on the market data above, produce:
 
    When LLM_CONTEXT_SCORE is strongly negative (≤ -2.0), be cautious about emitting BULL direction even if technicals look strong — this is exactly the anti-momentum-bias circuit the score is designed to fire.
 
-4. **5-6 Stocks × up to 4 Horizons** in this exact JSON format (one entry
-   per horizon per stock, reporting Short(1W), Medium(1M), Long(6M),
-   Cycle(1Y) where applicable). Emit entries only for horizons with
+4. **5-6 Stocks × up to 3 Horizons** in this exact JSON format (one entry
+   per horizon per stock, reporting Short(1W), Medium(1M), Long(6M)
+   where applicable — the Cycle(1Y) view belongs in the narrative only;
+   NEVER emit a 1Y JSON entry, the store hard-rejects LIVE 1Y: 0/12 hits,
+   avg outcome -23.8%). Emit entries only for horizons with
    confidence ≥ 0.60. Picking fewer than 5 is allowed only when the
    candidate pool genuinely lacks setups that clear confidence 0.60
    on any horizon — explain why in the narrative if so:
@@ -68,27 +70,29 @@ Based on the market data above, produce:
     "market": "KR",
     "direction": "BULL|BEAR|NEUTRAL",
     "confidence": 0.60-0.85,
-    "timeframe": "1Y",
+    "timeframe": "6M",
     "entry_price": CURRENT_PRICE_KRW,
-    "target_price": TARGET_CYCLE_KRW,
-    "stop_price": STOP_CYCLE_KRW,
-    "reasoning": "Cycle thesis: return_1y, 52W high distance, chaebol valuation",
-    "signals_used": ["cycle", "valuation", "mean_reversion", "llm_context"],
+    "target_price": TARGET_LONG_KRW,
+    "stop_price": STOP_LONG_KRW,
+    "reasoning": "Long-horizon thesis: MA200 position, return_6m, sector trend",
+    "signals_used": ["technical", "momentum", "llm_context"],
     "llm_context_score": -2.5,
-    "llm_context_reasoning": "(same macro context applies to cycle horizon)"
+    "llm_context_reasoning": "(same macro context applies)"
   }
 ]
 ```
 
-Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M, Cycle=1Y. Korean stocks
-may still lean on the 1M (Medium) horizon as the primary action horizon given
-liquidity, but ALL FOUR horizons must be reported in the narrative.
+Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M. Cycle=1Y is analysis-only —
+never a JSON entry (LIVE 1Y is store-gated: 0/12 hits, avg -23.8%). Korean
+stocks may still lean on the 1M (Medium) horizon as the primary action horizon
+given liquidity, but ALL FOUR horizons must be reported in the narrative.
 
 4. **Risk Factors**: Won direction, foreign flow, China demand, geopolitical risks.
 
 ## Korean Market Rules
 
 - Report Short/Medium/Long/Cycle horizons for every pick, same as US workflow
+  (Cycle in the narrative only — never as a 1Y JSON entry)
 - Minimum confidence per JSON entry: 0.60
 - Maximum confidence: 0.85
 - Stop-loss should be wider than US stocks by ~20% (higher volatility)

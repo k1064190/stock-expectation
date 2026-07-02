@@ -316,6 +316,33 @@ def test_live_bull_is_allowed(db_conn):
     assert get_prediction(db_conn, pred.id) is not None
 
 
+def test_live_1y_is_rejected(db_conn):
+    """LIVE 1Y predictions are hard-gated (0/12 hits, avg outcome -23.8%)."""
+    with pytest.raises(ValueError, match="1Y"):
+        insert_prediction(db_conn, _pred(timeframe="1Y", source="LIVE"))
+
+
+def test_interactive_1y_is_allowed(db_conn):
+    """INTERACTIVE 1Y (manual override) is still permitted."""
+    pred = _pred(timeframe="1Y", source="INTERACTIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_backtest_1y_is_allowed(db_conn):
+    """BACKTEST 1Y (historical evaluation) is still permitted."""
+    pred = _pred(timeframe="1Y", source="BACKTEST")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
+def test_live_6m_is_allowed(db_conn):
+    """The gate only blocks 1Y — a LIVE 6M row is unaffected."""
+    pred = _pred(timeframe="6M", source="LIVE")
+    insert_prediction(db_conn, pred)
+    assert get_prediction(db_conn, pred.id) is not None
+
+
 def _bull(ticker, components):
     p = _pred(ticker=ticker, direction="BULL", source="LIVE")
     p.components = components
