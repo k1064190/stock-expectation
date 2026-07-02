@@ -5,7 +5,8 @@ description: "Unified forward catalyst timeline + deterministic R3 event-risk ga
 
 # Catalyst Event Gate — Forward Timeline + R3 Event-Risk Gate
 
-Two products from two FMP forward calendars:
+Two products from two forward calendars (FMP `/stable` primary; keyless
+yfinance fallback for US earnings dates):
 
 1. **Merged timeline** — every forward earnings report (per ticker) and every
    high-impact macro release (FOMC / CPI / NFP) in one normalized, sorted view.
@@ -35,9 +36,15 @@ bin/stock-cli catalyst gate NVDA,AMD --market US
 bin/stock-cli catalyst gate 005930   --market KR   # macro_trim only, no earnings cap
 ```
 
-All output is JSON. Requires `FMP_API_KEY`. **No key or any fetch error → the
-command still exits 0** with `gate_unavailable: true` and neutral (zero) caps —
-it never breaks the cron (FAIL-OPEN).
+All output is JSON. `FMP_API_KEY` is preferred but no longer required for US
+earnings caps: when the FMP earnings fetch fails (or the key is missing), the
+gate falls back to **keyless per-ticker yfinance earnings dates**. The macro
+side (FOMC/CPI/NFP) is FMP-only — on plans without economic-calendar access it
+returns 402 and the gate reports `macro_available: false`. **Any failure → the
+command still exits 0** — it never breaks the cron (FAIL-OPEN). But fail-open
+is now *visible*: `gate_unavailable: true` only when NO source produced data;
+partial outages are flagged via `earnings_source` / `macro_available` +
+`notes`, so a dead feed can never masquerade as "no imminent events".
 
 ## Merged timeline structure
 
@@ -51,7 +58,7 @@ it never breaks the cron (FAIL-OPEN).
         "ticker": "NVDA", "market": "US", "kind": "earnings",
         "name": "NVIDIA Corp", "event_date": "2026-06-18",
         "timing": "AMC", "impact": "High",
-        "trading_days_until": 1, "source": "fmp:earning_calendar"
+        "trading_days_until": 1, "source": "fmp:earnings-calendar"
       }
     ],
     "AMD": []
@@ -61,7 +68,7 @@ it never breaks the cron (FAIL-OPEN).
       "ticker": null, "market": "GLOBAL", "kind": "macro",
       "name": "FOMC Interest Rate Decision", "event_date": "2026-06-18",
       "timing": null, "impact": "High",
-      "trading_days_until": 1, "source": "fmp:economic_calendar"
+      "trading_days_until": 1, "source": "fmp:economic-calendar"
     }
   ]
 }
@@ -88,9 +95,19 @@ it never breaks the cron (FAIL-OPEN).
   "macro_trim": 0.05,
   "macro_events": [{"name": "FOMC ...", "event_date": "2026-06-18",
                     "trading_days_until": 1, "impact": "High"}],
-  "gate_unavailable": false, "notes": []
+  "gate_unavailable": false, "notes": [],
+  "earnings_source": "fmp", "macro_available": true
 }
 ```
+
+### Availability fields (visible fail-open)
+
+| Field | Meaning |
+|---|---|
+| `earnings_source` | `"fmp"` (/stable/earnings-calendar), `"yfinance"` (keyless fallback), or `null` (earnings side unavailable — or KR, which has no feed by design) |
+| `macro_available` | `false` = the macro calendar could **not** be fetched (e.g. FMP plan lacks economic-calendar access) — NOT "no macro event imminent"; treat only `macro_trim` as zero |
+| `gate_unavailable` | `true` only when **no** source produced data → treat every cap/trim as advisory-zero |
+| `notes` | one entry per degradation (which source failed and why) |
 
 ### Earnings (per-ticker, US only)
 
@@ -113,10 +130,10 @@ Thresholds live in `mcp-market-data/events.py` as module constants.
 
 | | Earnings (per-ticker) | Macro (market-wide) |
 |---|---|---|
-| **US** | ✅ FMP `/earning_calendar` (US-listed) | ✅ FMP `/economic_calendar` |
+| **US** | ✅ FMP `/stable/earnings-calendar` (US-listed) → keyless yfinance fallback | ✅ FMP `/stable/economic-calendar` (may 402 on free plans → `macro_available: false`) |
 | **KR** | ❌ no forward KR EPS feed on FMP | ✅ **consumes the US macro stream** (transmits via FX / SOXL) |
 
-**KR is macro-only.** FMP's `/earning_calendar` is US-listed only and there is
+**KR is macro-only.** FMP's earnings calendar is US-listed only and there is
 no forward KR EPS feed, so KR tickers never receive a per-ticker earnings cap —
 their `cap_label`/`next_earnings_date` are always null. KR still receives the
 US `macro_trim`, because a Fed decision or US CPI moves KOSPI/KOSDAQ through the
@@ -140,13 +157,15 @@ R3 composes with the existing /expect gates (see `expect/SKILL.md` Step 7):
 
 `catalyst gate` and `catalyst timeline` each fetch the earnings + macro windows
 **once per call** (not once per ticker). Pass all candidate tickers in a single
-comma-separated call. FMP free tier is 250 calls/day.
+comma-separated call. FMP free tier is 250 calls/day. The yfinance earnings
+fallback is per-ticker but only runs over the candidate list, and only when the
+FMP earnings fetch failed.
 
 ## Implementation
 
 - Core + fetchers: `mcp-market-data/events.py`
   (`CatalystEvent`, `EventGate`, `trading_days_between`, `build_timeline`,
-  `evaluate_gate`).
+  `evaluate_gate`, `_fetch_earnings_fallback_yf`).
 - CLI: `stock_cli.py` (`cmd_catalyst_timeline`, `cmd_catalyst_gate`,
   `catalyst` subparser).
 - Tests (offline, stubbed fetchers): `mcp-market-data/tests/test_events.py`.

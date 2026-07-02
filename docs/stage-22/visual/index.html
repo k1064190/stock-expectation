@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation — Stage 22</title>
+    <style>
+      :root {
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e2e1dc;
+        --text: #2a2a28;
+        --muted: #8a8a84;
+        --accent: #1f6e64;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0 1.5rem 3rem;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+          "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 0 1rem;
+      }
+
+      .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.6rem;
+        letter-spacing: -0.01em;
+      }
+
+      .subtitle {
+        margin: 0.3rem 0 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav.lang-switch {
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+
+      nav.lang-switch .current-lang {
+        color: var(--muted);
+      }
+
+      nav.lang-switch a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav.lang-switch a:hover {
+        text-decoration: underline;
+      }
+
+      nav.timeline {
+        max-width: 960px;
+        margin: 0 auto;
+        overflow-x: auto;
+        padding: 0.5rem 0 1rem;
+      }
+
+      .timeline-list {
+        display: flex;
+        align-items: flex-start;
+        list-style: none;
+        margin: 0;
+        padding: 0.5rem 0.5rem 0.25rem;
+        width: max-content;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 0 0 auto;
+        padding: 0 0.85rem;
+      }
+
+      .node:not(:first-child)::before {
+        content: "";
+        position: absolute;
+        top: 6px;
+        right: 50%;
+        width: 100%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+
+      .node .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-bottom: 6px;
+        z-index: 1;
+        background: var(--muted);
+        border: 2px solid var(--muted);
+      }
+
+      .node .label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.current .dot {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+
+      .stage-section h2 {
+        font-size: 1.35rem;
+        color: var(--accent);
+        margin: 1.5rem 0 0.4rem;
+      }
+
+      .stage-summary {
+        margin: 0 0 1.5rem;
+        color: var(--text);
+        max-width: 70ch;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.5rem 1.75rem;
+      }
+
+      article.card h3 {
+        margin: 0 0 1rem;
+        font-size: 1.15rem;
+      }
+
+      article.card h4 {
+        margin: 1.1rem 0 0.35rem;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      article.card h4:first-of-type {
+        margin-top: 0;
+      }
+
+      article.card p {
+        margin: 0 0 0.5rem;
+      }
+
+      article.card ul {
+        margin: 0 0 0.5rem;
+        padding-left: 1.2rem;
+      }
+
+      article.card li {
+        margin-bottom: 0.5rem;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        background: #f0f0ec;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 0.05rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      ul.code-locations {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      ul.code-locations li {
+        margin-bottom: 0.6rem;
+        font-size: 0.92rem;
+      }
+
+      p.retro {
+        color: var(--text);
+      }
+
+      p.retro em {
+        font-style: italic;
+      }
+
+      @media (max-width: 720px) {
+        article.card {
+          padding: 1.25rem 1.25rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-top">
+        <div>
+          <h1>stock-expectation</h1>
+          <p class="subtitle">Staged plan progress</p>
+        </div>
+        <nav aria-label="Language" class="lang-switch">
+          <span class="current-lang">EN</span> |
+          <a href="index.ko.html">한국어</a>
+        </nav>
+      </div>
+    </header>
+
+    <nav aria-label="Stage timeline" class="timeline">
+      <ol class="timeline-list">
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 0</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 1</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 2</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 3</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 4</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 4.1</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 5</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 6</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 7</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 8</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 9</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 11</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 12</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 13</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 14</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 15</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 16</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 17</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 19</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 20</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">Stage 21</span>
+        </li>
+        <li class="node current">
+          <span class="dot"></span><span class="label">Stage 22</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section class="stage-section">
+        <h2>Stage 22</h2>
+        <p class="stage-summary">
+          Restores the silently-dead R3 catalyst-event gate by migrating off
+          blocked FMP legacy endpoints, adding a keyless yfinance earnings
+          fallback, and making partial outages visible instead of quietly
+          fail-open.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>R3 Event Gate Restore</h3>
+
+            <h4>Why</h4>
+            <p>
+              The R3 event gate had been silently dead: FMP's legacy
+              <code>/api/v3/earning_calendar</code> and
+              <code>/api/v3/economic_calendar</code> return 403 Forbidden for
+              this account's key (legacy endpoints blocked after FMP's plan
+              migration). Because the gate is fail-open by design, every failure
+              collapsed into <code>gate_unavailable: true</code> with zero
+              caps/trims, and every LIVE prediction just logged
+              <code>R3 unavailable=0</code> — earnings-imminent WATCH caps and
+              FOMC/CPI macro trims were never applied, with nothing in the
+              output distinguishing "feed dead" from "no events".
+            </p>
+
+            <h4>What</h4>
+            <ul>
+              <li>
+                <strong>Endpoint migration.</strong> Probed with the real key:
+                <code>/stable/earnings-calendar</code> → 200 (works; same
+                <code>symbol</code>/<code>date</code> keys, no
+                <code>time</code>/<code>companyName</code>),
+                <code>/stable/economic-calendar</code> → 402 (needs a paid
+                plan), both v3 endpoints → 403. Migrated
+                <code>FMP_BASE_URL</code> to <code>/stable</code> in
+                <code>events.py</code> and the earnings URL in
+                <code>pre_surge_discovery.py</code>.
+              </li>
+              <li>
+                <strong>Keyless yfinance earnings fallback.</strong> New
+                <code>_fetch_earnings_fallback_yf</code> fetches the next
+                earnings date per candidate ticker via
+                <code>yf.Ticker(t).calendar</code> and feeds the same per-ticker
+                cap/trim logic when the FMP earnings fetch fails (or the key is
+                missing). Raises only on total outage so an empty result is
+                never confused with "no imminent earnings".
+              </li>
+              <li>
+                <strong>Visible partial availability.</strong>
+                <code>EventGate</code> gains <code>earnings_source</code> ("fmp"
+                / "yfinance" / null) and <code>macro_available</code> (bool);
+                each degradation appends an explanatory note.
+                <code>gate_unavailable: true</code>
+                now means "no source produced data" — partial outages (e.g. the
+                macro 402) keep the gate live. The daily-briefing prompt block
+                renders the notes.
+              </li>
+              <li>
+                <strong>Key redaction.</strong> httpx error strings embed the
+                request URL including <code>apikey=…</code>; new
+                <code>_redact_key</code> scrubs it before the message reaches
+                <code>notes</code> (JSON output / LLM prompts) or logs.
+              </li>
+              <li>
+                <strong>Timeline split.</strong>
+                <code>catalyst timeline</code> fetches the two calendars
+                independently so a macro 402 with
+                <code>--include-macro</code> no longer hides a working earnings
+                timeline.
+              </li>
+              <li>
+                Docs updated:
+                <code>catalyst-event-gate/SKILL.md</code> (availability fields
+                table, stable endpoints, fallback),
+                <code>expect/SKILL.md</code> (Step 4 + R3 fail-open bullet),
+                <code>daily-briefing/SKILL.md</code> (R3 paragraph).
+              </li>
+            </ul>
+
+            <h4>How</h4>
+            <p>
+              <code>evaluate_gate</code> was restructured from one
+              all-or-nothing try/except into two independent sides: earnings
+              (FMP → yfinance fallback, US only) and macro (FMP only, no keyless
+              source exists). Each side records its outcome on the gate; the
+              neutral-verdict short-circuit fires only when both sides are down.
+              The fallback fetcher is injectable
+              (<code>fetch_earnings_fallback</code>) following the existing
+              test-stub convention. Live-verified read-only from the main
+              checkout: <code>earnings_source: "fmp"</code> with the real key,
+              macro 402 flagged in notes (key redacted), and the yfinance path
+              returning CAT's real next earnings date.
+            </p>
+
+            <h4>Code locations</h4>
+            <ul class="code-locations">
+              <li>
+                <code>mcp-market-data/events.py</code> —
+                <code>FMP_BASE_URL</code> (stable),
+                <code>EventGate.earnings_source</code> /
+                <code>macro_available</code>, <code>_redact_key</code>,
+                restructured <code>evaluate_gate</code> (~L436-530),
+                <code>_fetch_earnings_fallback_yf</code>, stable-endpoint fetch
+                wrappers.
+              </li>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>cmd_catalyst_timeline</code> split fetches (~L875-900),
+                <code>cmd_catalyst_gate</code> docstring,
+                <code>_redact_key</code> import.
+              </li>
+              <li>
+                <code>scheduler/daily_briefing.py</code> —
+                <code>_format_event_gate_for_prompt</code> renders notes.
+              </li>
+              <li>
+                <code>scheduler/pre_surge_discovery.py</code> — earnings URL
+                migrated to stable.
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_events.py</code> — 9 new tests
+                (403→fallback caps, missing-key fallback, macro-down visible,
+                both-down partial, redaction, yf-fallback unit tests), 2
+                fail-open tests updated to inject the fallback.
+              </li>
+              <li>
+                <code>scheduler/tests/test_daily_briefing.py</code> —
+                partial-availability note render.
+              </li>
+            </ul>
+
+            <h4>Retrospective</h4>
+            <p class="retro">
+              <em>
+                Fail-open without per-source visibility is indistinguishable
+                from "no risk" — any future gate should ship with
+                source/availability fields from day one. The live probe also
+                caught an httpx-error API-key leak into gate notes that had
+                existed since the original implementation.
+              </em>
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

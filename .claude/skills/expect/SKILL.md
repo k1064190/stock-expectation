@@ -105,7 +105,7 @@ bin/stock-cli catalyst gate 005930,000660,035420,005380,051910 --market KR
 
 Each `news` call returns a `generated_at` timestamp + items with optional `sentiment_score` (US Alpha Vantage only) and `sentiment_label`. Disclosures (`KR` only) include `report_nm` to scan for material flags (감자 / 유상증자 / 관리종목 / 거래정지).
 
-The `catalyst gate` call returns `by_ticker[SYM]` = `{cap_label, confidence_trim, next_earnings_date, trading_days_until}` plus a market-wide `macro_trim` and `gate_unavailable`. Fetch it **once per market** (it fetches the FMP earnings + macro windows once and iterates all tickers in memory). This is the input to RULE R3 (Step 7) and the ALGO 'Earnings event' row (Step 5). If `gate_unavailable` is true (no FMP key / fetch error), treat every cap/trim as zero and proceed — the gate is fail-open by design.
+The `catalyst gate` call returns `by_ticker[SYM]` = `{cap_label, confidence_trim, next_earnings_date, trading_days_until}` plus a market-wide `macro_trim`, `gate_unavailable`, and the availability fields `earnings_source` / `macro_available` / `notes`. Fetch it **once per market** (it fetches the FMP earnings + macro windows once and iterates all tickers in memory; a failed FMP earnings fetch falls back to keyless per-ticker yfinance earnings dates — `earnings_source` names the feed used). This is the input to RULE R3 (Step 7) and the ALGO 'Earnings event' row (Step 5). If `gate_unavailable` is true (no source produced data), treat every cap/trim as zero and proceed — the gate is fail-open by design. On a partial outage the gate stays live: `macro_available: false` means only `macro_trim` is unavailable (per-ticker earnings caps still apply); check `notes` for what failed.
 
 If Finnhub returns nothing and the fallback chain produces an empty list, treat news_score's sentiment + volume components as 0 — do not invent.
 
@@ -316,7 +316,12 @@ never raises the BUY bar and never issues a BUY.
   "⚠️ macro event (<name>) in N td". **KR consumes the US macro stream** (it
   transmits via FX / SOXL); KR never gets a per-ticker earnings cap (no forward
   KR EPS feed).
-- **Fail-open.** If `gate_unavailable` is true, treat all caps/trims as zero.
+- **Fail-open, visibly.** If `gate_unavailable` is true (no source produced
+  data), treat all caps/trims as zero. If only `macro_available` is false
+  (partial outage — e.g. the FMP economic calendar 402s), only `macro_trim` is
+  unavailable; per-ticker earnings caps still apply (`earnings_source` names
+  the feed used — "fmp" or the keyless "yfinance" fallback; `notes` says what
+  failed).
 
 Rationale: the deterministic ALGO/NEWS/LLM_CONTEXT score cannot see dated binary
 events. A BUY logged the day before the report or the Fed gaps on the print, not

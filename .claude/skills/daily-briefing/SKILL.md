@@ -247,7 +247,9 @@ strict no-op. 후보 블록에 `sector=FAVOR` 등으로 표기되니 추천 thes
 **RULE R3 — 이벤트 리스크 게이트 (WT-D)**: 프롬프트의 `## Event Risk` 블록 참조. 후보 티커에 대해
 `evaluate_gate`(어닝/매크로, fail-open, 시장당 1회 fetch)를 호출해 주입한다. 어닝 ≤2 거래일 → WATCH 캡
 (신규 BULL 금지), 어닝/매크로 trim → confidence 한 단계 인하 (R1/R2 위에 stacking). KR은 per-ticker
-어닝 피드가 없어 **매크로 전용**(US FOMC/CPI). `gate_unavailable`(FMP 키 없음/실패)이면 R3는 0으로 처리.
+어닝 피드가 없어 **매크로 전용**(US FOMC/CPI). US 어닝은 FMP 실패 시 keyless yfinance fallback으로 커버.
+`gate_unavailable`(모든 소스 실패)이면 R3는 0으로 처리; 부분 장애(예: 매크로 캘린더 402)는 게이트가 살아있고
+`notes`/`earnings_source`/`macro_available`로 프롬프트 블록에 표기된다.
 
 ### 5. 예측 등록 (각 종목별)
 
