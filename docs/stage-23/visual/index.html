@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 23 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --header-bg: #fff;
+        --heading-color: #0f1e26;
+        --body-text: #333;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --code-color: #1a3a4a;
+        --em-color: #555;
+        --parallel-fill: #fff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #7c8b9a;
+          --border: #33393f;
+          --card-bg: #1c2024;
+          --header-bg: #16191c;
+          --heading-color: #eef2f5;
+          --body-text: #cfd6dc;
+          --code-bg: #23282d;
+          --code-border: #3a4147;
+          --code-color: #9fd2ef;
+          --em-color: #aab4bd;
+          --parallel-fill: #16191c;
+        }
+        body {
+          background: #101214;
+          color: #e6e9eb;
+        }
+        .stage-heading p {
+          color: var(--body-text);
+        }
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading-color);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node.parallel .circle {
+        background: var(--parallel-fill);
+        border-style: dashed;
+        color: var(--accent);
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node .sublabel {
+        margin-top: 0.15rem;
+        font-size: 0.55rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+        font-style: italic;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-node.parallel .label {
+        color: var(--accent);
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+      .tl-connector.dashed {
+        background: repeating-linear-gradient(
+          to right,
+          var(--border) 0,
+          var(--border) 4px,
+          transparent 4px,
+          transparent 8px
+        );
+      }
+
+      .timeline-legend {
+        margin-top: 0.75rem;
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+      .timeline-legend .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: 2px dashed var(--accent);
+        margin-right: 0.3rem;
+        vertical-align: middle;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: #444;
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading-color);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--body-text);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--body-text);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+        color: var(--code-color);
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--em-color);
+      }
+
+      .review-round {
+        margin-top: 0.75rem;
+      }
+      .review-round:first-child {
+        margin-top: 0;
+      }
+      .review-round p {
+        margin-top: 0.25rem;
+      }
+      .verdict {
+        display: inline-block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border-radius: 3px;
+        padding: 0.05em 0.4em;
+        margin-right: 0.35rem;
+      }
+      .verdict.fixed {
+        background: #dff3e3;
+        color: #1e6b34;
+      }
+      .verdict.refuted {
+        background: #f3e3df;
+        color: #8a3a24;
+      }
+      @media (prefers-color-scheme: dark) {
+        .verdict.fixed {
+          background: #16341f;
+          color: #7fd89a;
+        }
+        .verdict.refuted {
+          background: #3a2018;
+          color: #e0a084;
+        }
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node parallel"
+          title="fix/r3-event-gate-restore — parallel branch off the same base commit, not merged into this branch"
+        >
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+          <span class="sublabel">R3 event-gate restore</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node current">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node parallel"
+          title="feat/macro-risk-off-switch — parallel branch off the same base commit, not merged into this branch"
+        >
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+          <span class="sublabel">Macro risk-off switch</span>
+        </div>
+      </nav>
+      <p class="timeline-legend">
+        <span class="dot"></span>Stages 22 and 24 are sibling branches developed
+        in parallel off the same base commit as Stage 23 — shown here for
+        context, not yet merged into this branch.
+      </p>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 23</h2>
+        <p>
+          Store-level hard-reject of LIVE 1Y predictions after live evidence
+          showed 0 hits / 12 closed at -23.8% average return — mirrors the
+          existing LIVE BEAR hard-reject invariant. BACKTEST and INTERACTIVE 1Y
+          predictions remain allowed.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>Hard-Reject LIVE 1Y Predictions</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            Measured on live data (2026-07-02, 30-day closed window), LIVE
+            predictions with timeframe <code>1Y</code> are
+            <strong>0 hits / 12 closed</strong> with an average outcome return
+            of <strong>-23.8%</strong> — by far the worst horizon (6M -7.1%, 1M
+            -3.3%, 1W -0.8%). The system cannot forecast a year out; every
+            automated 1Y row only poisons the track record. Decision: stop
+            logging LIVE 1Y entirely, mirroring the existing LIVE BEAR
+            hard-reject invariant.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              Store-level gate in <code>insert_prediction</code>:
+              <code>source='LIVE'</code> AND <code>timeframe='1Y'</code> →
+              <code>ValueError</code> citing the 0/12, avg -23.8% evidence.
+              BACKTEST and INTERACTIVE 1Y remain allowed (evaluation runs /
+              deliberate manual override).
+            </li>
+            <li>
+              API-mode scheduler (<code>log_predictions</code>) skips 1Y rows
+              explicitly (visible no-op, same pattern as the BEAR skip) instead
+              of erroring opaquely.
+            </li>
+            <li>
+              All prompt surfaces that instructed the LLM to emit 1Y horizons
+              now say the Cycle (1Y) view is narrative/analysis-only and must
+              never be logged: expect skill (new RULE C4), scheduler inline
+              prompts (US + KR), and the API-mode prompt files (JSON examples
+              switched from 1Y to 6M).
+            </li>
+            <li>
+              Tests: 4 new gate tests (reject LIVE 1Y; allow INTERACTIVE 1Y,
+              BACKTEST 1Y, LIVE 6M); one existing metrics fixture switched to
+              <code>source="INTERACTIVE"</code> to preserve its timeframe-filter
+              intent.
+            </li>
+          </ul>
+          <p style="margin-top: 0.75rem">
+            6M (-7.1% avg) was reviewed and deliberately <strong>KEPT</strong>
+            for now — minimal change, and the June-shock cohort skews that
+            number.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            Copied the LIVE BEAR gate pattern exactly: a two-condition check at
+            the top of <code>insert_prediction</code> (the one choke point every
+            mode passes through — CLI, skills, and API mode), with the error
+            message naming the measured evidence and the sanctioned overrides.
+            <code>validate_prediction_dict</code> was left untouched, same as
+            the BEAR gate (it validates shape, not policy). The scheduler's
+            explicit skip keeps API-mode logs clean, and RULE C4 in the expect
+            skill preserves the Cycle read as an input to RULE C1 while banning
+            the row itself.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>mcp-prediction-store/models.py</code> — gate at
+              <code>insert_prediction</code> (right after the BEAR gate, ~line
+              556) + updated docstring guard list
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> — 1Y skip in
+              <code>log_predictions</code> (~line 1052); inline US/KR prompt
+              horizon lines (~lines 579, 669)
+            </li>
+            <li>
+              <code>scheduler/prompts/briefing_us.md</code>,
+              <code>scheduler/prompts/briefing_kr.md</code> — horizon
+              instructions + JSON examples (1Y → 6M), narrative-only Cycle note
+            </li>
+            <li>
+              <code>.claude/skills/expect/SKILL.md</code> — RULE C4 (after RULE
+              C3), Step 9 table annotation,
+              <code>horizons_logged</code> contract, worked example
+            </li>
+            <li>
+              <code>mcp-prediction-store/tests/test_models.py</code> —
+              <code>test_live_1y_is_rejected</code>,
+              <code>test_interactive_1y_is_allowed</code>,
+              <code>test_backtest_1y_is_allowed</code>,
+              <code>test_live_6m_is_allowed</code>
+            </li>
+            <li>
+              <code>mcp-prediction-store/tests/test_metrics.py</code> — 1Y
+              calibration fixture now INTERACTIVE
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review</h4>
+
+          <div class="review-round">
+            <p>
+              <strong>code-reviewer on PR #51:</strong> no blockers, no
+              should-fix. Two nits, both applied:
+            </p>
+            <ul>
+              <li>
+                README still described /expect as logging 1W/1M/6M/1Y — updated
+                to 1W/1M/6M with the LIVE-1Y hard-reject noted
+                (INTERACTIVE/BACKTEST allowed).
+              </li>
+              <li>
+                the API-mode skip condition now checks
+                <code>pred.source == "LIVE"</code> explicitly alongside
+                <code>timeframe == "1Y"</code> — functionally identical (API
+                mode only creates LIVE) but self-documents the gate scope.
+              </li>
+            </ul>
+          </div>
+
+          <div class="review-round">
+            <p>
+              <strong>Second-opinion review (Gemini via antigravity):</strong>
+              3 should-fix + 1 nit.
+            </p>
+            <ul>
+              <li>
+                <span class="verdict refuted">Refuted</span>claimed the expect
+                skill's bash example still logs <code>--timeframe 1Y</code>: the
+                only <code>predict create</code> example in SKILL.md uses
+                <code>--timeframe 1W</code>, and no <code>1Y</code> CLI example
+                exists anywhere in the file.
+              </li>
+              <li>
+                <span class="verdict fixed">Fixed</span>test gap: added
+                <code>test_log_predictions_api_mode_skips_live_1y</code>
+                covering the API-mode skip branch (1Y skipped without error, 6M
+                sibling inserted).
+              </li>
+              <li>
+                <span class="verdict refuted">Refuted</span>claimed the metrics
+                fixture's INTERACTIVE switch could leave the 1Y calibration
+                bucket silently empty: <code>get_calibration_report</code> only
+                filters by source when one is passed (<code>metrics.py</code>
+                ~506), the test passes no source, and its assertions (<code
+                  >len(y_report) == 1</code
+                >, <code>count == 2</code>) would fail loudly on an empty bucket
+                — the suite passes.
+              </li>
+              <li>
+                <span class="verdict fixed">Fixed (nit)</span>the 1Y skip log
+                line now includes the timeframe.
+              </li>
+            </ul>
+          </div>
+
+          <div class="review-round">
+            <p>
+              <strong>Codex round 2:</strong> one P3 (skip ordering), applied —
+              the API-mode 1Y skip now runs before
+              <code>_augment_gate_components</code> so a doomed 1Y row never
+              triggers the ~400-day bar fetch. The BEAR skip was checked and
+              left in place: augmentation early-returns for non-BULL directions,
+              so BEAR rows never fetched anyway.
+            </p>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >The BEAR gate template made this nearly mechanical — one store
+              gate, one scheduler skip, prompt surfaces, tests. Worth carrying
+              forward: policy gates live at <code>insert_prediction</code> only;
+              prompt edits are advisory, the store is the enforcement that
+              survives cron.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
