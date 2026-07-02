@@ -394,8 +394,13 @@ def fetch_earnings_days_map_us(
                 out[sym] = days
         return out
     except Exception as exc:  # noqa: BLE001 — best-effort, never block discovery
+        from events import _redact_key
+
+        # requests error strings embed the full request URL (incl. apikey=…)
+        # — redact before the message reaches the logs.
         logger.warning(
-            "presurge: earnings fetch failed (%s); pre-earnings disabled", exc
+            "presurge: earnings fetch failed (%s); pre-earnings disabled",
+            _redact_key(str(exc)),
         )
         return {}
 

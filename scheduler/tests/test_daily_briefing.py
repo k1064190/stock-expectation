@@ -248,6 +248,31 @@ def test_event_gate_block_macro_unavailable_no_false_no_risk_claim():
     assert "no imminent earnings risk" in out
 
 
+def test_event_gate_block_failed_lookup_excluded_from_no_risk_claim():
+    """Partial yfinance lookup failure + no caps + macro OK → the unqualified
+    no-risk line must be replaced by a claim that excludes the failed ticker
+    (its earnings risk is unknown, not known-zero)."""
+    neutral = {
+        "cap_label": None,
+        "confidence_trim": 0.0,
+        "next_earnings_date": None,
+        "trading_days_until": None,
+    }
+    gate = EventGate(
+        asof="2026-07-02",
+        market="US",
+        by_ticker={"NVDA": dict(neutral), "AMD": dict(neutral)},
+        notes=["yfinance lookup failed for AMD — earnings risk unknown"],
+        earnings_source="yfinance",
+        macro_available=True,
+    )
+    out = _format_event_gate_for_prompt(gate)
+    assert "no imminent earnings/macro risk" not in out
+    assert "except AMD" in out
+    assert "earnings risk unknown" in out
+    assert "no imminent macro risk" in out
+
+
 def test_event_gate_block_renders_partial_availability_notes():
     """A partial outage (e.g. macro calendar down) must be visible in the prompt."""
     gate = EventGate(

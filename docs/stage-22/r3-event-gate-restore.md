@@ -118,3 +118,46 @@ one cosmetic suggestion dismissed:
    per-source failure notes kept. Tests: new `tests/test_catalyst_cli.py`
    (in-process, fetchers monkeypatched — partial macro fail, partial earnings
    fail, all fail, earnings-only-requested fail).
+
+### Second-opinion review (Gemini/antigravity, PR #53 @ 289ff7a) — 2 blockers + 2 should-fix + 1 nit
+
+1. **REFUTED (blocker claim): `cmd_catalyst_gate` missing the availability
+   fields.** The gate CLI does not hand-build its JSON — it prints
+   `asdict(gate)` (`stock_cli.py`), and the `EventGate` dataclass includes
+   `earnings_source` / `macro_available` / `notes`, so the CLI output always
+   carried them (also confirmed live on 2026-07-02). Locked permanently by the
+   new `test_gate_json_includes_availability_fields`.
+2. **Fixed (blocker): API-key leak in `pre_surge_discovery` error logs.**
+   `fetch_earnings_days_map_us` logged raw `requests` exceptions, whose
+   messages embed the full URL incl. `apikey=…`. Now redacted via
+   `_redact_key` (imported from `events`; that dir is already on the module's
+   `sys.path`). The other exception paths in the file (benchmark, batch
+   price, per-ticker scoring) don't touch the key. Test:
+   `test_earnings_fetch_error_log_redacts_api_key` (caplog).
+3. **Fixed (should-fix): tz-aware yfinance datetimes.** A tz-aware UTC
+   timestamp for an evening US report is already next-day in UTC; `.date()`
+   would shift the event a day late. Tz-aware values are now converted to
+   `America/New_York` before taking the date (naive values unchanged). Test:
+   `test_yf_fallback_tz_aware_evening_uses_us_eastern_date`.
+4. **Fixed (should-fix): `pd.NaT` handling.** NaT passes
+   `isinstance(..., datetime)` and breaks the `>=` comparison, misclassifying
+   a missing date as a per-ticker failure. NaT/NaN entries are now skipped via
+   `pd.isna` before normalization — "no scheduled earnings", not a failure.
+   Test: `test_yf_fallback_nat_is_no_event_not_failure`.
+5. **Fixed (nit): in-process `catalyst gate` JSON test** added
+   (`test_gate_json_includes_availability_fields` in
+   `tests/test_catalyst_cli.py`) — the test that would have caught item 1 had
+   it been real.
+
+### Codex bot review (round 2, PR #53 @ 289ff7a) — 1 finding, resolved
+
+- **(P2) Unqualified "no imminent earnings/macro risk" line despite failed
+  per-ticker lookups.** With the earnings side on the yfinance fallback and
+  some lookups failed (but no caps and macro available), the prompt line
+  contradicted the failure note above it. The no-risk claim in
+  `_format_event_gate_for_prompt` is now compositional: failed-lookup tickers
+  are excluded explicitly ("no imminent earnings risk among candidates except
+  AMD (lookup failed — earnings risk unknown); no imminent macro risk"). The
+  failed tickers are parsed from `notes` via the shared
+  `events.YF_LOOKUP_FAILED_PREFIX` constant (no magic-string duplication).
+  Test: `test_event_gate_block_failed_lookup_excluded_from_no_risk_claim`.

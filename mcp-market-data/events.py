@@ -34,6 +34,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Callable, Literal, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -56,6 +57,11 @@ MACRO_TRIM_DAYS = 2
 # Confidence trim magnitudes (subtracted from raw confidence elsewhere).
 EARNINGS_CONFIDENCE_TRIM = 0.05
 MACRO_CONFIDENCE_TRIM = 0.05
+
+# Stable prefix for the per-ticker yfinance lookup-failure notes appended by
+# ``evaluate_gate``. daily_briefing parses it back out of ``EventGate.notes``
+# to exclude those tickers from its "no risk" prompt claim — keep in sync.
+YF_LOOKUP_FAILED_PREFIX = "yfinance lookup failed for "
 
 # Substrings (case-insensitive) that mark a macro release as market-moving.
 # FMP economic-calendar event names vary ("CPI", "Consumer Price Index",
@@ -504,7 +510,7 @@ def evaluate_gate(
                 # flag each so a partial provider outage stays visible.
                 for ft in yf_failed:
                     gate.notes.append(
-                        f"yfinance lookup failed for {ft} — earnings risk unknown"
+                        f"{YF_LOOKUP_FAILED_PREFIX}{ft} — earnings risk unknown"
                     )
             except Exception as e:
                 logger.warning("yfinance earnings fallback failed: %s", e)
@@ -665,6 +671,12 @@ def _fetch_earnings_fallback_yf(
     date. A same-day date (== ``asof``) is kept — it still carries binary risk
     (td == 0 → WATCH cap), matching the FMP feed.
 
+    Value normalization: ``pd.NaT``/NaN entries are treated as "no scheduled
+    earnings" (skipped — not a per-ticker failure); tz-aware datetimes are
+    converted to US-Eastern before taking the calendar date (yfinance
+    timestamps are UTC, so an evening US report would otherwise land on the
+    next day); naive datetimes and plain dates are used as-is.
+
     Args:
         tickers: US candidate tickers to look up.
         asof: As-of date, "YYYY-MM-DD" — dates before this are ignored.
@@ -682,6 +694,7 @@ def _fetch_earnings_fallback_yf(
             ``evaluate_gate`` marks the earnings side unavailable instead of
             mistaking the empty result for "no imminent earnings".
     """
+    import pandas as pd  # yfinance dependency — always present alongside it
     import yfinance as yf
 
     asof_d = _parse_date(asof)
@@ -690,10 +703,20 @@ def _fetch_earnings_fallback_yf(
     for t in tickers:
         try:
             cal = yf.Ticker(t).calendar or {}
-            dates = [
-                d.date() if isinstance(d, datetime) else d
-                for d in (cal.get("Earnings Date") or [])
-            ]
+            dates: list[date] = []
+            for d in cal.get("Earnings Date") or []:
+                # pd.NaT passes isinstance(..., datetime) and breaks the >=
+                # comparison below — a missing date is "no scheduled
+                # earnings", not a per-ticker failure.
+                if pd.isna(d):
+                    continue
+                if isinstance(d, datetime):
+                    if d.tzinfo is not None:
+                        # tz-aware timestamps are UTC: an evening US report
+                        # lands on the next UTC day — take the US-Eastern date.
+                        d = d.astimezone(ZoneInfo("America/New_York"))
+                    d = d.date()
+                dates.append(d)
             upcoming = [d for d in dates if d >= asof_d]
             if not upcoming:
                 continue

@@ -635,6 +635,44 @@ def test_yf_fallback_skips_past_dates(monkeypatch):
     ]
 
 
+def test_yf_fallback_tz_aware_evening_uses_us_eastern_date(monkeypatch):
+    """A tz-aware UTC timestamp for an evening US report (already next-day in
+    UTC) must resolve to the US-Eastern calendar date, not the UTC date."""
+    from datetime import timezone
+
+    class _TzTicker:
+        def __init__(self, _symbol):
+            # 2026-07-30 01:00 UTC == 2026-07-29 21:00 US-Eastern (EDT, UTC-4)
+            self.calendar = {
+                "Earnings Date": [datetime(2026, 7, 30, 1, 0, tzinfo=timezone.utc)]
+            }
+
+    monkeypatch.setattr("yfinance.Ticker", _TzTicker)
+    rows, failed = _fetch_earnings_fallback_yf(["NVDA"], "2026-07-02")
+    assert failed == []
+    assert rows[0]["date"] == "2026-07-29"
+
+
+def test_yf_fallback_nat_is_no_event_not_failure(monkeypatch):
+    """pd.NaT (missing date) passes isinstance(..., datetime) — it must be
+    treated as "no scheduled earnings", never a per-ticker failure or crash."""
+    import pandas as pd
+
+    calendars = {
+        "NVDA": {"Earnings Date": [pd.NaT]},  # NaT only → omitted cleanly
+        "MSFT": {"Earnings Date": [pd.NaT, date(2026, 7, 30)]},  # mixed → real date
+    }
+
+    class _NatTicker:
+        def __init__(self, symbol):
+            self.calendar = calendars[symbol]
+
+    monkeypatch.setattr("yfinance.Ticker", _NatTicker)
+    rows, failed = _fetch_earnings_fallback_yf(["NVDA", "MSFT"], "2026-07-02")
+    assert failed == []
+    assert [(r["symbol"], r["date"]) for r in rows] == [("MSFT", "2026-07-30")]
+
+
 def test_evaluate_gate_partial_yf_failure_noted(monkeypatch):
     """A per-ticker yfinance lookup failure must surface in the gate notes —
     a partial provider outage is UNKNOWN risk for that ticker, not "no

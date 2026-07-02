@@ -112,3 +112,30 @@ def test_timeline_earnings_fail_without_macro_requested_unavailable(
     assert rc == 0
     assert out["gate_unavailable"] is True
     assert "earnings calendar fetch failed" in out["note"]
+
+
+def test_gate_json_includes_availability_fields(monkeypatch, capsys, fmp_key):
+    """``catalyst gate`` JSON must carry earnings_source / macro_available /
+    notes (the SKILL.md contract) so consumers like the expect skill can tell
+    "feed down" from "no events". Exercises the real evaluate_gate → asdict
+    pass-through with the events-module fetchers monkeypatched (no network)."""
+    events = sys.modules["events"]  # loaded via stock_cli's sys.path insert
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    monkeypatch.setattr(
+        events,
+        "_fetch_earnings_window",
+        lambda _f, _t, _m: [{"symbol": "NVDA", "date": tomorrow, "time": "amc"}],
+    )
+    monkeypatch.setattr(events, "_fetch_macro_window", lambda _f, _t: [])
+
+    args = types.SimpleNamespace(tickers="NVDA", market="US")
+    rc = stock_cli.cmd_catalyst_gate(args)
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert out["earnings_source"] == "fmp"
+    assert out["macro_available"] is True
+    assert out["gate_unavailable"] is False
+    assert out["notes"] == []
+    # tomorrow is always <= 1 trading day away → WATCH cap
+    assert out["by_ticker"]["NVDA"]["cap_label"] == "WATCH"

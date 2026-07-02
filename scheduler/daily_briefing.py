@@ -71,7 +71,7 @@ from blended_funnel import (
     format_blended_for_prompt,
 )
 from candidate_discovery import _load_sector_verdicts
-from events import evaluate_gate
+from events import YF_LOOKUP_FAILED_PREFIX, evaluate_gate
 from macro_news import format_macro_for_prompt, get_macro_news
 from theme_clusterer import (
     backfill_news_counts,
@@ -169,24 +169,43 @@ def _format_event_gate_for_prompt(gate) -> str:
         action = "WATCH cap" if cap else f"trim {trim}"
         lines.append(f"  - {tkr}: earnings {ed} ({td}td) → {action}")
     if not gate.macro_trim and not flagged:
-        # Only claim "no risk" for feeds that produced data — an unavailable
-        # feed means UNKNOWN risk, not zero risk (both-down never reaches here:
-        # that is gate_unavailable, handled above).
-        if not getattr(gate, "macro_available", False):
-            lines.append(
-                "  - no imminent earnings risk among candidates; "
-                "macro event feed unavailable — macro risk unknown"
-            )
-        elif (
-            getattr(gate, "market", "") == "US"
-            and getattr(gate, "earnings_source", None) is None
-        ):
-            lines.append(
-                "  - no imminent macro risk; earnings feed unavailable — "
-                "per-ticker earnings risk unknown"
-            )
-        else:
+        # Only claim "no risk" for feeds (and tickers) that produced data —
+        # an unavailable feed or a failed per-ticker lookup means UNKNOWN
+        # risk, not zero risk (both-feeds-down never reaches here: that is
+        # gate_unavailable, handled above).
+        macro_ok = getattr(gate, "macro_available", False)
+        earnings_ok = (
+            getattr(gate, "market", "") != "US"
+            or getattr(gate, "earnings_source", None) is not None
+        )
+        # Tickers whose fallback earnings lookup FAILED (threaded via notes) —
+        # the no-risk claim must exclude them, not silently cover them.
+        failed_lookups = [
+            n[len(YF_LOOKUP_FAILED_PREFIX) :].split(" ")[0]
+            for n in (getattr(gate, "notes", None) or [])
+            if n.startswith(YF_LOOKUP_FAILED_PREFIX)
+        ]
+        if earnings_ok and macro_ok and not failed_lookups:
             lines.append("  - no imminent earnings/macro risk among candidates")
+        else:
+            if failed_lookups:
+                claim_earnings = (
+                    "no imminent earnings risk among candidates except "
+                    f"{', '.join(failed_lookups)} (lookup failed — "
+                    "earnings risk unknown)"
+                )
+            elif earnings_ok:
+                claim_earnings = "no imminent earnings risk among candidates"
+            else:
+                claim_earnings = (
+                    "earnings feed unavailable — per-ticker earnings risk unknown"
+                )
+            claim_macro = (
+                "no imminent macro risk"
+                if macro_ok
+                else "macro event feed unavailable — macro risk unknown"
+            )
+            lines.append(f"  - {claim_earnings}; {claim_macro}")
     return "\n".join(lines)
 
 

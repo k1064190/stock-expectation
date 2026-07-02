@@ -309,3 +309,26 @@ def test_discover_empty_universe_returns_empty(monkeypatch):
     monkeypatch.setattr(psd, "_load_static_us_universe", lambda: [])
     provider = FakeProvider({})
     assert psd.discover_presurge_candidates("US", provider=provider) == []
+
+
+def test_earnings_fetch_error_log_redacts_api_key(monkeypatch, caplog):
+    """requests error strings embed the full URL incl. apikey= — the warning
+    logged on a failed earnings fetch must redact it (same leak class fixed in
+    events.py notes)."""
+    import requests
+
+    monkeypatch.setenv("FMP_API_KEY", "SUPERSECRET")
+
+    def _boom(*_args, **_kwargs):
+        raise requests.exceptions.HTTPError(
+            "403 Client Error: Forbidden for url: https://financialmodelingprep.com"
+            "/stable/earnings-calendar?from=x&to=y&apikey=SUPERSECRET"
+        )
+
+    monkeypatch.setattr(requests, "get", _boom)
+    with caplog.at_level("WARNING", logger=psd.logger.name):
+        out = psd.fetch_earnings_days_map_us(["NVDA"])
+    assert out == {}
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "SUPERSECRET" not in joined
+    assert "apikey=***" in joined
