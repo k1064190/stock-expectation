@@ -410,8 +410,9 @@ def test_evaluate_gate_fmp_403_yfinance_fallback_caps(monkeypatch):
     def _fmp_403(*_args, **_kwargs):
         raise RuntimeError("403 Forbidden")
 
-    def _yf_rows(tickers):
+    def _yf_rows(tickers, asof):
         assert tickers == ["NVDA", "AMD"]
+        assert asof == "2026-06-17"
         return [
             {
                 "symbol": "NVDA",
@@ -444,7 +445,7 @@ def test_evaluate_gate_missing_key_uses_yfinance_fallback(monkeypatch):
         "2026-06-17",
         ["NVDA"],
         "US",
-        fetch_earnings_fallback=lambda _tickers: [
+        fetch_earnings_fallback=lambda _tickers, _asof: [
             {"symbol": "NVDA", "date": "2026-06-18", "time": None}
         ],
     )
@@ -552,7 +553,7 @@ def test_yf_fallback_builds_fmp_shaped_rows(monkeypatch):
             self.calendar = calendars[symbol]
 
     monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
-    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD", "MSFT"])
+    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD", "MSFT"], "2026-07-02")
     assert rows == [
         {
             "symbol": "NVDA",
@@ -577,7 +578,7 @@ def test_yf_fallback_partial_errors_keep_survivors(monkeypatch):
             self.calendar = {"Earnings Date": [date(2026, 7, 30)]}
 
     monkeypatch.setattr("yfinance.Ticker", _MixedTicker)
-    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD"])
+    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD"], "2026-07-02")
     assert [r["symbol"] for r in rows] == ["NVDA"]
 
 
@@ -588,7 +589,70 @@ def test_yf_fallback_total_outage_raises(monkeypatch):
 
     monkeypatch.setattr("yfinance.Ticker", _BoomTicker)
     with pytest.raises(RuntimeError, match="all 2 tickers"):
-        _fetch_earnings_fallback_yf(["NVDA", "AMD"])
+        _fetch_earnings_fallback_yf(["NVDA", "AMD"], "2026-07-02")
+
+
+def test_yf_fallback_skips_past_dates(monkeypatch):
+    """A stale past date must not shadow the real future date (min() trap),
+    a ticker with ONLY past dates yields no row — not a bogus td-0 cap —
+    and a same-day date is KEPT (td == 0 still carries binary risk)."""
+    calendars = {
+        # past + future → the future date must win, not min() = the past one
+        "NVDA": {"Earnings Date": [date(2026, 5, 28), date(2026, 8, 27)]},
+        # only past dates → treated as "no scheduled earnings", row omitted
+        "AMD": {"Earnings Date": [date(2026, 4, 30)]},
+        # same-day (== asof) → kept, matching the FMP-side td-0 WATCH behavior
+        "MSFT": {"Earnings Date": [date(2026, 7, 2)]},
+    }
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            self.calendar = calendars[symbol]
+
+    monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
+    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD", "MSFT"], "2026-07-02")
+    assert rows == [
+        {
+            "symbol": "NVDA",
+            "date": "2026-08-27",
+            "time": None,
+            "source": "yfinance:calendar",
+        },
+        {
+            "symbol": "MSFT",
+            "date": "2026-07-02",
+            "time": None,
+            "source": "yfinance:calendar",
+        },
+    ]
+
+
+def test_evaluate_gate_yf_past_only_dates_no_cap(monkeypatch):
+    """FMP down + yfinance reporting only an already-past earnings date →
+    neutral verdict for that ticker (no misapplied WATCH cap)."""
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+
+    class _PastTicker:
+        def __init__(self, _symbol):
+            self.calendar = {"Earnings Date": [date(2026, 6, 10)]}
+
+    monkeypatch.setattr("yfinance.Ticker", _PastTicker)
+
+    def _fmp_403(*_args, **_kwargs):
+        raise RuntimeError("403 Forbidden")
+
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_fmp_403,
+        fetch_macro=_stub_macro([]),
+        # no injected fallback → exercises the real yfinance path (mocked)
+    )
+    assert gate.earnings_source == "yfinance"
+    assert gate.by_ticker["NVDA"]["cap_label"] is None
+    assert gate.by_ticker["NVDA"]["confidence_trim"] == 0.0
+    assert gate.by_ticker["NVDA"]["next_earnings_date"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +663,7 @@ def test_yf_fallback_total_outage_raises(monkeypatch):
 def test_evaluate_gate_missing_key_fails_open(monkeypatch):
     monkeypatch.delenv("FMP_API_KEY", raising=False)
 
-    def _yf_boom(_tickers):
+    def _yf_boom(_tickers, _asof):
         raise RuntimeError("simulated yfinance outage")
 
     # No key (FMP skipped) AND the yfinance fallback down → neutral gate,

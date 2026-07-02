@@ -67,3 +67,26 @@ Fail-open without per-source visibility is indistinguishable from "no risk" —
 any future gate should ship with source/availability fields from day one. The
 live probe also caught an httpx-error API-key leak into gate notes that had
 existed since the original implementation.
+
+## Review
+
+Internal review (round 1) found **no critical issues**; one warning applied,
+one cosmetic suggestion dismissed:
+
+- **Applied — past-date filter in the yfinance fallback.**
+  `_fetch_earnings_fallback_yf` used `min(dates)` unfiltered, so a stale
+  already-past earnings date from yfinance could shadow the real future date
+  (and emit a row `build_timeline` would drop anyway). Fix: the function now
+  takes `asof` (deterministic + testable) and selects the nearest date
+  **on/after** `asof`; if every date for a ticker is past, the ticker is
+  treated as "no scheduled earnings". Deliberate deviation from the literal
+  "skip `<= asof`" suggestion: a **same-day** (== asof) date is kept, because
+  td == 0 still carries binary risk (WATCH cap) and must match the FMP-side
+  behavior asserted by `test_evaluate_gate_earnings_same_day_caps_watch`.
+  Covered by `test_yf_fallback_skips_past_dates` (past-shadowing + past-only +
+  same-day-kept) and `test_evaluate_gate_yf_past_only_dates_no_cap`
+  (end-to-end: FMP 403 → yfinance past-only → neutral verdict, no bogus cap).
+- **Dismissed — `_redact_key` not matching a quoted `apikey="KEY"` form.**
+  Cosmetic; httpx error strings never produce that format (the key appears as
+  a bare URL query parameter), so the pattern is unreachable in practice.
+- Codex bot review (`@codex review` on PR #53) pending.
