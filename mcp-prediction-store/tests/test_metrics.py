@@ -211,6 +211,8 @@ def test_calibration_by_timeframe(db_conn):
             reasoning="cycle",
             entry_price=100.0,
             signals_used=["cycle"],
+            # INTERACTIVE: LIVE 1Y is hard-rejected by the store gate.
+            source="INTERACTIVE",
         )
         insert_prediction(db_conn, p)
         update_prediction_outcome(db_conn, p.id, "MISS", 90.0, -10.0)

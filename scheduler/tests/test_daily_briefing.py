@@ -73,6 +73,35 @@ def test_log_predictions_api_mode_recalibrates_and_keeps_raw(monkeypatch):
     assert row["confidence"] < 0.65  # recalibrated downward
 
 
+def test_log_predictions_api_mode_skips_live_1y(monkeypatch):
+    """API-mode logging must skip LIVE 1Y rows (store-gated) and log the rest."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    monkeypatch.setattr(
+        daily_briefing, "get_connection", lambda *a, **k: get_connection(path)
+    )
+    # Components carry both gate fields so _augment_gate_components returns
+    # early without fetching fresh bars (keeps the test offline).
+    base = {
+        "ticker": "NVDA",
+        "market": "US",
+        "direction": "BULL",
+        "confidence": 0.65,
+        "reasoning": "t",
+        "entry_price": 100.0,
+        "signals_used": ["technical"],
+        "components": {"overextension": "NONE", "return_1m": 0.05},
+    }
+    logged = daily_briefing.log_predictions(
+        [{**base, "timeframe": "1Y"}, {**base, "timeframe": "6M"}]
+    )
+    assert logged == 1  # 1Y skipped without error, 6M inserted
+    conn = get_connection(path)
+    rows = conn.execute("SELECT timeframe FROM predictions").fetchall()
+    conn.close()
+    assert [r["timeframe"] for r in rows] == ["6M"]
+
+
 def test_parse_single_prediction():
     """Parse a single prediction from a JSON block."""
     response = """Here is the analysis.

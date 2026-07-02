@@ -40,9 +40,11 @@ Based on the market data above, produce:
 
    When LLM_CONTEXT_SCORE is strongly negative (≤ -2.0), be cautious about emitting BULL direction even if technicals look strong — this is exactly the anti-momentum-bias circuit the score is designed to fire.
 
-4. **5-6 Stocks × up to 4 Horizons** in this exact JSON format (one JSON entry
-   per horizon per stock, at least Short/1W and ideally all four of
-   Short/Medium/Long/Cycle). Emit entries only for horizons with confidence
+4. **5-6 Stocks × up to 3 Horizons** in this exact JSON format (one JSON entry
+   per horizon per stock, at least Short/1W and ideally all three of
+   Short/Medium/Long). The Cycle (1Y) view belongs in the narrative only —
+   NEVER emit a 1Y JSON entry (the store hard-rejects LIVE 1Y: 0/12 hits,
+   avg outcome -23.8%). Emit entries only for horizons with confidence
    ≥ 0.60 — lower-confidence horizons go in the narrative but not the JSON.
    Picking fewer than 5 is allowed only when the candidate pool genuinely
    lacks setups that clear confidence 0.60 — explain why in the narrative
@@ -69,19 +71,21 @@ Based on the market data above, produce:
     "market": "US",
     "direction": "BULL|BEAR|NEUTRAL",
     "confidence": 0.60-0.85,
-    "timeframe": "1Y",
+    "timeframe": "6M",
     "entry_price": CURRENT_PRICE,
-    "target_price": TARGET_CYCLE,
-    "stop_price": STOP_CYCLE,
-    "reasoning": "Cycle-horizon thesis: return_1y, pct_from_52w_high, max_drawdown",
-    "signals_used": ["cycle", "valuation", "mean_reversion", "llm_context"],
+    "target_price": TARGET_LONG,
+    "stop_price": STOP_LONG,
+    "reasoning": "Long-horizon thesis: MA200 position, return_6m, sector trend",
+    "signals_used": ["technical", "momentum", "llm_context"],
     "llm_context_score": -1.5,
     "llm_context_reasoning": "(same macro context applies)"
   }
 ]
 ```
 
-Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M, Cycle=1Y.
+Horizon ↔ timeframe: Short=1W, Medium=1M, Long=6M. Cycle=1Y is analysis-only —
+report it in the narrative, never as a JSON entry (LIVE 1Y is store-gated:
+0/12 hits, avg -23.8%).
 
 4. **Key Events**: Any scheduled economic releases or earnings today.
 

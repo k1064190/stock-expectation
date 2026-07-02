@@ -616,7 +616,7 @@ Rules:
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
 - GATE R3 (event risk): see the `## Event Risk` block above. A ticker with `WATCH cap` (earnings ≤2 trading days) → WATCH only, never a new BULL; an earnings/macro `trim` shaves confidence one step (stacks under R1/R2). Cite the earnings date + trading-days-until in the reasoning. If the block says unavailable, treat R3 as zero.
 - COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
-- Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M)/Cycle(1Y) horizons per the expect skill.
+- Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M) horizons per the expect skill; discuss the Cycle(1Y) outlook in the narrative only — NEVER log a 1Y row (the store hard-rejects LIVE 1Y: 0/12 hits, avg -23.8%).
 - HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W.
 - Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick
 - Use --source LIVE --recalibrate (this is the automated scheduler, not interactive)
@@ -692,7 +692,7 @@ if positions exist below):
 {portfolio_context}
 
 Rules:
-- Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y).
+- Korean stocks: same 4-horizon analysis; report Short(1W), Medium(1M), Long(6M), Cycle(1Y) in the narrative, but log only 1W/1M/6M rows — NEVER log a 1Y row (the store hard-rejects LIVE 1Y: 0/12 hits, avg -23.8%).
 - Minimum confidence 0.60 (matches the per-horizon logging gate below), maximum 0.85
 - Stop-loss wider than US by ~20%; target at least 2x stop distance (reward:risk ≥ 1.5, else WATCH only)
 - GATE R1 (regime): run `bin/stock-cli regime --market KR`. RISK_OFF → log NO new BULL (cap WATCH); NEUTRAL → raise the BUY bar + trim confidence.
@@ -1071,6 +1071,21 @@ def log_predictions(predictions: list[dict]) -> int:
             # Validate required fields
             if not pred.ticker or pred.entry_price <= 0:
                 logger.warning("Skipping invalid prediction: %s", p)
+                continue
+
+            # LIVE 1Y predictions are gated at the store (0/12 hits, avg
+            # outcome return -23.8%). Skip them explicitly here so they are
+            # an intentional, visible no-op rather than an opaque insert
+            # error swallowed below. Runs BEFORE component augmentation so a
+            # doomed 1Y row never triggers the ~400-day bar fetch.
+            if pred.source == "LIVE" and pred.timeframe == "1Y":
+                logger.info(
+                    "Skipping LIVE 1Y prediction (gated): %s %s %s %s",
+                    pred.ticker,
+                    pred.market,
+                    pred.direction,
+                    pred.timeframe,
+                )
                 continue
 
             # Populate the overextension gate's components from fresh data when
