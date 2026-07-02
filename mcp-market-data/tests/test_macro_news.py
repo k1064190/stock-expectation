@@ -465,6 +465,32 @@ def test_assess_macro_risk_kr_metaphorical_terms_scoped():
     assert risk["risk_score"] == 0
 
 
+def test_assess_macro_risk_blockade_scoped_to_military_context():
+    """Domestic-politics 'blockaded X' must not trip war_conflict (live false
+    positive: 2026-07-02 Yonhap headline hit bare 'blockade' → ELEVATED and
+    would have trimmed every pick); military/trade-route blockades still do."""
+    risk = macro_news.assess_macro_risk(
+        [
+            _item(
+                "(LEAD) Parliamentary committee enters blockaded ballot "
+                "counting site for inspection"
+            )
+        ]
+    )
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+
+    risk = macro_news.assess_macro_risk(
+        [_item("Iran threatens naval blockade of the strait")]
+    )
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["matched"][0]["bucket"] == "war_conflict"
+
+    risk = macro_news.assess_macro_risk([_item("북, 해상 봉쇄 위협")])
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["matched"][0]["bucket"] == "war_conflict"
+
+
 def test_assess_macro_risk_dedups_syndicated_titles():
     """One wire story republished by three outlets scores once, not thrice —
     casing/spacing/punctuation variants collapse to the same title key."""

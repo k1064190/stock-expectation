@@ -400,7 +400,12 @@ MACRO_RISK_BUCKETS = (
             "nuclear threat",
             "nuclear weapon",
             "strait of hormuz",
-            "blockade",
+            # Bare "blockade"/"봉쇄" match domestic-politics headlines (Yonhap:
+            # "blockaded ballot counting site", 국회/도로 봉쇄) — only military/
+            # trade-route blockades are war signals.
+            "naval blockade",
+            "strait blockade",
+            "port blockade",
             "military strike",
             # Bare "전쟁" matches metaphorical finance headlines (무역/반도체/
             # 가격 전쟁) — only actual-outbreak phrasings are war signals.
@@ -409,7 +414,8 @@ MACRO_RISK_BUCKETS = (
             "침공",
             "공습",
             "핵실험",
-            "봉쇄",
+            "해상 봉쇄",
+            "해협 봉쇄",
             "무력 충돌",
         ),
     ),
