@@ -1073,6 +1073,21 @@ def log_predictions(predictions: list[dict]) -> int:
                 logger.warning("Skipping invalid prediction: %s", p)
                 continue
 
+            # LIVE 1Y predictions are gated at the store (0/12 hits, avg
+            # outcome return -23.8%). Skip them explicitly here so they are
+            # an intentional, visible no-op rather than an opaque insert
+            # error swallowed below. Runs BEFORE component augmentation so a
+            # doomed 1Y row never triggers the ~400-day bar fetch.
+            if pred.source == "LIVE" and pred.timeframe == "1Y":
+                logger.info(
+                    "Skipping LIVE 1Y prediction (gated): %s %s %s %s",
+                    pred.ticker,
+                    pred.market,
+                    pred.direction,
+                    pred.timeframe,
+                )
+                continue
+
             # Populate the overextension gate's components from fresh data when
             # the model omitted them, so the store gate can't fail open here.
             _augment_gate_components(pred, providers)
@@ -1085,20 +1100,6 @@ def log_predictions(predictions: list[dict]) -> int:
                     "Skipping LIVE BEAR prediction (gated): %s %s %s",
                     pred.ticker,
                     pred.market,
-                    pred.timeframe,
-                )
-                continue
-
-            # LIVE 1Y predictions are gated at the store (0/12 hits, avg
-            # outcome return -23.8%). Skip them explicitly here so they are
-            # an intentional, visible no-op rather than an opaque insert
-            # error swallowed below.
-            if pred.source == "LIVE" and pred.timeframe == "1Y":
-                logger.info(
-                    "Skipping LIVE 1Y prediction (gated): %s %s %s %s",
-                    pred.ticker,
-                    pred.market,
-                    pred.direction,
                     pred.timeframe,
                 )
                 continue

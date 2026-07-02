@@ -76,6 +76,11 @@ Second-opinion review (Gemini via antigravity): 3 should-fix + 1 nit.
   an empty bucket — the suite passes.
 - FIXED (nit) — the 1Y skip log line now includes the timeframe.
 
+Codex round 2: one P3 (skip ordering), applied — the API-mode 1Y skip now
+runs BEFORE `_augment_gate_components` so a doomed 1Y row never triggers the
+~400-day bar fetch. The BEAR skip was checked and left in place: augmentation
+early-returns for non-BULL directions, so BEAR rows never fetched anyway.
+
 ## Retrospective
 
 The BEAR gate template made this nearly mechanical — one store gate, one
