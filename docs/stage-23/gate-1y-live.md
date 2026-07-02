@@ -62,6 +62,20 @@ code-reviewer on PR #51: no blockers, no should-fix. Two nits, both applied:
 alongside `timeframe == "1Y"` — functionally identical (API mode only creates
 LIVE) but self-documents the gate scope.
 
+Second-opinion review (Gemini via antigravity): 3 should-fix + 1 nit.
+- REFUTED — claimed the expect skill's bash example still logs `--timeframe
+  1Y`: the only `predict create` example in SKILL.md uses `--timeframe 1W`,
+  and no `1Y` CLI example exists anywhere in the file.
+- FIXED — test gap: added
+  `test_log_predictions_api_mode_skips_live_1y` covering the API-mode skip
+  branch (1Y skipped without error, 6M sibling inserted).
+- REFUTED — claimed the metrics fixture's INTERACTIVE switch could leave the
+  1Y calibration bucket silently empty: `get_calibration_report` only filters
+  by source when one is passed (`metrics.py` ~506), the test passes no source,
+  and its assertions (`len(y_report) == 1`, `count == 2`) would fail loudly on
+  an empty bucket — the suite passes.
+- FIXED (nit) — the 1Y skip log line now includes the timeframe.
+
 ## Retrospective
 
 The BEAR gate template made this nearly mechanical — one store gate, one

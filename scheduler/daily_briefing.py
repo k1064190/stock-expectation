@@ -1095,10 +1095,11 @@ def log_predictions(predictions: list[dict]) -> int:
             # error swallowed below.
             if pred.source == "LIVE" and pred.timeframe == "1Y":
                 logger.info(
-                    "Skipping LIVE 1Y prediction (gated): %s %s %s",
+                    "Skipping LIVE 1Y prediction (gated): %s %s %s %s",
                     pred.ticker,
                     pred.market,
                     pred.direction,
+                    pred.timeframe,
                 )
                 continue
 
