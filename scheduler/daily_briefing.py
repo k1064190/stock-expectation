@@ -169,7 +169,24 @@ def _format_event_gate_for_prompt(gate) -> str:
         action = "WATCH cap" if cap else f"trim {trim}"
         lines.append(f"  - {tkr}: earnings {ed} ({td}td) → {action}")
     if not gate.macro_trim and not flagged:
-        lines.append("  - no imminent earnings/macro risk among candidates")
+        # Only claim "no risk" for feeds that produced data — an unavailable
+        # feed means UNKNOWN risk, not zero risk (both-down never reaches here:
+        # that is gate_unavailable, handled above).
+        if not getattr(gate, "macro_available", False):
+            lines.append(
+                "  - no imminent earnings risk among candidates; "
+                "macro event feed unavailable — macro risk unknown"
+            )
+        elif (
+            getattr(gate, "market", "") == "US"
+            and getattr(gate, "earnings_source", None) is None
+        ):
+            lines.append(
+                "  - no imminent macro risk; earnings feed unavailable — "
+                "per-ticker earnings risk unknown"
+            )
+        else:
+            lines.append("  - no imminent earnings/macro risk among candidates")
     return "\n".join(lines)
 
 

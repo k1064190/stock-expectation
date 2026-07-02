@@ -414,7 +414,9 @@ def evaluate_gate(
     market: str,
     fetch_earnings: Optional[Callable[[str, str, str], list[dict]]] = None,
     fetch_macro: Optional[Callable[[str, str], list[dict]]] = None,
-    fetch_earnings_fallback: Optional[Callable[[list[str], str], list[dict]]] = None,
+    fetch_earnings_fallback: Optional[
+        Callable[[list[str], str], tuple[list[dict], list[str]]]
+    ] = None,
 ) -> EventGate:
     """Compute the deterministic R3 event-risk gate for ``tickers``.
 
@@ -447,8 +449,9 @@ def evaluate_gate(
         fetch_macro: Optional injected fetcher (asof_from, asof_to) → macro rows.
             Defaults to the real FMP fetcher. Injected by tests.
         fetch_earnings_fallback: Optional injected fallback fetcher
-            (tickers, asof) → earnings rows, used when the primary earnings
-            fetch fails. Defaults to the real yfinance fetcher. Injected by
+            (tickers, asof) → (earnings rows, failed tickers), used when the
+            primary earnings fetch fails. Failed tickers are flagged in
+            ``notes``. Defaults to the real yfinance fetcher. Injected by
             tests.
 
     Returns:
@@ -495,8 +498,14 @@ def evaluate_gate(
             gate.notes.append("FMP_API_KEY not set — trying yfinance earnings fallback")
         if earnings_rows is None:
             try:
-                earnings_rows = fetch_earnings_fallback(norm_tickers, asof)
+                earnings_rows, yf_failed = fetch_earnings_fallback(norm_tickers, asof)
                 gate.earnings_source = "yfinance"
+                # A per-ticker lookup FAILURE is not "no scheduled earnings" —
+                # flag each so a partial provider outage stays visible.
+                for ft in yf_failed:
+                    gate.notes.append(
+                        f"yfinance lookup failed for {ft} — earnings risk unknown"
+                    )
             except Exception as e:
                 logger.warning("yfinance earnings fallback failed: %s", e)
                 gate.notes.append(
@@ -640,27 +649,33 @@ def _fetch_macro_window(asof_from: str, asof_to: str) -> list[dict]:
     return data
 
 
-def _fetch_earnings_fallback_yf(tickers: list[str], asof: str) -> list[dict]:
+def _fetch_earnings_fallback_yf(
+    tickers: list[str], asof: str
+) -> tuple[list[dict], list[str]]:
     """Keyless earnings-date fallback via yfinance ``Ticker.calendar``.
 
     Used when the FMP earnings-calendar fetch fails (e.g. the key lacks access
     and returns 403). Looks up the next scheduled earnings date per candidate
     ticker — one yfinance call per ticker, over the gate's candidate list only.
 
-    Dates strictly before ``asof`` are skipped: yfinance sometimes reports the
-    last, already-past earnings date, and ``min(dates)`` would otherwise let it
-    shadow a legitimate future date. A same-day date (== ``asof``) is kept — it
-    still carries binary risk (td == 0 → WATCH cap), matching the FMP feed.
+    Dates strictly before ``asof`` are skipped BEFORE selecting the nearest
+    date: yfinance sometimes reports the last, already-past earnings date (or
+    an estimated multi-date window whose lower bound is past), and an
+    unfiltered ``min(dates)`` would let it shadow a still-imminent future
+    date. A same-day date (== ``asof``) is kept — it still carries binary risk
+    (td == 0 → WATCH cap), matching the FMP feed.
 
     Args:
         tickers: US candidate tickers to look up.
         asof: As-of date, "YYYY-MM-DD" — dates before this are ignored.
 
     Returns:
-        FMP-shaped earnings rows ``{"symbol", "date", "time": None,
-        "source": "yfinance:calendar"}``. Tickers with no scheduled earnings
-        date on/after ``asof`` are omitted — a legitimate "no event", not an
-        error.
+        ``(rows, failed)`` where ``rows`` are FMP-shaped earnings rows
+        ``{"symbol", "date", "time": None, "source": "yfinance:calendar"}``
+        and ``failed`` lists tickers whose lookup ERRORED (earnings risk
+        unknown — distinct from "no scheduled earnings", which just omits the
+        ticker from ``rows``). Callers must surface ``failed`` so a partial
+        provider outage stays visible.
 
     Raises:
         RuntimeError: When every per-ticker lookup errored (total outage), so
@@ -671,7 +686,7 @@ def _fetch_earnings_fallback_yf(tickers: list[str], asof: str) -> list[dict]:
 
     asof_d = _parse_date(asof)
     rows: list[dict] = []
-    errors = 0
+    failed: list[str] = []
     for t in tickers:
         try:
             cal = yf.Ticker(t).calendar or {}
@@ -691,11 +706,11 @@ def _fetch_earnings_fallback_yf(tickers: list[str], asof: str) -> list[dict]:
                     "source": "yfinance:calendar",
                 }
             )
-        except Exception as e:  # per-ticker best-effort — count, don't abort
-            errors += 1
+        except Exception as e:  # per-ticker best-effort — record, don't abort
+            failed.append(t)
             logger.warning("yfinance earnings lookup failed for %s: %s", t, e)
-    if tickers and errors == len(tickers):
+    if tickers and len(failed) == len(tickers):
         raise RuntimeError(
             f"yfinance earnings fallback failed for all {len(tickers)} tickers"
         )
-    return rows
+    return rows, failed

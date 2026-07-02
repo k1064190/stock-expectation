@@ -89,4 +89,32 @@ one cosmetic suggestion dismissed:
 - **Dismissed — `_redact_key` not matching a quoted `apikey="KEY"` form.**
   Cosmetic; httpx error strings never produce that format (the key appears as
   a bare URL query parameter), so the pattern is unreachable in practice.
-- Codex bot review (`@codex review` on PR #53) pending.
+
+### Codex bot review (round 1, PR #53 @ cf6e53c) — 4 findings, all resolved
+
+1. **Duplicate of the past-date filter warning above** (with the nuance that
+   past dates must be filtered *before* `min()` selects the nearest candidate,
+   so a stale lower bound of an estimated window cannot shadow a still-imminent
+   upper bound). Already implemented that way: `upcoming = [d for d in dates
+   if d >= asof_d]` runs before `min(upcoming)`.
+2. **(P2) Misleading "no imminent earnings/macro risk" prompt line when
+   `macro_available` is false.** Fixed in
+   `daily_briefing._format_event_gate_for_prompt`: with the macro feed down
+   the line now reads "no imminent earnings risk among candidates; macro event
+   feed unavailable — macro risk unknown" (symmetric wording added for the
+   earnings-feed-down + macro-up case, same falsehood class). Tests:
+   `test_event_gate_block_macro_unavailable_no_false_no_risk_claim`, updated
+   `test_event_gate_block_no_risk_note` /
+   `test_event_gate_block_renders_partial_availability_notes`.
+3. **(P2) Per-ticker yfinance lookup failures silently treated as "no
+   scheduled earnings".** `_fetch_earnings_fallback_yf` now returns
+   `(rows, failed_tickers)`; `evaluate_gate` appends a note per failed ticker
+   ("yfinance lookup failed for XYZ — earnings risk unknown"), keeping
+   fail-open. Tests: `test_evaluate_gate_partial_yf_failure_noted`, updated
+   `test_yf_fallback_partial_errors_keep_survivors`.
+4. **(P3) `catalyst timeline` marked `gate_unavailable` on earnings failure
+   even when `--include-macro` succeeded.** Aligned with `evaluate_gate`
+   semantics: unavailable only when *every requested* calendar failed;
+   per-source failure notes kept. Tests: new `tests/test_catalyst_cli.py`
+   (in-process, fetchers monkeypatched — partial macro fail, partial earnings
+   fail, all fail, earnings-only-requested fail).

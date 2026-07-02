@@ -880,11 +880,13 @@ def cmd_catalyst_timeline(args) -> int:
         notes = []
         earnings_rows: list = []
         macro_rows: list = []
+        earnings_failed = False
+        macro_failed = False
         if market == "US":
             try:
                 earnings_rows = _fetch_earnings_window(asof, window_to, market)
             except Exception as e:
-                out["gate_unavailable"] = True
+                earnings_failed = True
                 notes.append(
                     f"earnings calendar fetch failed: {_redact_key(str(e))} (fail-open)"
                 )
@@ -892,10 +894,20 @@ def cmd_catalyst_timeline(args) -> int:
             try:
                 macro_rows = _fetch_macro_window(asof, window_to)
             except Exception as e:
+                macro_failed = True
                 notes.append(
                     f"macro calendar fetch failed: {_redact_key(str(e))} — "
                     "market_wide omitted (fail-open)"
                 )
+        # Match evaluate_gate semantics: unavailable only when EVERY requested
+        # calendar failed. Partial success keeps the timeline live (with notes).
+        requested_failures = []
+        if market == "US":
+            requested_failures.append(earnings_failed)
+        if args.include_macro:
+            requested_failures.append(macro_failed)
+        if requested_failures and all(requested_failures):
+            out["gate_unavailable"] = True
         if notes:
             out["note"] = "; ".join(notes)
 

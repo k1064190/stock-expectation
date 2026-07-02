@@ -206,6 +206,7 @@ def test_event_gate_block_renders_watch_and_macro():
 
 
 def test_event_gate_block_no_risk_note():
+    # Both feeds live → the unqualified no-risk line is legitimate.
     gate = EventGate(
         asof="2026-06-18",
         market="US",
@@ -217,9 +218,34 @@ def test_event_gate_block_no_risk_note():
                 "trading_days_until": None,
             }
         },
+        earnings_source="fmp",
+        macro_available=True,
     )
     out = _format_event_gate_for_prompt(gate)
     assert "no imminent earnings/macro risk" in out
+
+
+def test_event_gate_block_macro_unavailable_no_false_no_risk_claim():
+    """Macro feed down + nothing flagged → the prompt must say macro risk is
+    UNKNOWN, never 'no imminent earnings/macro risk'."""
+    gate = EventGate(
+        asof="2026-07-02",
+        market="US",
+        by_ticker={
+            "NVDA": {
+                "cap_label": None,
+                "confidence_trim": 0.0,
+                "next_earnings_date": None,
+                "trading_days_until": None,
+            }
+        },
+        earnings_source="fmp",
+        macro_available=False,
+    )
+    out = _format_event_gate_for_prompt(gate)
+    assert "no imminent earnings/macro risk" not in out
+    assert "macro risk unknown" in out
+    assert "no imminent earnings risk" in out
 
 
 def test_event_gate_block_renders_partial_availability_notes():
@@ -241,7 +267,9 @@ def test_event_gate_block_renders_partial_availability_notes():
     )
     out = _format_event_gate_for_prompt(gate)
     assert "macro calendar fetch failed" in out
-    assert "no imminent earnings/macro risk" in out
+    # With macro down, the no-risk line is qualified: earnings-only claim.
+    assert "no imminent earnings risk" in out
+    assert "macro risk unknown" in out
 
 
 # ---------------------------------------------------------------------------
