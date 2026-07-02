@@ -64,6 +64,15 @@ the briefing block, fail-open note). No network in tests. Full suite:
 - `mcp-market-data/tests/test_macro_news.py`,
   `scheduler/tests/test_daily_briefing.py` — new tests
 
+## Review
+
+Code review of PR #52: **no blockers, no should-fix**. One nit — the
+`"trade war escalat"` substring could theoretically match e.g. "trade war
+escalator" — dismissed as acceptable by design: matched evidence is surfaced
+to the LLM alongside the level, and the bucket is weight 1 against an
+ELEVATED threshold of 2, so a single-item false positive cannot trip
+ELEVATED/RISK_OFF on its own. No code change.
+
 ## Retrospective
 
 Reusing the Stage 21 feed meant the whole switch is ~150 lines + tests, with
