@@ -1093,7 +1093,7 @@ def log_predictions(predictions: list[dict]) -> int:
             # outcome return -23.8%). Skip them explicitly here so they are
             # an intentional, visible no-op rather than an opaque insert
             # error swallowed below.
-            if pred.timeframe == "1Y":
+            if pred.source == "LIVE" and pred.timeframe == "1Y":
                 logger.info(
                     "Skipping LIVE 1Y prediction (gated): %s %s %s",
                     pred.ticker,

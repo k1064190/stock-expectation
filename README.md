@@ -137,7 +137,7 @@ Claude가 SKILL.md를 읽고 필요한 `bin/stock-cli` 명령을 Bash로 실행�
 3. `bin/stock-cli news` + `disclosure`로 뉴스/공시 수집 (US는 AV sentiment 병합)
 4. **고정 포인트 테이블**로 `ALGO_SCORE` (max +8.0) + `NEWS_SCORE` (max +3.0) = `COMPOSITE` (-7..+11) 산출
 5. half-open 범위로 `BUY` / `WATCH` / `HOLD` / `AVOID` / `SELL` 라벨 결정
-6. 3-fact transmission chain(TECH/NEWS/RISK) 생성, 각 종목별 multi-horizon 예측(1W/1M/6M/1Y)을 공통 `analysis_group_id`로 DB 저장
+6. 3-fact transmission chain(TECH/NEWS/RISK) 생성, 각 종목별 multi-horizon 예측(1W/1M/6M — 1Y Cycle은 분석 전용, LIVE 1Y는 store가 하드 거부하며 INTERACTIVE/BACKTEST만 허용)을 공통 `analysis_group_id`로 DB 저장
 7. `state/last-outcome-expect.json` 사이드카에 모든 컴포넌트 점수 기록 (주간 캘리브레이션이 소비)
 
 **레거시 스킬 (`daily-briefing`, `stock-research` 등)** — 기존 가중 평균 흐름:
@@ -560,7 +560,8 @@ prediction:
   direction:           "BULL" | "BEAR" | "NEUTRAL"
   confidence:          0.0-1.0 (예측 확신도)
   timeframe:           "1W" | "2W" | "1M" | "3M" | "6M" | "1Y"
-                       (Stage 4: /expect가 multi-horizon 1W/1M/6M/1Y 로깅)
+                       (Stage 4: /expect가 multi-horizon 1W/1M/6M 로깅 —
+                       LIVE 1Y는 하드 거부, INTERACTIVE/BACKTEST 1Y만 허용)
   entry_price:         예측 시점 주가
   target_price:        목표가 (선택)
   stop_price:          손절가 (선택)
@@ -572,7 +573,7 @@ prediction:
   outcome_date:        결과 확정 일자
   outcome_return:      수익률 (decimal)
   analysis_group_id:   같은 종목의 multi-horizon 예측을 묶는 UUID (Stage 4)
-                       /expect 1회 실행이 같은 종목에 1W/1M/6M/1Y 예측을 만들면
+                       /expect 1회 실행이 같은 종목에 1W/1M/6M 예측을 만들면
                        모두 같은 group_id를 공유 — 그룹 단위 적중률 추적 가능
 ```
 

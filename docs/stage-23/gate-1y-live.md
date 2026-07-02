@@ -53,6 +53,15 @@ Cycle read as an input to RULE C1 while banning the row itself.
 - `mcp-prediction-store/tests/test_metrics.py` — 1Y calibration fixture now
   INTERACTIVE
 
+## Review
+
+code-reviewer on PR #51: no blockers, no should-fix. Two nits, both applied:
+(1) README still described /expect as logging 1W/1M/6M/1Y — updated to
+1W/1M/6M with the LIVE-1Y hard-reject noted (INTERACTIVE/BACKTEST allowed);
+(2) the API-mode skip condition now checks `pred.source == "LIVE"` explicitly
+alongside `timeframe == "1Y"` — functionally identical (API mode only creates
+LIVE) but self-documents the gate scope.
+
 ## Retrospective
 
 The BEAR gate template made this nearly mechanical — one store gate, one
