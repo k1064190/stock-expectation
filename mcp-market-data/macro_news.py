@@ -11,6 +11,10 @@ or GDELT returns 429.
 Returns plain ``NewsItem`` objects (headline / source / date / url); GDELT's
 ``artlist`` mode carries no per-article tone, so ``sentiment_score`` is None and
 sentiment is left to the downstream LLM read.
+
+Also hosts the deterministic macro risk-off switch (``assess_macro_risk``) — a
+keyword tripwire that grades the fetched headlines NORMAL / ELEVATED / RISK_OFF
+so consumers can stop issuing fresh BULL calls during macro shocks.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict
@@ -49,12 +54,17 @@ MACRO_RSS_FEEDS = (
 
 # Curated market-moving macro / geopolitical query (GDELT Boolean syntax:
 # space = AND, OR explicit, quotes = phrase). Tunable via the CLI --query flag.
+# Includes the risk-off switch's severe vocabulary (war/missile/crash/...) so
+# the switch can still fire on the RSS-down, GDELT-fallback-only path — kept in
+# the ONE query (GDELT is rate-limited ~1 req/5s per IP; no second call).
 DEFAULT_MACRO_QUERY = (
     # One OR-group ANDed with sourcelang — GDELT does not allow nested OR groups,
     # so the whole expression is NOT wrapped in an extra outer paren.
     '(inflation OR recession OR tariff OR "trade war" OR sanctions OR OPEC OR '
     '"interest rate" OR "central bank" OR "Federal Reserve" OR "oil price" OR '
-    '"rate cut" OR "rate hike" OR "stock market") sourcelang:eng'
+    '"rate cut" OR "rate hike" OR "stock market" OR war OR invasion OR missile OR '
+    'nuclear OR blockade OR airstrike OR "market crash" OR "circuit breaker" OR '
+    '"sovereign default") sourcelang:eng'
 )
 DEFAULT_TIMESPAN = "24h"
 CACHE_TTL_SECONDS = 900  # 15 min — matches GDELT's ingestion cadence
@@ -130,6 +140,37 @@ def fetch_macro_news(
         hit returns the cached items; on a fetch error returns the last cached
         result if any, else an empty list — never raises.
     """
+    items, _ = _fetch_macro_news_with_meta(
+        query=query,
+        timespan=timespan,
+        limit=limit,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+    )
+    return items
+
+
+def _fetch_macro_news_with_meta(
+    query: str = DEFAULT_MACRO_QUERY,
+    timespan: str = DEFAULT_TIMESPAN,
+    limit: int = 20,
+    cache_dir: Path = CACHE_DIR,
+    ttl_seconds: int = CACHE_TTL_SECONDS,
+    max_attempts: int = 2,
+    retry_delay: float = 6.0,
+) -> tuple[list[NewsItem], str]:
+    """``fetch_macro_news`` plus a freshness meta tag, for consumers that must
+    not treat stale data as live (the macro risk-off switch).
+
+    Args: same as ``fetch_macro_news``.
+
+    Returns:
+        ``(items, meta)`` where meta is "live" (fresh fetch), "cache"
+        (within-TTL cache hit), "stale-cache" (expired cache served after a
+        fetch error — an arbitrarily old snapshot), or "empty" (no data).
+    """
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -140,7 +181,7 @@ def fetch_macro_news(
     if cached and _cache_is_fresh(cached, ttl_seconds):
         fresh_items = _items_from_cache(cached)
         if fresh_items is not None:
-            return fresh_items
+            return fresh_items, "cache"
 
     last_error: Optional[Exception] = None
     for attempt in range(max_attempts):
@@ -185,7 +226,7 @@ def fetch_macro_news(
                 )
             except OSError as e:
                 logger.warning("macro-news cache write failed: %s", e)
-            return items
+            return items, "live"
         except Exception as e:  # network / 429 / bad JSON
             last_error = e
             if attempt < max_attempts - 1:
@@ -196,9 +237,9 @@ def fetch_macro_news(
         stale = _items_from_cache(cached)
         if stale is not None:
             logger.warning("GDELT fetch failed (%s); serving stale cache", last_error)
-            return stale
+            return stale, "stale-cache"
     logger.warning("GDELT fetch failed (%s) and no cache; returning empty", last_error)
-    return []
+    return [], "empty"
 
 
 def _parse_rss_date(raw: str) -> tuple[str, Optional[datetime]]:
@@ -310,28 +351,333 @@ def get_macro_news(
     a whole-day window for RSS. ``query`` only constrains the GDELT path (RSS is a
     fixed curated feed set, not keyword-queryable).
 
-    Returns ``(items, source)`` where source is "rss", "gdelt", or "none" — so
-    callers can see which path served.
+    Returns ``(items, source)`` where source is "rss", "gdelt", "gdelt-stale"
+    (expired GDELT cache served after a fetch error — usable as context but
+    NOT as a live risk signal), or "none" — so callers can see which path
+    served.
     """
     rss = fetch_rss_macro_news(limit=limit, since_days=_timespan_to_days(timespan))
     if rss:
         return rss, "rss"
-    gdelt = fetch_macro_news(
+    gdelt, meta = _fetch_macro_news_with_meta(
         query=query, timespan=timespan, limit=limit, cache_dir=cache_dir
     )
-    if gdelt:
-        logger.info("RSS empty; macro news via GDELT fallback (%d)", len(gdelt))
-        return gdelt, "gdelt"
+    # A stale cache is reported as such even when it holds a valid empty
+    # result — the stale-feed note must not silently become "none".
+    if gdelt or meta == "stale-cache":
+        source = "gdelt-stale" if meta == "stale-cache" else "gdelt"
+        logger.info(
+            "RSS empty; macro news via GDELT fallback (%d, %s)", len(gdelt), meta
+        )
+        return gdelt, source
     return [], "none"
 
 
-def format_macro_for_prompt(items: list[NewsItem]) -> str:
-    """Render a compact macro-headlines block for the daily-briefing prompt."""
+# ---------------------------------------------------------------------------
+# Deterministic macro risk-off switch (keyword tripwire, not NLP)
+# ---------------------------------------------------------------------------
+
+# Keyword buckets matched case-insensitively as substrings of each headline
+# (English + Korean — the Yonhap feed is English but the GDELT fallback can
+# carry Korean). Ordered highest-weight first: an item counts ONCE, at the
+# first (most severe) bucket it matches. Weight 2 = severe shock headline,
+# weight 1 = escalation-risk headline. Phrases are deliberately specific
+# (e.g. "nuclear threat", not "nuclear") to avoid benign-news false fires.
+MACRO_RISK_BUCKETS = (
+    (
+        "war_conflict",
+        2,
+        (
+            "invasion",
+            "invades",
+            "declares war",
+            "war breaks out",
+            "missile strike",
+            "missile attack",
+            "airstrike",
+            "air strike",
+            "nuclear test",
+            "nuclear threat",
+            "nuclear weapon",
+            "strait of hormuz",
+            "blockade",
+            "military strike",
+            # Bare "전쟁" matches metaphorical finance headlines (무역/반도체/
+            # 가격 전쟁) — only actual-outbreak phrasings are war signals.
+            "전쟁 발발",
+            "전면전",
+            "침공",
+            "공습",
+            "핵실험",
+            "봉쇄",
+            "무력 충돌",
+        ),
+    ),
+    (
+        "market_crash",
+        2,
+        (
+            "market crash",
+            "stocks crash",
+            "stock market crash",
+            "circuit breaker",
+            "trading halt",
+            "flash crash",
+            "sovereign default",
+            "defaults on its debt",
+            "enters bear market",
+            # Market-wide only — bare "폭락" matches single-stock plunges and
+            # bare "디폴트" matches the routine pension term "디폴트옵션".
+            "증시 폭락",
+            "코스피 폭락",
+            "주식시장 폭락",
+            "글로벌 증시 폭락",
+            "서킷브레이커",
+            "사이드카",
+            "국가 부도",
+            "국가 디폴트",
+            "채무불이행",
+        ),
+    ),
+    (
+        "emergency_central_bank",
+        2,
+        (
+            # Central-bank-scoped only — bare "emergency meeting" phrases match
+            # routine UN/government headlines on the BBC/Yonhap world feeds.
+            "emergency rate cut",
+            "emergency rate hike",
+            "intermeeting cut",
+            "emergency fomc",
+            "central bank emergency",
+            "currency intervention",
+            "긴급 금리",
+            "긴급 금통위",
+            "외환시장 개입",
+        ),
+    ),
+    (
+        "oil_supply_shock",
+        1,
+        (
+            "oil prices surge",
+            "oil price surge",
+            "oil surges",
+            "oil spikes",
+            "oil soars",
+            "crude surges",
+            "crude spikes",
+            "crude soars",
+            "opec cuts",
+            "opec+ cuts",
+            "oil embargo",
+            "oil supply disruption",
+            "유가 급등",
+            "원유 공급 차질",
+        ),
+    ),
+    (
+        "tariff_sanctions",
+        1,
+        (
+            "new tariffs",
+            "tariff hike",
+            "raises tariffs",
+            "retaliatory tariff",
+            "trade war escalat",
+            "imposes sanctions",
+            "new sanctions",
+            "export ban",
+            "무역 전쟁",  # trade war is escalation risk, not war_conflict
+            "보복 관세",
+            "관세 인상",
+            "추가 제재",
+            "수출 금지",
+        ),
+    ),
+)
+
+# Tripwire thresholds on the summed matched-item weights. One severe headline
+# (weight 2) → ELEVATED; a corroborated shock (e.g. three severe headlines)
+# → RISK_OFF. Module constants by design — this is a tripwire, not config.
+MACRO_RISK_ELEVATED_MIN = 2
+MACRO_RISK_OFF_MIN = 6
+
+# Two-term matcher for the emergency_central_bank bucket ONLY (not a general
+# matching engine): "Fed holds emergency meeting" must hit while "UN Security
+# Council emergency meeting" must not, so the emergency-meeting wording counts
+# only when a central-bank token also appears. Short English tokens use word
+# boundaries ("fed" alone would match "fedex"); Korean tokens are substrings
+# (particles attach: 한은의, 연준이).
+_CB_WORD_RE = re.compile(r"\b(fed|fomc|ecb|boj|bok)\b")
+_CB_SUBSTRINGS = ("central bank", "연준", "한은", "금통위")
+_CB_EMERGENCY_PHRASES = (
+    "emergency meeting",
+    "emergency session",
+    "긴급 회의",
+    "긴급회의",
+)
+
+
+def _is_central_bank_emergency(hl: str) -> bool:
+    """True when a lowercased headline pairs emergency-meeting wording with a
+    central-bank token (e.g. "fed holds emergency meeting").
+
+    Args:
+        hl: Headline, already lowercased by the caller.
+
+    Returns:
+        bool — both an emergency phrase and a central-bank token present.
+    """
+    if not any(p in hl for p in _CB_EMERGENCY_PHRASES):
+        return False
+    return bool(_CB_WORD_RE.search(hl)) or any(s in hl for s in _CB_SUBSTRINGS)
+
+
+def _match_risk_bucket(headline: str) -> Optional[tuple[str, int]]:
+    """First (most severe) risk bucket whose keyword appears in the headline.
+
+    Args:
+        headline: News headline (any language; matched lowercased substring).
+
+    Returns:
+        ``(bucket_name, weight)`` or None if no bucket matches.
+    """
+    hl = headline.lower()
+    for bucket, weight, keywords in MACRO_RISK_BUCKETS:
+        if any(kw in hl for kw in keywords) or (
+            bucket == "emergency_central_bank" and _is_central_bank_emergency(hl)
+        ):
+            return bucket, weight
+    return None
+
+
+def _normalize_headline(headline: str) -> str:
+    """Casefolded headline with whitespace/punctuation stripped, for
+    syndicated-duplicate detection (same wire story republished verbatim by
+    several outlets). Alnum-only so casing/quote/spacing variants collapse.
+
+    Args:
+        headline: Raw headline text.
+
+    Returns:
+        Normalized key string (may be empty for all-punctuation input).
+    """
+    return "".join(ch for ch in headline.casefold() if ch.isalnum())
+
+
+def assess_macro_risk(items: list[NewsItem], stale: bool = False) -> dict:
+    """Deterministic market-level risk read over macro headlines (tripwire).
+
+    Motivated by the early-June 2026 macro shock: ~229 BULL predictions were
+    logged into a -4.5% SPY drawdown because macro risk had no expression
+    channel (LIVE BEAR is hard-rejected by design). Scores the already-fetched
+    macro-news items against MACRO_RISK_BUCKETS so consumers can stop issuing
+    fresh BULL calls during geopolitical/macro shocks.
+
+    Args:
+        items: Macro NewsItems from ``get_macro_news`` (may be empty).
+        stale: True when the items came from an expired cache (source
+            "gdelt-stale") — an old shock snapshot must not hold the gate, so
+            the assessment degrades to NORMAL with a visible note.
+
+    Returns:
+        dict with:
+            risk_level: "NORMAL" | "ELEVATED" | "RISK_OFF".
+            risk_score: int — sum of matched-item weights (each item counts
+                once, at its most severe matching bucket; near-identical
+                syndicated titles count once, so one wire story republished by
+                several outlets cannot self-corroborate into RISK_OFF).
+            matched: evidence list of {headline, source, date, bucket, weight}.
+            note: str | None — set when ``items`` is empty (both sources
+                unreachable → fail-open NORMAL, visibly noted) or ``stale``.
+    """
+    if stale:
+        return {
+            "risk_level": "NORMAL",
+            "risk_score": 0,
+            "matched": [],
+            "note": (
+                "macro feed stale (expired cache served on fetch error) — "
+                "risk not assessed (fail-open NORMAL)"
+            ),
+        }
+    if not items:
+        return {
+            "risk_level": "NORMAL",
+            "risk_score": 0,
+            "matched": [],
+            "note": "no macro headlines available — risk not assessed (fail-open NORMAL)",
+        }
+    matched: list[dict] = []
+    score = 0
+    seen_titles: set[str] = set()
+    for it in items:
+        # Upstream dedup is by URL only — syndicated wire copies carry a
+        # different URL per outlet, so kill near-identical titles here.
+        # Cross-outlet coverage with *different* headlines still corroborates.
+        title_key = _normalize_headline(it.headline)
+        if title_key and title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        hit = _match_risk_bucket(it.headline)
+        if hit is None:
+            continue
+        bucket, weight = hit
+        score += weight
+        matched.append(
+            {
+                "headline": it.headline,
+                "source": it.source,
+                "date": it.date,
+                "bucket": bucket,
+                "weight": weight,
+            }
+        )
+    if score >= MACRO_RISK_OFF_MIN:
+        level = "RISK_OFF"
+    elif score >= MACRO_RISK_ELEVATED_MIN:
+        level = "ELEVATED"
+    else:
+        level = "NORMAL"
+    return {"risk_level": level, "risk_score": score, "matched": matched, "note": None}
+
+
+def format_macro_for_prompt(items: list[NewsItem], risk: Optional[dict] = None) -> str:
+    """Render a compact macro-headlines block for the daily-briefing prompt.
+
+    Args:
+        items: Macro NewsItems (may be empty).
+        risk: Optional ``assess_macro_risk`` result. When given, a MACRO RISK
+            line + the deterministic gate instruction (RISK_OFF → no new BULL,
+            ELEVATED → extra -0.05 confidence trim) and the matched evidence
+            are prepended above the headlines.
+    """
     lines = [
         "## Global macro / geopolitical headlines (last 24h)",
         "Context for the macro-regime / LLM_CONTEXT read — NOT pick slots.",
         "",
     ]
+    if risk is not None:
+        level = risk.get("risk_level", "NORMAL")
+        lines.append(f"MACRO RISK: {level} (score {risk.get('risk_score', 0)})")
+        if level == "RISK_OFF":
+            lines.append(
+                "→ RISK_OFF: log NO new BULL predictions this run — cap every "
+                "label at WATCH."
+            )
+        elif level == "ELEVATED":
+            lines.append(
+                "→ ELEVATED: apply an additional -0.05 confidence trim to every "
+                "pick (stacks with the R3 trims)."
+            )
+        if risk.get("note"):
+            lines.append(f"  ({risk['note']})")
+        for m in (risk.get("matched") or [])[:5]:
+            lines.append(
+                f"  - risk evidence [{m['bucket']}] {m['source']}: {m['headline']}"
+            )
+        lines.append("")
     if not items:
         lines.append("_(no macro headlines available)_")
         return "\n".join(lines)

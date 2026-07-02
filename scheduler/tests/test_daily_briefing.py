@@ -332,12 +332,19 @@ def test_event_gate_block_renders_partial_availability_notes():
 
 
 def test_macro_block_renders_via_get_macro_news(monkeypatch):
-    """_macro_block fetches macro news and formats it for the prompt."""
+    """_macro_block fetches macro news, scores risk, and formats it for the prompt."""
     monkeypatch.setattr(
         daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss")
     )
     monkeypatch.setattr(
-        daily_briefing, "format_macro_for_prompt", lambda items: "MACRO_BLOCK_OK"
+        daily_briefing,
+        "assess_macro_risk",
+        lambda items, stale=False: {"risk_level": "NORMAL"},
+    )
+    monkeypatch.setattr(
+        daily_briefing,
+        "format_macro_for_prompt",
+        lambda items, risk=None: "MACRO_BLOCK_OK",
     )
     assert daily_briefing._macro_block() == "MACRO_BLOCK_OK"
 
@@ -350,3 +357,112 @@ def test_macro_block_empty_on_error(monkeypatch):
 
     monkeypatch.setattr(daily_briefing, "get_macro_news", boom)
     assert daily_briefing._macro_block() == ""
+
+
+def test_macro_block_contains_risk_off_line(monkeypatch):
+    """A shock headline set puts MACRO RISK: RISK_OFF + no-new-BULL rule in the prompt."""
+    from providers.base import NewsItem  # mcp-market-data added to sys.path above
+
+    shock = [
+        NewsItem(
+            headline="Iran blockades Strait of Hormuz as conflict widens",
+            source="BBC",
+            date="2026-06-05",
+            url="u1",
+        ),
+        NewsItem(
+            headline="US launches airstrike on military sites",
+            source="CNBC",
+            date="2026-06-05",
+            url="u2",
+        ),
+        NewsItem(
+            headline="Stock market crash fears as circuit breaker halts trading",
+            source="BBC",
+            date="2026-06-05",
+            url="u3",
+        ),
+    ]
+    monkeypatch.setattr(
+        daily_briefing, "get_macro_news", lambda limit=15: (shock, "rss")
+    )
+    block = daily_briefing._macro_block()
+    assert "MACRO RISK: RISK_OFF" in block
+    assert "NO new BULL" in block
+
+
+def test_macro_block_fail_open_note_when_no_sources(monkeypatch):
+    """RSS + GDELT both unreachable → NORMAL with a visible fail-open note."""
+    monkeypatch.setattr(daily_briefing, "get_macro_news", lambda limit=15: ([], "none"))
+    block = daily_briefing._macro_block()
+    assert "MACRO RISK: NORMAL" in block
+    assert "fail-open" in block
+
+
+def test_macro_block_degrades_on_stale_source(monkeypatch):
+    """A stale GDELT cache must not hold the gate: NORMAL + visible stale note."""
+    from providers.base import NewsItem
+
+    shock = [
+        NewsItem(
+            headline="Iran blockades Strait of Hormuz as conflict widens",
+            source="reuters.com",
+            date="2026-06-05",
+            url="u1",
+        ),
+    ]
+    monkeypatch.setattr(
+        daily_briefing, "get_macro_news", lambda limit=15: (shock, "gdelt-stale")
+    )
+    block, risk_level = daily_briefing._macro_block_and_risk()
+    assert risk_level == "NORMAL"
+    assert "MACRO RISK: NORMAL" in block
+    assert "stale" in block
+
+
+def test_log_predictions_skips_bull_on_risk_off(monkeypatch):
+    """API mode: RISK_OFF deterministically skips LIVE BULL inserts even if the
+    model ignored the prompt instruction; non-BULL rows still log."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    monkeypatch.setattr(
+        daily_briefing, "get_connection", lambda *a, **k: get_connection(path)
+    )
+
+    base = {
+        "market": "US",
+        "confidence": 0.65,
+        "timeframe": "1W",
+        "reasoning": "t",
+        "entry_price": 100.0,
+        "signals_used": ["technical"],
+        # Components present → no gate-component augmentation fetch in test.
+        "components": {"overextension": "NONE", "return_1m": 0.05},
+    }
+    logged = daily_briefing.log_predictions(
+        [
+            {**base, "ticker": "NVDA", "direction": "BULL"},
+            {**base, "ticker": "SPY", "direction": "NEUTRAL"},
+        ],
+        macro_risk_level="RISK_OFF",
+    )
+    assert logged == 1  # BULL skipped, NEUTRAL logged
+    conn = get_connection(path)
+    rows = conn.execute("SELECT ticker, direction FROM predictions").fetchall()
+    conn.close()
+    assert [(r["ticker"], r["direction"]) for r in rows] == [("SPY", "NEUTRAL")]
+
+
+def test_build_api_prompt_returns_prompt_and_risk_level(monkeypatch):
+    """API mode surfaces the assessed macro risk level alongside the prompt so
+    run_briefing can thread it into log_predictions (the deterministic
+    RISK_OFF BULL skip); the macro block itself lands in the prompt body."""
+    monkeypatch.setattr(daily_briefing, "fetch_us_market_data", lambda: "MARKET_DATA")
+    monkeypatch.setattr(daily_briefing, "get_track_record_context", lambda: "TRACK")
+    monkeypatch.setattr(
+        daily_briefing, "_macro_block_and_risk", lambda: ("MACRO_BLOCK", "RISK_OFF")
+    )
+    prompt, risk_level = daily_briefing.build_api_prompt("US")
+    assert risk_level == "RISK_OFF"
+    assert "MACRO_BLOCK" in prompt
+    assert "MARKET_DATA" in prompt

@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 24 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --body-bg: #f7f7f5;
+        --text: #1a1a1a;
+        --text-soft: #333;
+        --heading: #0f1e26;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --header-bg: #fff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #8a9aaa;
+          --border: #33404a;
+          --card-bg: #1c232a;
+          --body-bg: #12171b;
+          --text: #e6e9ec;
+          --text-soft: #c9cfd4;
+          --heading: #f2f4f6;
+          --code-bg: #232b32;
+          --code-border: #3a4650;
+          --header-bg: #171d22;
+        }
+      }
+
+      body {
+        background: var(--body-bg);
+        color: var(--text);
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      .review-round {
+        font-weight: 700;
+        color: var(--heading);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="R3 event-gate restore">
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="LIVE 1Y gate">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current">
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 24</h2>
+        <p>
+          Deterministic macro risk-off switch (NORMAL / ELEVATED / RISK_OFF)
+          that gates new BULL prediction issuance during macro shocks.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>Macro Risk-Off Switch (NORMAL / ELEVATED / RISK_OFF)</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            During the early-June 2026 macro shock (SPY -4.5% from 6/2 to 6/10)
+            the system logged ~229 BULL predictions on 6/1–6/5; that weekly
+            cohort averaged <strong>-11.3%</strong> with 135 misses. LIVE BEAR
+            predictions are hard-rejected by design (<code
+              >mcp-prediction-store/models.py</code
+            >
+            ~line 521, measured ~0% BEAR win rate), so the system is
+            structurally long-only — macro risk had
+            <strong>no expression channel</strong> and the system walked
+            straight into the drawdown. The macro-news feed (Stage 21) already
+            carried the shock headlines; nothing acted on them.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>assess_macro_risk(items) -&gt; dict</code> in
+              <code>mcp-market-data/macro_news.py</code>: deterministic keyword
+              tripwire (not NLP) over the already-fetched macro headlines. Five
+              buckets, English + Korean keywords, case-insensitive substring
+              match: <code>war_conflict</code> (w2),
+              <code>market_crash</code> (w2),
+              <code>emergency_central_bank</code> (w2),
+              <code>oil_supply_shock</code> (w1),
+              <code>tariff_sanctions</code> (w1). Each item counts once, at its
+              most severe matching bucket. Thresholds are module constants:
+              score ≥ 2 → <code>ELEVATED</code> (one severe or two moderate
+              headlines), score ≥ 6 → <code>RISK_OFF</code>
+              (corroborated shock, e.g. three severe headlines). Output:
+              <code>{risk_level, risk_score, matched (evidence), note}</code>.
+            </li>
+            <li>
+              <strong>Fail-open, visibly</strong>: RSS + GDELT both unreachable
+              → empty items → <code>NORMAL</code> with an explicit note ("risk
+              not assessed (fail-open NORMAL)") — same philosophy as the
+              catalyst gate's <code>gate_unavailable</code>.
+            </li>
+            <li>
+              <strong>CLI</strong>: <code>stock-cli macro-news</code> JSON now
+              includes a <code>risk</code> key (no new flag — smallest surface).
+            </li>
+            <li>
+              <strong>Daily briefing</strong>:
+              <code>_macro_block()</code> prepends a
+              <code>MACRO RISK: &lt;level&gt;</code> line + gate instruction to
+              the macro-headlines block in both US and KR prompts —
+              <code>RISK_OFF</code> → log NO new BULL this run (labels cap at
+              WATCH); <code>ELEVATED</code> → additional -0.05 confidence trim
+              (stacks with the R3 trims).
+            </li>
+            <li>
+              <strong><code>expect</code> skill</strong>: one new bullet inside
+              RULE R3 ("Macro risk-off switch") with the same RISK_OFF /
+              ELEVATED / fail-open rules; R1/R2/R3 structure untouched (diff
+              kept minimal — another branch edits the same file).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            Kept it a tripwire: severity-weighted keyword buckets and two
+            integer thresholds, all module constants (no config surface).
+            Phrases are deliberately specific ("nuclear threat" not "nuclear",
+            "retaliatory tariff" not "tariff") so routine news flow doesn't fire
+            the switch; corroboration (multiple matched headlines) is required
+            to reach RISK_OFF. The switch reuses the existing macro-news fetch
+            (RSS primary / GDELT fallback, PR #49) — no new network surface.
+            Consumption goes through the existing prompt-block channel and the
+            existing R3 gate language, so trims stack exactly like the
+            earnings/macro event trims (-0.05 steps; caps change labels).
+          </p>
+          <p style="margin-top: 0.6rem">
+            TDD: 13 new tests (11 in <code>test_macro_news.py</code>:
+            NORMAL/ELEVATED/RISK_OFF item sets, Korean-language matching,
+            once-per-item counting, fail-open, prompt rendering; 2 in
+            <code>test_daily_briefing.py</code>: RISK_OFF line + no-new-BULL
+            rule in the briefing block, fail-open note). No network in tests.
+            Full suite: 681 passed, 24 network-marked deselected.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>mcp-market-data/macro_news.py</code> —
+              <code>MACRO_RISK_BUCKETS</code> (line 378), thresholds (485-486),
+              <code>_match_risk_bucket</code> (489),
+              <code>assess_macro_risk</code> (505),
+              <code>format_macro_for_prompt</code> risk rendering (572),
+              <code>_fetch_macro_news_with_meta</code> freshness meta (149)
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_macro_news</code> adds
+              <code>"risk"</code> to the JSON payload
+            </li>
+            <li>
+              <code>scheduler/daily_briefing.py</code> —
+              <code>_macro_block()</code> passes
+              <code>assess_macro_risk(items)</code> into
+              <code>format_macro_for_prompt</code>
+            </li>
+            <li>
+              <code>.claude/skills/expect/SKILL.md</code> — RULE R3, new "Macro
+              risk-off switch" bullet
+            </li>
+            <li>
+              <code>mcp-market-data/tests/test_macro_news.py</code>,
+              <code>scheduler/tests/test_daily_briefing.py</code> — new tests
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Code review of PR #52: <strong>no blockers, no should-fix</strong>.
+            One nit — the <code>"trade war escalat"</code> substring could
+            theoretically match e.g. "trade war escalator" — dismissed as
+            acceptable by design: matched evidence is surfaced to the LLM
+            alongside the level, and the bucket is weight 1 against an ELEVATED
+            threshold of 2, so a single-item false positive cannot trip
+            ELEVATED/RISK_OFF on its own. No code change.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round"
+                >Codex round 1 (commit <code>0bdc8e4</code>)</span
+              >
+              — 3 P2 findings, all verified and fixed:
+              <ul>
+                <li>
+                  <strong>RISK_OFF not enforced outside the prompt</strong> — in
+                  <code>--mode api</code> the risk level only rendered a prompt
+                  instruction; <code>log_predictions()</code> would still insert
+                  any parsed LIVE BULL. Fixed: <code>build_api_prompt</code> now
+                  returns <code>(prompt, macro_risk_level)</code>, and
+                  <code>log_predictions(..., macro_risk_level=...)</code>
+                  deterministically skips LIVE BULL inserts under RISK_OFF with
+                  a visible log line. The ELEVATED -0.05 trim stays prompt-only
+                  (avoids double-trimming); claude-code / codex-cli modes remain
+                  prompt-enforced (out of scope for deterministic CLI-side
+                  enforcement).
+                </li>
+                <li>
+                  <strong>Stale cache scored as live risk</strong> — an
+                  arbitrarily old cache could be served and labelled plain
+                  <code>"gdelt"</code>, keeping RISK_OFF active with no note.
+                  Fixed: fetch internals expose freshness meta (live / cache /
+                  stale-cache / empty), <code>get_macro_news</code> surfaces the
+                  stale path as source <code>"gdelt-stale"</code>, and
+                  <code>assess_macro_risk(items, stale=True)</code> degrades to
+                  NORMAL with a visible "stale feed" note.
+                </li>
+                <li>
+                  <strong>Generic emergency-meeting keywords</strong> —
+                  "emergency meeting" / "unscheduled meeting" / "긴급 회의"
+                  matched routine UN/government headlines, tripping ELEVATED on
+                  one hit. Fixed: bucket scoped to central-bank-only terms
+                  ("emergency rate cut/hike", "intermeeting cut", "emergency
+                  fomc", "central bank emergency", "currency intervention",
+                  "긴급 금리", "긴급 금통위", "외환시장 개입").
+                </li>
+              </ul>
+              Six tests added; suite 687 passed / 24 network-deselected.
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round"
+                >Second-opinion review (Gemini via antigravity, commit
+                <code>16a7056</code>)</span
+              >:
+              <ul>
+                <li>
+                  <strong>KR keyword false-positive traps (blocker)</strong> —
+                  verified and fixed: bare "전쟁" matched metaphorical finance
+                  headlines (무역/반도체/가격 전쟁) → replaced with "전쟁 발발"
+                  / "전면전" ("무역 전쟁" moved to tariff_sanctions); bare
+                  "디폴트" matched the routine pension term "디폴트옵션" →
+                  replaced with "국가 디폴트" / "채무불이행"; bare "폭락"
+                  matched single-stock plunges → scoped to market-wide forms.
+                  Negative tests added for all three traps.
+                </li>
+                <li>
+                  <strong>Syndicated-duplicate inflation (should-fix)</strong>
+                  — one wire story republished verbatim by 3 outlets summed to 6
+                  → RISK_OFF without real corroboration. Fixed:
+                  <code>assess_macro_risk</code> now collapses near-identical
+                  titles (casefold, alnum-only normalization) before scoring.
+                </li>
+                <li>
+                  <strong>Boundary test gap (should-fix)</strong> — nothing
+                  asserted the <code>build_api_prompt</code> →
+                  <code>(prompt, macro_risk_level)</code> shape. Added
+                  <code
+                    >test_build_api_prompt_returns_prompt_and_risk_level</code
+                  >.
+                </li>
+                <li>
+                  <strong>Dismissed (nit)</strong> — "only LIVE BULL
+                  intercepted; NEUTRAL/BEAR label capping left to the LLM": BEAR
+                  is already hard-rejected at the store level and NEUTRAL
+                  carries no long exposure, so the deterministic skip covers
+                  exactly the harmful class. No code change.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round"
+                >Codex round 2 (commit <code>16a7056</code>)</span
+              >
+              — 3 findings, all verified and fixed:
+              <ul>
+                <li>
+                  <strong
+                    >A. GDELT fallback query missed the risk vocabulary
+                    (P2)</strong
+                  >
+                  — the curated query had no war/geopolitical terms, leaving the
+                  switch blind on the RSS-down path. Fixed: severe terms (war,
+                  invasion, missile, nuclear, blockade, airstrike, "market
+                  crash", "circuit breaker", "sovereign default") appended to
+                  the one existing OR-group (no second GDELT call — 1 req/5s IP
+                  limit).
+                </li>
+                <li>
+                  <strong>B. Round-1 CB narrowing overshot (P2)</strong> — "Fed
+                  holds emergency meeting" no longer matched. Fixed with a
+                  bucket-local two-term matcher
+                  (<code>_is_central_bank_emergency</code>): emergency-meeting
+                  wording counts only alongside a central-bank token
+                  (word-bounded fed/fomc/ecb/boj/bok — "fedex" excluded — or
+                  substring "central bank"/연준/한은/금통위).
+                </li>
+                <li>
+                  <strong>C. Stale meta dropped for empty cache (P3)</strong>
+                  — a valid-but-empty expired cache lost its stale-feed note.
+                  Fixed: <code>get_macro_news</code> propagates
+                  <code>"gdelt-stale"</code> whenever meta is stale-cache.
+                </li>
+              </ul>
+              Six more tests; suite 693 passed / 24 network-deselected.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Reusing the Stage 21 feed meant the whole switch is ~150 lines +
+              tests, with zero new dependencies or keys. The thresholds (2/6)
+              are educated guesses — worth replaying against the June headline
+              archive once available, and the keyword lists will need occasional
+              curation (they're constants by design, so tuning is a reviewed PR,
+              not config drift).</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
