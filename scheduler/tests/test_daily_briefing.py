@@ -337,7 +337,9 @@ def test_macro_block_renders_via_get_macro_news(monkeypatch):
         daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss")
     )
     monkeypatch.setattr(
-        daily_briefing, "assess_macro_risk", lambda items: {"risk_level": "NORMAL"}
+        daily_briefing,
+        "assess_macro_risk",
+        lambda items, stale=False: {"risk_level": "NORMAL"},
     )
     monkeypatch.setattr(
         daily_briefing,
@@ -395,3 +397,57 @@ def test_macro_block_fail_open_note_when_no_sources(monkeypatch):
     block = daily_briefing._macro_block()
     assert "MACRO RISK: NORMAL" in block
     assert "fail-open" in block
+
+
+def test_macro_block_degrades_on_stale_source(monkeypatch):
+    """A stale GDELT cache must not hold the gate: NORMAL + visible stale note."""
+    from providers.base import NewsItem
+
+    shock = [
+        NewsItem(
+            headline="Iran blockades Strait of Hormuz as conflict widens",
+            source="reuters.com",
+            date="2026-06-05",
+            url="u1",
+        ),
+    ]
+    monkeypatch.setattr(
+        daily_briefing, "get_macro_news", lambda limit=15: (shock, "gdelt-stale")
+    )
+    block, risk_level = daily_briefing._macro_block_and_risk()
+    assert risk_level == "NORMAL"
+    assert "MACRO RISK: NORMAL" in block
+    assert "stale" in block
+
+
+def test_log_predictions_skips_bull_on_risk_off(monkeypatch):
+    """API mode: RISK_OFF deterministically skips LIVE BULL inserts even if the
+    model ignored the prompt instruction; non-BULL rows still log."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = Path(f.name)
+    monkeypatch.setattr(
+        daily_briefing, "get_connection", lambda *a, **k: get_connection(path)
+    )
+
+    base = {
+        "market": "US",
+        "confidence": 0.65,
+        "timeframe": "1W",
+        "reasoning": "t",
+        "entry_price": 100.0,
+        "signals_used": ["technical"],
+        # Components present → no gate-component augmentation fetch in test.
+        "components": {"overextension": "NONE", "return_1m": 0.05},
+    }
+    logged = daily_briefing.log_predictions(
+        [
+            {**base, "ticker": "NVDA", "direction": "BULL"},
+            {**base, "ticker": "SPY", "direction": "NEUTRAL"},
+        ],
+        macro_risk_level="RISK_OFF",
+    )
+    assert logged == 1  # BULL skipped, NEUTRAL logged
+    conn = get_connection(path)
+    rows = conn.execute("SELECT ticker, direction FROM predictions").fetchall()
+    conn.close()
+    assert [(r["ticker"], r["direction"]) for r in rows] == [("SPY", "NEUTRAL")]

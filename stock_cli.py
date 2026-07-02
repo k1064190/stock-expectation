@@ -777,12 +777,12 @@ def cmd_macro_news(args) -> int:
         now = datetime.now()
         _print_json(
             {
-                "source": source,  # "gdelt" | "rss" (fallback) | "none"
+                "source": source,  # "rss" | "gdelt" | "gdelt-stale" (expired cache) | "none"
                 "generated_at": now.isoformat(timespec="seconds"),
                 "timespan": args.timespan,
                 "query": args.query,
                 "count": len(items),
-                "risk": assess_macro_risk(items),
+                "risk": assess_macro_risk(items, stale=(source == "gdelt-stale")),
                 "items": [asdict(n) for n in items],
             }
         )

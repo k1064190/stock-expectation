@@ -134,6 +134,37 @@ def fetch_macro_news(
         hit returns the cached items; on a fetch error returns the last cached
         result if any, else an empty list — never raises.
     """
+    items, _ = _fetch_macro_news_with_meta(
+        query=query,
+        timespan=timespan,
+        limit=limit,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+        max_attempts=max_attempts,
+        retry_delay=retry_delay,
+    )
+    return items
+
+
+def _fetch_macro_news_with_meta(
+    query: str = DEFAULT_MACRO_QUERY,
+    timespan: str = DEFAULT_TIMESPAN,
+    limit: int = 20,
+    cache_dir: Path = CACHE_DIR,
+    ttl_seconds: int = CACHE_TTL_SECONDS,
+    max_attempts: int = 2,
+    retry_delay: float = 6.0,
+) -> tuple[list[NewsItem], str]:
+    """``fetch_macro_news`` plus a freshness meta tag, for consumers that must
+    not treat stale data as live (the macro risk-off switch).
+
+    Args: same as ``fetch_macro_news``.
+
+    Returns:
+        ``(items, meta)`` where meta is "live" (fresh fetch), "cache"
+        (within-TTL cache hit), "stale-cache" (expired cache served after a
+        fetch error — an arbitrarily old snapshot), or "empty" (no data).
+    """
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
@@ -144,7 +175,7 @@ def fetch_macro_news(
     if cached and _cache_is_fresh(cached, ttl_seconds):
         fresh_items = _items_from_cache(cached)
         if fresh_items is not None:
-            return fresh_items
+            return fresh_items, "cache"
 
     last_error: Optional[Exception] = None
     for attempt in range(max_attempts):
@@ -189,7 +220,7 @@ def fetch_macro_news(
                 )
             except OSError as e:
                 logger.warning("macro-news cache write failed: %s", e)
-            return items
+            return items, "live"
         except Exception as e:  # network / 429 / bad JSON
             last_error = e
             if attempt < max_attempts - 1:
@@ -200,9 +231,9 @@ def fetch_macro_news(
         stale = _items_from_cache(cached)
         if stale is not None:
             logger.warning("GDELT fetch failed (%s); serving stale cache", last_error)
-            return stale
+            return stale, "stale-cache"
     logger.warning("GDELT fetch failed (%s) and no cache; returning empty", last_error)
-    return []
+    return [], "empty"
 
 
 def _parse_rss_date(raw: str) -> tuple[str, Optional[datetime]]:
@@ -314,18 +345,23 @@ def get_macro_news(
     a whole-day window for RSS. ``query`` only constrains the GDELT path (RSS is a
     fixed curated feed set, not keyword-queryable).
 
-    Returns ``(items, source)`` where source is "rss", "gdelt", or "none" — so
-    callers can see which path served.
+    Returns ``(items, source)`` where source is "rss", "gdelt", "gdelt-stale"
+    (expired GDELT cache served after a fetch error — usable as context but
+    NOT as a live risk signal), or "none" — so callers can see which path
+    served.
     """
     rss = fetch_rss_macro_news(limit=limit, since_days=_timespan_to_days(timespan))
     if rss:
         return rss, "rss"
-    gdelt = fetch_macro_news(
+    gdelt, meta = _fetch_macro_news_with_meta(
         query=query, timespan=timespan, limit=limit, cache_dir=cache_dir
     )
     if gdelt:
-        logger.info("RSS empty; macro news via GDELT fallback (%d)", len(gdelt))
-        return gdelt, "gdelt"
+        source = "gdelt-stale" if meta == "stale-cache" else "gdelt"
+        logger.info(
+            "RSS empty; macro news via GDELT fallback (%d, %s)", len(gdelt), meta
+        )
+        return gdelt, source
     return [], "none"
 
 
@@ -390,14 +426,16 @@ MACRO_RISK_BUCKETS = (
         "emergency_central_bank",
         2,
         (
+            # Central-bank-scoped only — bare "emergency meeting" phrases match
+            # routine UN/government headlines on the BBC/Yonhap world feeds.
             "emergency rate cut",
             "emergency rate hike",
-            "emergency meeting",
             "intermeeting cut",
-            "unscheduled meeting",
+            "emergency fomc",
+            "central bank emergency",
             "currency intervention",
             "긴급 금리",
-            "긴급 회의",
+            "긴급 금통위",
             "외환시장 개입",
         ),
     ),
@@ -464,7 +502,7 @@ def _match_risk_bucket(headline: str) -> Optional[tuple[str, int]]:
     return None
 
 
-def assess_macro_risk(items: list[NewsItem]) -> dict:
+def assess_macro_risk(items: list[NewsItem], stale: bool = False) -> dict:
     """Deterministic market-level risk read over macro headlines (tripwire).
 
     Motivated by the early-June 2026 macro shock: ~229 BULL predictions were
@@ -475,6 +513,9 @@ def assess_macro_risk(items: list[NewsItem]) -> dict:
 
     Args:
         items: Macro NewsItems from ``get_macro_news`` (may be empty).
+        stale: True when the items came from an expired cache (source
+            "gdelt-stale") — an old shock snapshot must not hold the gate, so
+            the assessment degrades to NORMAL with a visible note.
 
     Returns:
         dict with:
@@ -483,8 +524,18 @@ def assess_macro_risk(items: list[NewsItem]) -> dict:
                 once, at its most severe matching bucket).
             matched: evidence list of {headline, source, date, bucket, weight}.
             note: str | None — set when ``items`` is empty (both sources
-                unreachable → fail-open NORMAL, visibly noted).
+                unreachable → fail-open NORMAL, visibly noted) or ``stale``.
     """
+    if stale:
+        return {
+            "risk_level": "NORMAL",
+            "risk_score": 0,
+            "matched": [],
+            "note": (
+                "macro feed stale (expired cache served on fetch error) — "
+                "risk not assessed (fail-open NORMAL)"
+            ),
+        }
     if not items:
         return {
             "risk_level": "NORMAL",

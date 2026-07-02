@@ -54,9 +54,10 @@ the briefing block, fail-open note). No network in tests. Full suite:
 
 ## Code locations
 
-- `mcp-market-data/macro_news.py` — `MACRO_RISK_BUCKETS` (line 342),
-  thresholds (447-448), `_match_risk_bucket` (451), `assess_macro_risk` (467),
-  `format_macro_for_prompt` risk rendering (521)
+- `mcp-market-data/macro_news.py` — `MACRO_RISK_BUCKETS` (line 378),
+  thresholds (485-486), `_match_risk_bucket` (489), `assess_macro_risk` (505),
+  `format_macro_for_prompt` risk rendering (572),
+  `_fetch_macro_news_with_meta` freshness meta (149)
 - `stock_cli.py` — `cmd_macro_news` adds `"risk"` to the JSON payload
 - `scheduler/daily_briefing.py` — `_macro_block()` passes
   `assess_macro_risk(items)` into `format_macro_for_prompt`
@@ -72,6 +73,41 @@ escalator" — dismissed as acceptable by design: matched evidence is surfaced
 to the LLM alongside the level, and the bucket is weight 1 against an
 ELEVATED threshold of 2, so a single-item false positive cannot trip
 ELEVATED/RISK_OFF on its own. No code change.
+
+### Codex round 1 (commit `0bdc8e4`) — 3 P2 findings, all verified and fixed
+
+1. **RISK_OFF not enforced outside the prompt** — verified: in `--mode api`
+   the risk level only rendered a prompt instruction; `log_predictions()`
+   would still insert any parsed LIVE BULL. Fixed: `build_api_prompt` now
+   returns `(prompt, macro_risk_level)` (risk computed once via the new
+   `_macro_block_and_risk()`; `_macro_block()` unchanged for CLI modes), and
+   `log_predictions(..., macro_risk_level=...)` deterministically skips LIVE
+   BULL inserts under RISK_OFF with a visible log line (mirrors the LIVE BEAR
+   skip; placed before the gate-component augmentation so no bars are fetched
+   for a dropped row). The ELEVATED -0.05 trim stays prompt-only — the model
+   already trims per instruction, and re-trimming in code would double-trim.
+   Claude-code / codex-cli modes remain prompt-enforced: there the LLM logs
+   via `bin/stock-cli` and deterministic CLI-side enforcement would couple
+   the store to live network state (out of scope).
+2. **Stale cache scored as live risk** — verified true: `fetch_macro_news`
+   serves an arbitrarily old cache when all fetch attempts fail, and
+   `get_macro_news` labelled it plain `"gdelt"`, so an old shock snapshot
+   could keep RISK_OFF active with no note. Fixed: the fetch internals now
+   expose freshness meta (`_fetch_macro_news_with_meta` → live / cache /
+   stale-cache / empty; public `fetch_macro_news` signature unchanged),
+   `get_macro_news` surfaces the stale path as source `"gdelt-stale"`, and
+   `assess_macro_risk(items, stale=True)` degrades to NORMAL with a visible
+   "stale feed" note — headlines are still shown as context.
+3. **Generic emergency-meeting keywords** — verified: "emergency meeting" /
+   "unscheduled meeting" / "긴급 회의" (weight 2) matched routine UN/government
+   headlines on the BBC/Yonhap world feeds, tripping ELEVATED on one hit.
+   Fixed: bucket is now central-bank-scoped only — "emergency rate cut/hike",
+   "intermeeting cut", "emergency fomc", "central bank emergency", "currency
+   intervention", "긴급 금리", "긴급 금통위", "외환시장 개입".
+
+Six tests added for the round-1 fixes (RISK_OFF api-mode BULL skip,
+stale-cache meta + source label + degrade at both the module and briefing
+level, UN-emergency-meeting non-match); suite 687 passed / 24 network-deselected.
 
 ## Retrospective
 

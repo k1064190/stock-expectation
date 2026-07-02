@@ -530,12 +530,26 @@ def _macro_block() -> str:
     instruction so shocks cap new BULL issuance (RISK_OFF → WATCH only,
     ELEVATED → extra -0.05 confidence trim).
     """
+    return _macro_block_and_risk()[0]
+
+
+def _macro_block_and_risk() -> tuple[str, str]:
+    """Macro block plus the assessed risk level, fetched once.
+
+    Returns:
+        ``(block, risk_level)`` where risk_level is "NORMAL" / "ELEVATED" /
+        "RISK_OFF". On any error returns ``("", "NORMAL")`` — fail-open, never
+        blocking the briefing. A stale GDELT cache (source "gdelt-stale")
+        degrades the risk read to NORMAL (an old shock snapshot must not hold
+        the gate) while still showing the headlines as context.
+    """
     try:
-        items, _ = get_macro_news(limit=15)
-        return format_macro_for_prompt(items, assess_macro_risk(items))
+        items, source = get_macro_news(limit=15)
+        risk = assess_macro_risk(items, stale=(source == "gdelt-stale"))
+        return format_macro_for_prompt(items, risk), risk["risk_level"]
     except Exception as e:
         logger.warning("macro-news block unavailable: %s", e)
-        return ""
+        return "", "NORMAL"
 
 
 def build_claude_code_prompt(market: str) -> str:
@@ -908,7 +922,7 @@ def call_claude_api(prompt: str) -> str:
     return message.content[0].text
 
 
-def build_api_prompt(market: str) -> str:
+def build_api_prompt(market: str) -> tuple[str, str]:
     """Build a self-contained prompt for Anthropic API mode.
 
     In API mode, Claude has no MCP access, so we pre-fetch all data
@@ -919,7 +933,10 @@ def build_api_prompt(market: str) -> str:
         market: "US" or "KR".
 
     Returns:
-        Full prompt string with data embedded.
+        ``(prompt, macro_risk_level)`` — the full prompt string with data
+        embedded, plus the assessed macro risk level ("NORMAL" / "ELEVATED" /
+        "RISK_OFF") so the caller can deterministically enforce the RISK_OFF
+        BULL skip at logging time (the prompt instruction alone is advisory).
     """
     if market == "US":
         market_data = fetch_us_market_data()
@@ -928,7 +945,9 @@ def build_api_prompt(market: str) -> str:
         market_data = fetch_kr_market_data()
         prompt_template = (PROMPTS_DIR / "briefing_kr.md").read_text()
 
-    macro = _macro_block()  # global macro/geopolitical context (API mode too)
+    # Global macro/geopolitical context (API mode too); risk level kept for
+    # deterministic enforcement in log_predictions.
+    macro, macro_risk_level = _macro_block_and_risk()
     if macro:
         market_data = f"{market_data}\n\n{macro}"
 
@@ -943,7 +962,7 @@ def build_api_prompt(market: str) -> str:
             us_context = "US market data unavailable"
         prompt = prompt.replace("{us_context}", us_context)
 
-    return prompt
+    return prompt, macro_risk_level
 
 
 # ---------------------------------------------------------------------------
@@ -1016,7 +1035,7 @@ def _augment_gate_components(pred, providers: dict) -> None:
         logger.debug("gate-component augmentation failed for %s: %s", pred.ticker, e)
 
 
-def log_predictions(predictions: list[dict]) -> int:
+def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -> int:
     """Insert parsed predictions into the database.
 
     Only used in API mode — in Claude Code mode, predictions are
@@ -1024,6 +1043,12 @@ def log_predictions(predictions: list[dict]) -> int:
 
     Args:
         predictions: List of prediction dicts from Claude's response.
+        macro_risk_level: Assessed macro risk ("NORMAL" / "ELEVATED" /
+            "RISK_OFF") from the risk-off switch. RISK_OFF deterministically
+            skips LIVE BULL inserts here — the prompt already caps labels at
+            WATCH, so the skip is idempotent whether or not the model obeyed.
+            ELEVATED stays prompt-only: the model already applies the -0.05
+            trim, and re-trimming in code would double-trim.
 
     Returns:
         Number of predictions successfully logged.
@@ -1087,6 +1112,19 @@ def log_predictions(predictions: list[dict]) -> int:
                     pred.ticker,
                     pred.market,
                     pred.direction,
+                    pred.timeframe,
+                )
+                continue
+
+            # The macro risk-off switch gates fresh BULL issuance market-wide
+            # under RISK_OFF. Skipped before the gate-component augmentation
+            # (no point fetching bars for a row we drop) and mirrored on the
+            # LIVE BEAR skip below: an intentional, visible no-op.
+            if macro_risk_level == "RISK_OFF" and pred.direction == "BULL":
+                logger.info(
+                    "Skipping LIVE BULL prediction (macro RISK_OFF): %s %s %s",
+                    pred.ticker,
+                    pred.market,
                     pred.timeframe,
                 )
                 continue
@@ -1167,7 +1205,7 @@ def run_briefing(market: str, mode: str = "codex-cli") -> None:
                         f"({len(stripped)} chars). First 200: {stripped[:200]!r}"
                     )
             else:
-                prompt = build_api_prompt(mkt)
+                prompt, macro_risk_level = build_api_prompt(mkt)
                 logger.info(
                     "Calling Anthropic API for %s briefing (%d chars)", mkt, len(prompt)
                 )
@@ -1175,7 +1213,7 @@ def run_briefing(market: str, mode: str = "codex-cli") -> None:
                 # In API mode, parse predictions from response and log manually
                 predictions = parse_predictions(response)
                 logger.info("Parsed %d predictions from response", len(predictions))
-                logged = log_predictions(predictions)
+                logged = log_predictions(predictions, macro_risk_level=macro_risk_level)
                 logger.info("Logged %d/%d predictions", logged, len(predictions))
 
         except Exception as e:

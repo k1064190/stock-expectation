@@ -198,7 +198,7 @@ def test_get_macro_news_prefers_rss():
     rss_items = [NewsItem(headline="R", source="BBC", date="2026-06-23", url="r")]
     with (
         patch("macro_news.fetch_rss_macro_news", return_value=rss_items),
-        patch("macro_news.fetch_macro_news") as gdelt,
+        patch("macro_news._fetch_macro_news_with_meta") as gdelt,
     ):
         items, source = macro_news.get_macro_news()
     assert source == "rss"
@@ -212,11 +212,48 @@ def test_get_macro_news_falls_back_to_gdelt_when_rss_empty():
     ]
     with (
         patch("macro_news.fetch_rss_macro_news", return_value=[]),
-        patch("macro_news.fetch_macro_news", return_value=gdelt_items),
+        patch(
+            "macro_news._fetch_macro_news_with_meta",
+            return_value=(gdelt_items, "live"),
+        ),
     ):
         items, source = macro_news.get_macro_news()
     assert source == "gdelt"
     assert items == gdelt_items
+
+
+def test_get_macro_news_labels_stale_gdelt_cache():
+    """An expired cache served on fetch error is surfaced as 'gdelt-stale'."""
+    gdelt_items = [
+        NewsItem(headline="G", source="reuters.com", date="2026-06-01", url="g")
+    ]
+    with (
+        patch("macro_news.fetch_rss_macro_news", return_value=[]),
+        patch(
+            "macro_news._fetch_macro_news_with_meta",
+            return_value=(gdelt_items, "stale-cache"),
+        ),
+    ):
+        items, source = macro_news.get_macro_news()
+    assert source == "gdelt-stale"
+    assert items == gdelt_items
+
+
+def test_fetch_macro_news_meta_marks_stale_cache(tmp_path):
+    """The stale-serve path reports 'stale-cache', not a live-looking result."""
+    # Populate the cache with a successful fetch.
+    with patch("macro_news.httpx.get", return_value=_resp(GDELT_PAYLOAD)):
+        _, meta = macro_news._fetch_macro_news_with_meta(
+            timespan="24h", limit=20, cache_dir=tmp_path
+        )
+    assert meta == "live"
+    # Expired TTL + fetch error → stale cache served, marked as such.
+    with patch("macro_news.httpx.get", side_effect=httpx.HTTPError("429")):
+        items, meta = macro_news._fetch_macro_news_with_meta(
+            timespan="24h", limit=20, cache_dir=tmp_path, ttl_seconds=0, max_attempts=1
+        )
+    assert meta == "stale-cache"
+    assert len(items) == 2
 
 
 def test_timespan_to_days_maps_to_rss_window():
@@ -393,6 +430,34 @@ def test_assess_macro_risk_fail_open_on_empty():
     assert risk["risk_level"] == "NORMAL"
     assert risk["risk_score"] == 0
     assert "fail-open" in risk["note"]
+
+
+def test_assess_macro_risk_degrades_on_stale_feed():
+    """Old shock headlines from an expired cache must not hold the gate."""
+    shock = [
+        _item("Iran blockades Strait of Hormuz as conflict widens"),
+        _item("Stock market crash fears as circuit breaker halts trading"),
+    ]
+    risk = macro_news.assess_macro_risk(shock, stale=True)
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+    assert "stale" in risk["note"]
+    assert "fail-open" in risk["note"]
+
+
+def test_assess_macro_risk_ignores_non_central_bank_emergency_meeting():
+    """UN/government 'emergency meeting' headlines must not trip the CB bucket;
+    central-bank-scoped phrases still do."""
+    risk = macro_news.assess_macro_risk(
+        [_item("UN Security Council holds emergency meeting on ceasefire")]
+    )
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+    risk = macro_news.assess_macro_risk(
+        [_item("Fed announces emergency rate cut after market turmoil")]
+    )
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["matched"][0]["bucket"] == "emergency_central_bank"
 
 
 def test_format_macro_for_prompt_renders_risk_off_instruction():
