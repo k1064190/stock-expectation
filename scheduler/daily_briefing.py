@@ -72,7 +72,7 @@ from blended_funnel import (
 )
 from candidate_discovery import _load_sector_verdicts
 from events import YF_LOOKUP_FAILED_PREFIX, evaluate_gate
-from macro_news import format_macro_for_prompt, get_macro_news
+from macro_news import assess_macro_risk, format_macro_for_prompt, get_macro_news
 from theme_clusterer import (
     backfill_news_counts,
     cluster_news,
@@ -525,11 +525,14 @@ def _macro_block() -> str:
     """Global macro / geopolitical headlines block for the briefing prompt.
 
     Market-agnostic (fetched once per call); degrades to an empty string on any
-    error so a macro-news outage never blocks the briefing.
+    error so a macro-news outage never blocks the briefing. Includes the
+    deterministic MACRO RISK line (NORMAL / ELEVATED / RISK_OFF) + gate
+    instruction so shocks cap new BULL issuance (RISK_OFF → WATCH only,
+    ELEVATED → extra -0.05 confidence trim).
     """
     try:
         items, _ = get_macro_news(limit=15)
-        return format_macro_for_prompt(items)
+        return format_macro_for_prompt(items, assess_macro_risk(items))
     except Exception as e:
         logger.warning("macro-news block unavailable: %s", e)
         return ""

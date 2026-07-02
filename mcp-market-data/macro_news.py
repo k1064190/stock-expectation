@@ -11,6 +11,10 @@ or GDELT returns 429.
 Returns plain ``NewsItem`` objects (headline / source / date / url); GDELT's
 ``artlist`` mode carries no per-article tone, so ``sentiment_score`` is None and
 sentiment is left to the downstream LLM read.
+
+Also hosts the deterministic macro risk-off switch (``assess_macro_risk``) — a
+keyword tripwire that grades the fetched headlines NORMAL / ELEVATED / RISK_OFF
+so consumers can stop issuing fresh BULL calls during macro shocks.
 """
 
 from __future__ import annotations
@@ -325,13 +329,230 @@ def get_macro_news(
     return [], "none"
 
 
-def format_macro_for_prompt(items: list[NewsItem]) -> str:
-    """Render a compact macro-headlines block for the daily-briefing prompt."""
+# ---------------------------------------------------------------------------
+# Deterministic macro risk-off switch (keyword tripwire, not NLP)
+# ---------------------------------------------------------------------------
+
+# Keyword buckets matched case-insensitively as substrings of each headline
+# (English + Korean — the Yonhap feed is English but the GDELT fallback can
+# carry Korean). Ordered highest-weight first: an item counts ONCE, at the
+# first (most severe) bucket it matches. Weight 2 = severe shock headline,
+# weight 1 = escalation-risk headline. Phrases are deliberately specific
+# (e.g. "nuclear threat", not "nuclear") to avoid benign-news false fires.
+MACRO_RISK_BUCKETS = (
+    (
+        "war_conflict",
+        2,
+        (
+            "invasion",
+            "invades",
+            "declares war",
+            "war breaks out",
+            "missile strike",
+            "missile attack",
+            "airstrike",
+            "air strike",
+            "nuclear test",
+            "nuclear threat",
+            "nuclear weapon",
+            "strait of hormuz",
+            "blockade",
+            "military strike",
+            "전쟁",
+            "침공",
+            "공습",
+            "핵실험",
+            "봉쇄",
+            "무력 충돌",
+        ),
+    ),
+    (
+        "market_crash",
+        2,
+        (
+            "market crash",
+            "stocks crash",
+            "stock market crash",
+            "circuit breaker",
+            "trading halt",
+            "flash crash",
+            "sovereign default",
+            "defaults on its debt",
+            "enters bear market",
+            "폭락",
+            "서킷브레이커",
+            "사이드카",
+            "국가 부도",
+            "디폴트",
+        ),
+    ),
+    (
+        "emergency_central_bank",
+        2,
+        (
+            "emergency rate cut",
+            "emergency rate hike",
+            "emergency meeting",
+            "intermeeting cut",
+            "unscheduled meeting",
+            "currency intervention",
+            "긴급 금리",
+            "긴급 회의",
+            "외환시장 개입",
+        ),
+    ),
+    (
+        "oil_supply_shock",
+        1,
+        (
+            "oil prices surge",
+            "oil price surge",
+            "oil surges",
+            "oil spikes",
+            "oil soars",
+            "crude surges",
+            "crude spikes",
+            "crude soars",
+            "opec cuts",
+            "opec+ cuts",
+            "oil embargo",
+            "oil supply disruption",
+            "유가 급등",
+            "원유 공급 차질",
+        ),
+    ),
+    (
+        "tariff_sanctions",
+        1,
+        (
+            "new tariffs",
+            "tariff hike",
+            "raises tariffs",
+            "retaliatory tariff",
+            "trade war escalat",
+            "imposes sanctions",
+            "new sanctions",
+            "export ban",
+            "보복 관세",
+            "관세 인상",
+            "추가 제재",
+            "수출 금지",
+        ),
+    ),
+)
+
+# Tripwire thresholds on the summed matched-item weights. One severe headline
+# (weight 2) → ELEVATED; a corroborated shock (e.g. three severe headlines)
+# → RISK_OFF. Module constants by design — this is a tripwire, not config.
+MACRO_RISK_ELEVATED_MIN = 2
+MACRO_RISK_OFF_MIN = 6
+
+
+def _match_risk_bucket(headline: str) -> Optional[tuple[str, int]]:
+    """First (most severe) risk bucket whose keyword appears in the headline.
+
+    Args:
+        headline: News headline (any language; matched lowercased substring).
+
+    Returns:
+        ``(bucket_name, weight)`` or None if no bucket matches.
+    """
+    hl = headline.lower()
+    for bucket, weight, keywords in MACRO_RISK_BUCKETS:
+        if any(kw in hl for kw in keywords):
+            return bucket, weight
+    return None
+
+
+def assess_macro_risk(items: list[NewsItem]) -> dict:
+    """Deterministic market-level risk read over macro headlines (tripwire).
+
+    Motivated by the early-June 2026 macro shock: ~229 BULL predictions were
+    logged into a -4.5% SPY drawdown because macro risk had no expression
+    channel (LIVE BEAR is hard-rejected by design). Scores the already-fetched
+    macro-news items against MACRO_RISK_BUCKETS so consumers can stop issuing
+    fresh BULL calls during geopolitical/macro shocks.
+
+    Args:
+        items: Macro NewsItems from ``get_macro_news`` (may be empty).
+
+    Returns:
+        dict with:
+            risk_level: "NORMAL" | "ELEVATED" | "RISK_OFF".
+            risk_score: int — sum of matched-item weights (each item counts
+                once, at its most severe matching bucket).
+            matched: evidence list of {headline, source, date, bucket, weight}.
+            note: str | None — set when ``items`` is empty (both sources
+                unreachable → fail-open NORMAL, visibly noted).
+    """
+    if not items:
+        return {
+            "risk_level": "NORMAL",
+            "risk_score": 0,
+            "matched": [],
+            "note": "no macro headlines available — risk not assessed (fail-open NORMAL)",
+        }
+    matched: list[dict] = []
+    score = 0
+    for it in items:
+        hit = _match_risk_bucket(it.headline)
+        if hit is None:
+            continue
+        bucket, weight = hit
+        score += weight
+        matched.append(
+            {
+                "headline": it.headline,
+                "source": it.source,
+                "date": it.date,
+                "bucket": bucket,
+                "weight": weight,
+            }
+        )
+    if score >= MACRO_RISK_OFF_MIN:
+        level = "RISK_OFF"
+    elif score >= MACRO_RISK_ELEVATED_MIN:
+        level = "ELEVATED"
+    else:
+        level = "NORMAL"
+    return {"risk_level": level, "risk_score": score, "matched": matched, "note": None}
+
+
+def format_macro_for_prompt(items: list[NewsItem], risk: Optional[dict] = None) -> str:
+    """Render a compact macro-headlines block for the daily-briefing prompt.
+
+    Args:
+        items: Macro NewsItems (may be empty).
+        risk: Optional ``assess_macro_risk`` result. When given, a MACRO RISK
+            line + the deterministic gate instruction (RISK_OFF → no new BULL,
+            ELEVATED → extra -0.05 confidence trim) and the matched evidence
+            are prepended above the headlines.
+    """
     lines = [
         "## Global macro / geopolitical headlines (last 24h)",
         "Context for the macro-regime / LLM_CONTEXT read — NOT pick slots.",
         "",
     ]
+    if risk is not None:
+        level = risk.get("risk_level", "NORMAL")
+        lines.append(f"MACRO RISK: {level} (score {risk.get('risk_score', 0)})")
+        if level == "RISK_OFF":
+            lines.append(
+                "→ RISK_OFF: log NO new BULL predictions this run — cap every "
+                "label at WATCH."
+            )
+        elif level == "ELEVATED":
+            lines.append(
+                "→ ELEVATED: apply an additional -0.05 confidence trim to every "
+                "pick (stacks with the R3 trims)."
+            )
+        if risk.get("note"):
+            lines.append(f"  ({risk['note']})")
+        for m in (risk.get("matched") or [])[:5]:
+            lines.append(
+                f"  - risk evidence [{m['bucket']}] {m['source']}: {m['headline']}"
+            )
+        lines.append("")
     if not items:
         lines.append("_(no macro headlines available)_")
         return "\n".join(lines)

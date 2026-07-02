@@ -332,12 +332,17 @@ def test_event_gate_block_renders_partial_availability_notes():
 
 
 def test_macro_block_renders_via_get_macro_news(monkeypatch):
-    """_macro_block fetches macro news and formats it for the prompt."""
+    """_macro_block fetches macro news, scores risk, and formats it for the prompt."""
     monkeypatch.setattr(
         daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss")
     )
     monkeypatch.setattr(
-        daily_briefing, "format_macro_for_prompt", lambda items: "MACRO_BLOCK_OK"
+        daily_briefing, "assess_macro_risk", lambda items: {"risk_level": "NORMAL"}
+    )
+    monkeypatch.setattr(
+        daily_briefing,
+        "format_macro_for_prompt",
+        lambda items, risk=None: "MACRO_BLOCK_OK",
     )
     assert daily_briefing._macro_block() == "MACRO_BLOCK_OK"
 
@@ -350,3 +355,43 @@ def test_macro_block_empty_on_error(monkeypatch):
 
     monkeypatch.setattr(daily_briefing, "get_macro_news", boom)
     assert daily_briefing._macro_block() == ""
+
+
+def test_macro_block_contains_risk_off_line(monkeypatch):
+    """A shock headline set puts MACRO RISK: RISK_OFF + no-new-BULL rule in the prompt."""
+    from providers.base import NewsItem  # mcp-market-data added to sys.path above
+
+    shock = [
+        NewsItem(
+            headline="Iran blockades Strait of Hormuz as conflict widens",
+            source="BBC",
+            date="2026-06-05",
+            url="u1",
+        ),
+        NewsItem(
+            headline="US launches airstrike on military sites",
+            source="CNBC",
+            date="2026-06-05",
+            url="u2",
+        ),
+        NewsItem(
+            headline="Stock market crash fears as circuit breaker halts trading",
+            source="BBC",
+            date="2026-06-05",
+            url="u3",
+        ),
+    ]
+    monkeypatch.setattr(
+        daily_briefing, "get_macro_news", lambda limit=15: (shock, "rss")
+    )
+    block = daily_briefing._macro_block()
+    assert "MACRO RISK: RISK_OFF" in block
+    assert "NO new BULL" in block
+
+
+def test_macro_block_fail_open_note_when_no_sources(monkeypatch):
+    """RSS + GDELT both unreachable → NORMAL with a visible fail-open note."""
+    monkeypatch.setattr(daily_briefing, "get_macro_news", lambda limit=15: ([], "none"))
+    block = daily_briefing._macro_block()
+    assert "MACRO RISK: NORMAL" in block
+    assert "fail-open" in block

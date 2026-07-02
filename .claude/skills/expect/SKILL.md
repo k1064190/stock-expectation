@@ -316,6 +316,18 @@ never raises the BUY bar and never issues a BUY.
   "⚠️ macro event (<name>) in N td". **KR consumes the US macro stream** (it
   transmits via FX / SOXL); KR never gets a per-ticker earnings cap (no forward
   KR EPS feed).
+- **Macro risk-off switch (market-wide, US + KR).** Run `bin/stock-cli
+  macro-news` once per run and read `risk.risk_level` — a deterministic keyword
+  tripwire over global macro/geopolitical headlines (war/invasion, oil supply
+  shock, emergency central-bank action, market crash / circuit-breaker /
+  sovereign default, tariff/sanctions escalation).
+  - `RISK_OFF`: log **no** new BULL predictions this run — cap every label at
+    WATCH, resolve would-be BULL horizons to NEUTRAL. Emit "⚠️ MACRO RISK_OFF"
+    citing the matched evidence headlines.
+  - `ELEVATED`: trim **every** pick's logged confidence by an additional 0.05
+    (stacks with the R3 earnings/macro trims above). Emit "⚠️ MACRO ELEVATED".
+  - Fail-open: if the fetch errors or no headlines are available, the output
+    says NORMAL with a note — treat as NORMAL.
 - **Fail-open, visibly.** If `gate_unavailable` is true (no source produced
   data), treat all caps/trims as zero. If only `macro_available` is false
   (partial outage — e.g. the FMP economic calendar 402s), only `macro_trim` is

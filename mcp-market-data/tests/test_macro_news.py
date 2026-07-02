@@ -302,3 +302,136 @@ def test_get_macro_news_maps_timespan_onto_rss_window():
         items, source = macro_news.get_macro_news(timespan="3d")
     assert captured["since_days"] == 3  # timespan honored on the RSS path
     assert source == "rss"
+
+
+# --- Macro risk-off switch (deterministic tripwire) ------------------------- #
+
+
+def _item(headline: str) -> NewsItem:
+    return NewsItem(headline=headline, source="BBC", date="2026-06-05", url="u")
+
+
+def test_assess_macro_risk_normal_on_benign_headlines():
+    risk = macro_news.assess_macro_risk(
+        [
+            _item("Tech stocks rise as earnings season kicks off"),
+            _item("Fed signals rates on hold amid sticky inflation"),
+            _item("Samsung unveils new foldable phone"),
+        ]
+    )
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+    assert risk["matched"] == []
+    assert risk["note"] is None
+
+
+def test_assess_macro_risk_elevated_on_one_severe_headline():
+    risk = macro_news.assess_macro_risk(
+        [
+            _item("Russia invades neighboring country, markets reel"),
+            _item("Tech stocks rise as earnings season kicks off"),
+        ]
+    )
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["risk_score"] == 2
+    assert risk["matched"][0]["bucket"] == "war_conflict"
+
+
+def test_assess_macro_risk_elevated_on_two_moderate_headlines():
+    risk = macro_news.assess_macro_risk(
+        [
+            _item("US imposes sanctions on major oil producer"),
+            _item("China announces retaliatory tariffs on US goods"),
+        ]
+    )
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["risk_score"] == 2
+    assert {m["bucket"] for m in risk["matched"]} == {"tariff_sanctions"}
+
+
+def test_assess_macro_risk_risk_off_on_corroborated_shock():
+    risk = macro_news.assess_macro_risk(
+        [
+            _item("Iran blockades Strait of Hormuz as conflict widens"),
+            _item("US launches airstrike on military sites"),
+            _item("Stock market crash fears as circuit breaker halts trading"),
+        ]
+    )
+    assert risk["risk_level"] == "RISK_OFF"
+    assert risk["risk_score"] == 6
+    buckets = {m["bucket"] for m in risk["matched"]}
+    assert "war_conflict" in buckets
+    assert "market_crash" in buckets
+
+
+def test_assess_macro_risk_korean_headlines_match():
+    risk = macro_news.assess_macro_risk(
+        [
+            _item("코스피 폭락에 서킷브레이커 발동"),
+            _item("중동 전쟁 확산 우려에 유가 급등"),
+        ]
+    )
+    assert risk["risk_level"] == "ELEVATED"
+    assert risk["risk_score"] == 4  # market_crash (2) + war_conflict (2)
+    buckets = {m["bucket"] for m in risk["matched"]}
+    assert buckets == {"market_crash", "war_conflict"}
+
+
+def test_assess_macro_risk_item_counts_once_at_most_severe_bucket():
+    # One headline hitting both war (2) and oil (1) buckets scores once, at 2.
+    risk = macro_news.assess_macro_risk(
+        [_item("Oil spikes after missile strike near Strait of Hormuz")]
+    )
+    assert risk["risk_score"] == 2
+    assert len(risk["matched"]) == 1
+    assert risk["matched"][0]["bucket"] == "war_conflict"
+
+
+def test_assess_macro_risk_fail_open_on_empty():
+    """RSS + GDELT both unreachable → empty items → NORMAL + visible note."""
+    risk = macro_news.assess_macro_risk([])
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+    assert "fail-open" in risk["note"]
+
+
+def test_format_macro_for_prompt_renders_risk_off_instruction():
+    items = [_item("Iran blockades Strait of Hormuz as conflict widens")]
+    risk = {
+        "risk_level": "RISK_OFF",
+        "risk_score": 6,
+        "matched": [
+            {
+                "headline": items[0].headline,
+                "source": "BBC",
+                "date": "2026-06-05",
+                "bucket": "war_conflict",
+                "weight": 2,
+            }
+        ],
+        "note": None,
+    }
+    block = macro_news.format_macro_for_prompt(items, risk)
+    assert "MACRO RISK: RISK_OFF" in block
+    assert "NO new BULL" in block
+    assert "war_conflict" in block  # matched evidence surfaced
+
+
+def test_format_macro_for_prompt_renders_elevated_trim_instruction():
+    items = [_item("Russia invades neighboring country, markets reel")]
+    block = macro_news.format_macro_for_prompt(
+        items, macro_news.assess_macro_risk(items)
+    )
+    assert "MACRO RISK: ELEVATED" in block
+    assert "-0.05" in block
+
+
+def test_format_macro_for_prompt_risk_fail_open_note_visible():
+    block = macro_news.format_macro_for_prompt([], macro_news.assess_macro_risk([]))
+    assert "MACRO RISK: NORMAL" in block
+    assert "fail-open" in block
+
+
+def test_format_macro_for_prompt_without_risk_unchanged():
+    block = macro_news.format_macro_for_prompt([_item("Some headline")])
+    assert "MACRO RISK" not in block  # risk line only rendered when passed

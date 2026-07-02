@@ -103,7 +103,7 @@ from events import (
     _redact_key,
 )
 from news_features import summarize_news
-from macro_news import DEFAULT_MACRO_QUERY, get_macro_news
+from macro_news import DEFAULT_MACRO_QUERY, assess_macro_risk, get_macro_news
 from llm_context import validate_llm_context, score_from_debate
 
 from portfolio.db import (
@@ -764,6 +764,8 @@ def cmd_macro_news(args) -> int:
 
     Market-agnostic context (wars, oil/energy, central banks, tariffs) for the
     macro / LLM_CONTEXT layer — distinct from the per-ticker `news` command.
+    Output includes a deterministic `risk` assessment (NORMAL / ELEVATED /
+    RISK_OFF keyword tripwire + matched evidence) over the fetched headlines.
 
     Returns:
         0 on success (even if 0 items), 1 on unexpected error.
@@ -780,6 +782,7 @@ def cmd_macro_news(args) -> int:
                 "timespan": args.timespan,
                 "query": args.query,
                 "count": len(items),
+                "risk": assess_macro_risk(items),
                 "items": [asdict(n) for n in items],
             }
         )
