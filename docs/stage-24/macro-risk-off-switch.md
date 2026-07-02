@@ -160,6 +160,18 @@ Six more tests for these two rounds (KR trap negatives, syndicated-title
 dedup, CB two-term matcher positives + FedEx negative, stale-empty source,
 query vocabulary, api-prompt boundary); suite 693 passed / 24 network-deselected.
 
+### Post-merge live finding (2026-07-02)
+
+Live verification on merged master caught a real-world false positive: the
+Yonhap headline "(LEAD) Parliamentary committee enters blockaded ballot
+counting site for inspection" matched war_conflict via bare "blockade"
+(weight 2) → ELEVATED, which would have wrongly trimmed every pick in the
+day's briefing by 0.05. Domestic-politics "blockaded X" (and the Korean
+국회/도로 봉쇄) is common in Yonhap output. Fixed in a follow-up PR: "blockade"
+→ "naval blockade" / "strait blockade" / "port blockade", "봉쇄" → "해상 봉쇄" /
+"해협 봉쇄" ("strait of hormuz" still covers the classic case); regression test
+uses the actual live headline plus military-context positives.
+
 ## Retrospective
 
 Reusing the Stage 21 feed meant the whole switch is ~150 lines + tests, with
