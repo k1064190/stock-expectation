@@ -4,19 +4,25 @@ Unifies two FMP forward calendars into one normalized timeline and turns it
 into a deterministic confidence gate (RULE R3) that /expect and daily-briefing
 consult before issuing new BUY calls:
 
-  - Earnings calendar (FMP /earning_calendar, US-listed only) → per-ticker
-    binary-event risk near the report date.
-  - Economic calendar (FMP /economic_calendar) → market-wide macro shocks
-    (FOMC / CPI / NFP). KR has no forward EPS feed on FMP, so KR consumes the
-    US macro stream (transmitted via FX / SOXL) and gets no per-ticker earnings
-    cap.
+  - Earnings calendar (FMP /stable/earnings-calendar, US-listed only) →
+    per-ticker binary-event risk near the report date. When the FMP fetch
+    fails (the legacy /api/v3 endpoints now 403 for newer keys), a keyless
+    yfinance per-ticker fallback supplies the next earnings dates.
+  - Economic calendar (FMP /stable/economic-calendar) → market-wide macro
+    shocks (FOMC / CPI / NFP). KR has no forward EPS feed on FMP, so KR
+    consumes the US macro stream (transmitted via FX / SOXL) and gets no
+    per-ticker earnings cap. No keyless macro fallback exists — a macro
+    outage is flagged via ``macro_available=False`` + ``notes``.
 
 Design rules (mirrors the rest of mcp-market-data):
-  - FAIL-OPEN: a missing FMP key or any fetch error yields a *neutral* gate
-    flagged ``gate_unavailable=True``. We never invent caps and never let an
-    event-calendar outage break the cron.
+  - FAIL-OPEN, but VISIBLY: the gate never raises and never blocks the cron.
+    ``gate_unavailable=True`` only when NO source produced data; a partial
+    outage keeps the gate live and is recorded in ``earnings_source`` /
+    ``macro_available`` / ``notes`` so a dead feed can never be confused with
+    "no imminent events".
   - The earnings + macro windows are fetched ONCE per ``evaluate_gate`` call
-    (not once per ticker) to protect the 250/day FMP free-tier quota.
+    (not once per ticker) to protect the 250/day FMP free-tier quota. The
+    yfinance fallback is per-ticker but only runs over the candidate list.
 
 The pure core (``trading_days_between``, ``build_timeline``, ``evaluate_gate``
 with injected fetchers) is stdlib-only and fully testable offline.
@@ -24,6 +30,7 @@ with injected fetchers) is stdlib-only and fully testable offline.
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Callable, Literal, Optional
@@ -32,7 +39,9 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+# The legacy /api/v3 calendar endpoints return 403 Forbidden for keys issued
+# after FMP's 2025 plan migration; /stable is the current API surface.
+FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 
 # --- R3 thresholds (trading days) ------------------------------------------
 # A binary earnings event within this window caps the label at WATCH: too close
@@ -49,7 +58,7 @@ EARNINGS_CONFIDENCE_TRIM = 0.05
 MACRO_CONFIDENCE_TRIM = 0.05
 
 # Substrings (case-insensitive) that mark a macro release as market-moving.
-# FMP /economic_calendar event names vary ("CPI", "Consumer Price Index",
+# FMP economic-calendar event names vary ("CPI", "Consumer Price Index",
 # "Nonfarm Payrolls", "Fed Interest Rate Decision", "FOMC ...") so we match on
 # keyword fragments rather than exact strings.
 MACRO_KEYWORDS = (
@@ -94,7 +103,8 @@ class CatalystEvent:
         impact: "High"/"Medium"/"Low". Earnings are treated as "High" (binary).
         trading_days_until: Business-day (Mon-Fri) distance from the as-of date;
             0 means the event is today.
-        source: Provenance string, e.g. "fmp:earning_calendar".
+        source: Provenance string, e.g. "fmp:earnings-calendar" or
+            "yfinance:calendar" (keyless earnings fallback).
     """
 
     ticker: Optional[str]
@@ -125,10 +135,20 @@ class EventGate:
         macro_trim: Confidence trim (0.0 or MACRO_CONFIDENCE_TRIM) applied to
             every pick in the market because of an imminent macro release.
         macro_events: The High-impact macro events that drove ``macro_trim``.
-        gate_unavailable: True when the gate is neutral because the FMP key was
-            missing or a fetch failed (FAIL-OPEN). Callers must treat caps/trims
-            as advisory-zero in that case and proceed.
-        notes: Human-readable annotations (e.g. why the gate is unavailable).
+        gate_unavailable: True only when NO event source produced data — both
+            the earnings side (FMP + yfinance fallback, US) and the macro side
+            failed (FAIL-OPEN). Callers must treat caps/trims as advisory-zero
+            in that case and proceed. Partial outages keep this False and are
+            flagged via ``earnings_source`` / ``macro_available`` / ``notes``.
+        notes: Human-readable annotations (e.g. which source failed and why).
+        earnings_source: Which feed produced the per-ticker earnings verdicts:
+            "fmp" (/stable/earnings-calendar), "yfinance" (keyless fallback),
+            or None (earnings side unavailable — or KR, which has no forward
+            EPS feed by design).
+        macro_available: True when the FMP economic calendar was fetched
+            successfully. False means ``macro_trim`` could NOT be computed
+            (e.g. the endpoint needs a paid plan) — not that no macro event is
+            imminent.
     """
 
     asof: str
@@ -138,6 +158,8 @@ class EventGate:
     macro_events: list[dict] = field(default_factory=list)
     gate_unavailable: bool = False
     notes: list[str] = field(default_factory=list)
+    earnings_source: Optional[str] = None
+    macro_available: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +214,22 @@ def trading_days_between(asof: str, event_date: str) -> int:
         if cursor.weekday() < 5:  # Mon=0 .. Fri=4
             count += 1
     return count
+
+
+def _redact_key(msg: str) -> str:
+    """Redact any ``apikey=...`` query value from an error message.
+
+    httpx exception strings embed the full request URL — without redaction, a
+    failed FMP fetch would leak the API key into ``notes`` (which reaches the
+    gate's JSON output, logs, and LLM prompts).
+
+    Args:
+        msg: Raw exception string.
+
+    Returns:
+        ``msg`` with any ``apikey=`` value replaced by ``apikey=***``.
+    """
+    return re.sub(r"(apikey=)[^&\s'\"]+", r"\1***", msg)
 
 
 def _is_macro_event(name: str) -> bool:
@@ -256,9 +294,10 @@ def build_timeline(
 
     Args:
         asof: As-of date, "YYYY-MM-DD".
-        earnings_rows: FMP /earning_calendar rows (keys: symbol, date, time,
-            companyName). Treated as market-specific (US only in practice).
-        macro_rows: FMP /economic_calendar rows (keys: date, event, impact,
+        earnings_rows: Earnings rows (keys: symbol, date; optional time,
+            companyName, source) from FMP /stable/earnings-calendar or the
+            yfinance fallback. Treated as market-specific (US only in practice).
+        macro_rows: FMP /stable/economic-calendar rows (keys: date, event, impact,
             country, ...). Filtered to High-impact, US-country macro keywords.
         market: "US" or "KR" — stamped onto earnings events.
 
@@ -293,7 +332,7 @@ def build_timeline(
             timing=_normalize_timing(row.get("time")),
             impact="High",  # an earnings report is a binary event by nature
             trading_days_until=td,
-            source="fmp:earning_calendar",
+            source=row.get("source") or "fmp:earnings-calendar",
         )
         by_ticker.setdefault(symbol, []).append(ev)
 
@@ -328,7 +367,7 @@ def build_timeline(
                 timing=None,
                 impact="High",
                 trading_days_until=td,
-                source="fmp:economic_calendar",
+                source="fmp:economic-calendar",
             )
         )
 
@@ -375,6 +414,7 @@ def evaluate_gate(
     market: str,
     fetch_earnings: Optional[Callable[[str, str, str], list[dict]]] = None,
     fetch_macro: Optional[Callable[[str, str], list[dict]]] = None,
+    fetch_earnings_fallback: Optional[Callable[[list[str]], list[dict]]] = None,
 ) -> EventGate:
     """Compute the deterministic R3 event-risk gate for ``tickers``.
 
@@ -392,8 +432,11 @@ def evaluate_gate(
       - R3 never *raises* the BUY bar — it only caps the label or trims
         confidence.
 
-    FAIL-OPEN: a missing FMP key or any fetch exception returns a neutral gate
-    with ``gate_unavailable=True`` and empty caps/trims.
+    FAIL-OPEN, visibly: the earnings and macro sides fail independently. A
+    failed FMP earnings fetch (US) falls back to keyless yfinance per-ticker
+    earnings dates; ``gate_unavailable=True`` only when NO side produced data.
+    Every degradation lands in ``notes`` and in ``earnings_source`` /
+    ``macro_available`` so a dead feed cannot masquerade as "no events".
 
     Args:
         asof: As-of date, "YYYY-MM-DD".
@@ -403,6 +446,9 @@ def evaluate_gate(
             → earnings rows. Defaults to the real FMP fetcher. Injected by tests.
         fetch_macro: Optional injected fetcher (asof_from, asof_to) → macro rows.
             Defaults to the real FMP fetcher. Injected by tests.
+        fetch_earnings_fallback: Optional injected fallback fetcher (tickers)
+            → earnings rows, used when the primary earnings fetch fails.
+            Defaults to the real yfinance fetcher. Injected by tests.
 
     Returns:
         An ``EventGate``.
@@ -417,30 +463,74 @@ def evaluate_gate(
     api_key = os.environ.get("FMP_API_KEY", "")
     fetch_earnings = fetch_earnings or _fetch_earnings_window
     fetch_macro = fetch_macro or _fetch_macro_window
-
-    # FAIL-OPEN guard 1: no key and no injected fetchers → neutral gate.
-    if not api_key and fetch_earnings is _fetch_earnings_window:
-        gate.gate_unavailable = True
-        gate.notes.append("FMP_API_KEY not set — event gate unavailable (fail-open)")
-        gate.by_ticker = {t: _neutral_ticker_verdict() for t in norm_tickers}
-        return gate
+    fetch_earnings_fallback = fetch_earnings_fallback or _fetch_earnings_fallback_yf
 
     # Window: from as-of through the widest threshold (+ weekend slack so a
     # business-day window still captures calendar-dated rows).
     asof_dt = _parse_date(asof)
     window_to = (asof_dt + timedelta(days=EARNINGS_TRIM_DAYS + 4)).strftime("%Y-%m-%d")
 
-    try:
-        # KR has no FMP forward EPS feed → skip the earnings fetch entirely
-        # (saves a quota call and avoids implying a cap we cannot compute).
-        earnings_rows = (
-            fetch_earnings(asof, window_to, market) if market == "US" else []
+    # --- Earnings side (US only — KR has no forward EPS feed, so the fetch is
+    # skipped entirely: saves a quota call and avoids implying a cap we cannot
+    # compute). FMP is primary; yfinance is the keyless fallback. ``None`` here
+    # means "not yet fetched" (vs ``[]`` = fetched, no events).
+    earnings_rows: Optional[list[dict]] = None
+    if market == "US":
+        # Skip the real FMP fetcher when the key is missing — it cannot
+        # succeed. Injected (test) fetchers run regardless.
+        if api_key or fetch_earnings is not _fetch_earnings_window:
+            try:
+                earnings_rows = fetch_earnings(asof, window_to, market)
+                gate.earnings_source = "fmp"
+            except Exception as e:
+                err = _redact_key(str(e))
+                logger.warning(
+                    "FMP earnings calendar fetch failed for %s: %s", market, err
+                )
+                gate.notes.append(
+                    f"FMP earnings calendar fetch failed: {err} — trying yfinance fallback"
+                )
+        else:
+            gate.notes.append("FMP_API_KEY not set — trying yfinance earnings fallback")
+        if earnings_rows is None:
+            try:
+                earnings_rows = fetch_earnings_fallback(norm_tickers)
+                gate.earnings_source = "yfinance"
+            except Exception as e:
+                logger.warning("yfinance earnings fallback failed: %s", e)
+                gate.notes.append(
+                    f"yfinance earnings fallback failed: {e} — "
+                    "earnings caps unavailable (fail-open)"
+                )
+    if earnings_rows is None:
+        earnings_rows = []
+
+    # --- Macro side (FMP only — there is no keyless macro-calendar fallback).
+    macro_rows: list[dict] = []
+    if api_key or fetch_macro is not _fetch_macro_window:
+        try:
+            macro_rows = fetch_macro(asof, window_to)
+            gate.macro_available = True
+        except Exception as e:
+            err = _redact_key(str(e))
+            logger.warning("Macro calendar fetch failed for %s: %s", market, err)
+            gate.notes.append(
+                f"macro calendar fetch failed: {err} — macro trim unavailable (fail-open)"
+            )
+    else:
+        gate.notes.append(
+            "FMP_API_KEY not set — macro calendar unavailable (fail-open)"
         )
-        macro_rows = fetch_macro(asof, window_to)
-    except Exception as e:  # FAIL-OPEN guard 2: any fetch error → neutral gate.
-        logger.warning("Event gate fetch failed for %s: %s", market, e)
-        gate.gate_unavailable = True
-        gate.notes.append(f"event calendar fetch failed: {e} (fail-open)")
+
+    # FAIL-OPEN: fully unavailable only when NO side produced data. A partial
+    # outage keeps the gate live — the dead side is already flagged in notes.
+    if market == "US":
+        gate.gate_unavailable = (
+            gate.earnings_source is None and not gate.macro_available
+        )
+    else:  # KR is macro-only by design; its earnings side is not an outage.
+        gate.gate_unavailable = not gate.macro_available
+    if gate.gate_unavailable:
         gate.by_ticker = {t: _neutral_ticker_verdict() for t in norm_tickers}
         return gate
 
@@ -488,12 +578,16 @@ def _neutral_ticker_verdict() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Thin FMP fetch wrappers (network)
+# Thin fetch wrappers (network: FMP primary + yfinance earnings fallback)
 # ---------------------------------------------------------------------------
 
 
 def _fetch_earnings_window(asof_from: str, asof_to: str, market: str) -> list[dict]:
-    """Fetch US earnings rows from FMP /earning_calendar for a date window.
+    """Fetch US earnings rows from FMP /stable/earnings-calendar for a window.
+
+    The stable rows carry ``symbol`` + ``date`` like the legacy v3 endpoint but
+    no ``time``/``companyName`` fields — timing normalizes to "TAS" and the
+    name falls back to the symbol downstream.
 
     Args:
         asof_from: Window start, "YYYY-MM-DD".
@@ -506,7 +600,7 @@ def _fetch_earnings_window(asof_from: str, asof_to: str, market: str) -> list[di
     """
     api_key = os.environ.get("FMP_API_KEY", "")
     resp = httpx.get(
-        f"{FMP_BASE_URL}/earning_calendar",
+        f"{FMP_BASE_URL}/earnings-calendar",
         params={"from": asof_from, "to": asof_to, "apikey": api_key},
         timeout=30,
     )
@@ -518,7 +612,11 @@ def _fetch_earnings_window(asof_from: str, asof_to: str, market: str) -> list[di
 
 
 def _fetch_macro_window(asof_from: str, asof_to: str) -> list[dict]:
-    """Fetch macro rows from FMP /economic_calendar for a date window.
+    """Fetch macro rows from FMP /stable/economic-calendar for a date window.
+
+    NOTE: this endpoint returns 402 on FMP plans without economic-calendar
+    access — ``evaluate_gate`` then flags ``macro_available=False`` instead of
+    silently zeroing the macro trim.
 
     Args:
         asof_from: Window start, "YYYY-MM-DD".
@@ -530,7 +628,7 @@ def _fetch_macro_window(asof_from: str, asof_to: str) -> list[dict]:
     """
     api_key = os.environ.get("FMP_API_KEY", "")
     resp = httpx.get(
-        f"{FMP_BASE_URL}/economic_calendar",
+        f"{FMP_BASE_URL}/economic-calendar",
         params={"from": asof_from, "to": asof_to, "apikey": api_key},
         timeout=30,
     )
@@ -539,3 +637,54 @@ def _fetch_macro_window(asof_from: str, asof_to: str) -> list[dict]:
     if not isinstance(data, list):
         return []
     return data
+
+
+def _fetch_earnings_fallback_yf(tickers: list[str]) -> list[dict]:
+    """Keyless earnings-date fallback via yfinance ``Ticker.calendar``.
+
+    Used when the FMP earnings-calendar fetch fails (e.g. the key lacks access
+    and returns 403). Looks up the next scheduled earnings date per candidate
+    ticker — one yfinance call per ticker, over the gate's candidate list only.
+
+    Args:
+        tickers: US candidate tickers to look up.
+
+    Returns:
+        FMP-shaped earnings rows ``{"symbol", "date", "time": None,
+        "source": "yfinance:calendar"}``. Tickers with no scheduled earnings
+        date are omitted — that is a legitimate "no event", not an error.
+
+    Raises:
+        RuntimeError: When every per-ticker lookup errored (total outage), so
+            ``evaluate_gate`` marks the earnings side unavailable instead of
+            mistaking the empty result for "no imminent earnings".
+    """
+    import yfinance as yf
+
+    rows: list[dict] = []
+    errors = 0
+    for t in tickers:
+        try:
+            cal = yf.Ticker(t).calendar or {}
+            dates = cal.get("Earnings Date") or []
+            if not dates:
+                continue
+            nearest = min(dates)
+            if isinstance(nearest, datetime):
+                nearest = nearest.date()
+            rows.append(
+                {
+                    "symbol": t,
+                    "date": nearest.isoformat(),
+                    "time": None,
+                    "source": "yfinance:calendar",
+                }
+            )
+        except Exception as e:  # per-ticker best-effort — count, don't abort
+            errors += 1
+            logger.warning("yfinance earnings lookup failed for %s: %s", t, e)
+    if tickers and errors == len(tickers):
+        raise RuntimeError(
+            f"yfinance earnings fallback failed for all {len(tickers)} tickers"
+        )
+    return rows

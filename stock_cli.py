@@ -100,6 +100,7 @@ from events import (
     evaluate_gate,
     _fetch_earnings_window,
     _fetch_macro_window,
+    _redact_key,
 )
 from news_features import summarize_news
 from macro_news import DEFAULT_MACRO_QUERY, get_macro_news
@@ -840,7 +841,9 @@ def cmd_catalyst_timeline(args) -> int:
     requested window, normalizes them into ``CatalystEvent`` rows, and groups
     them into per-ticker earnings + market-wide macro lists. Macro is omitted
     unless ``--include-macro`` is passed. FAIL-OPEN: a missing FMP key or fetch
-    error yields empty lists plus ``gate_unavailable=true``, never an error exit.
+    error yields empty lists plus ``gate_unavailable=true``, never an error
+    exit. The two calendars fail independently — a macro outage (e.g. the FMP
+    economic calendar needs a paid plan) only omits ``market_wide`` with a note.
 
     Args:
         args: Parsed CLI arguments with tickers, market, days, include_macro.
@@ -872,20 +875,29 @@ def cmd_catalyst_timeline(args) -> int:
             _print_json(out)
             return 0
 
-        try:
-            earnings_rows = (
-                _fetch_earnings_window(asof, window_to, market)
-                if market == "US"
-                else []
-            )
-            macro_rows = (
-                _fetch_macro_window(asof, window_to) if args.include_macro else []
-            )
-        except Exception as e:
-            out["gate_unavailable"] = True
-            out["note"] = f"event calendar fetch failed: {e} (fail-open)"
-            _print_json(out)
-            return 0
+        # Fetch the two calendars independently so a macro outage cannot hide
+        # a working earnings timeline — partial failures are noted, not silent.
+        notes = []
+        earnings_rows: list = []
+        macro_rows: list = []
+        if market == "US":
+            try:
+                earnings_rows = _fetch_earnings_window(asof, window_to, market)
+            except Exception as e:
+                out["gate_unavailable"] = True
+                notes.append(
+                    f"earnings calendar fetch failed: {_redact_key(str(e))} (fail-open)"
+                )
+        if args.include_macro:
+            try:
+                macro_rows = _fetch_macro_window(asof, window_to)
+            except Exception as e:
+                notes.append(
+                    f"macro calendar fetch failed: {_redact_key(str(e))} — "
+                    "market_wide omitted (fail-open)"
+                )
+        if notes:
+            out["note"] = "; ".join(notes)
 
         timeline = build_timeline(asof, earnings_rows, macro_rows, market)
         # Keep only the requested tickers in the per-ticker view.
@@ -906,8 +918,10 @@ def cmd_catalyst_gate(args) -> int:
 
     Per-ticker earnings cap/trim (US only) + market-wide macro trim (US + KR).
     KR returns macro_trim only — no per-ticker earnings cap, since FMP has no
-    forward KR EPS feed. FAIL-OPEN: missing key or fetch error yields a neutral
-    gate with ``gate_unavailable=true``.
+    forward KR EPS feed. FAIL-OPEN, visibly: a failed FMP earnings fetch falls
+    back to keyless yfinance earnings dates; ``gate_unavailable=true`` only
+    when no source produced data. Partial outages are flagged via
+    ``earnings_source`` / ``macro_available`` + ``notes``.
 
     Args:
         args: Parsed CLI arguments with tickers, market.

@@ -367,7 +367,8 @@ def fetch_earnings_days_map_us(
         today = datetime.now(timezone.utc).date()
         end = today + timedelta(days=horizon_days + 3)
         resp = requests.get(
-            "https://financialmodelingprep.com/api/v3/earning_calendar",
+            # Legacy /api/v3/earning_calendar 403s for newer keys; /stable works.
+            "https://financialmodelingprep.com/stable/earnings-calendar",
             params={
                 "from": today.isoformat(),
                 "to": end.isoformat(),

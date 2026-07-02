@@ -181,13 +181,23 @@ def test_event_gate_block_renders_watch_and_macro():
         asof="2026-06-18",
         market="US",
         by_ticker={
-            "AMD": {"cap_label": "WATCH", "confidence_trim": 0.0,
-                    "next_earnings_date": "2026-06-19", "trading_days_until": 1},
-            "NVDA": {"cap_label": None, "confidence_trim": 0.0,
-                     "next_earnings_date": None, "trading_days_until": None},
+            "AMD": {
+                "cap_label": "WATCH",
+                "confidence_trim": 0.0,
+                "next_earnings_date": "2026-06-19",
+                "trading_days_until": 1,
+            },
+            "NVDA": {
+                "cap_label": None,
+                "confidence_trim": 0.0,
+                "next_earnings_date": None,
+                "trading_days_until": None,
+            },
         },
         macro_trim=0.05,
-        macro_events=[{"name": "FOMC", "event_date": "2026-06-18", "trading_days_until": 1}],
+        macro_events=[
+            {"name": "FOMC", "event_date": "2026-06-18", "trading_days_until": 1}
+        ],
     )
     out = _format_event_gate_for_prompt(gate)
     assert "MACRO trim 0.05" in out
@@ -196,8 +206,41 @@ def test_event_gate_block_renders_watch_and_macro():
 
 
 def test_event_gate_block_no_risk_note():
-    gate = EventGate(asof="2026-06-18", market="US", by_ticker={"NVDA": {"cap_label": None, "confidence_trim": 0.0, "next_earnings_date": None, "trading_days_until": None}})
+    gate = EventGate(
+        asof="2026-06-18",
+        market="US",
+        by_ticker={
+            "NVDA": {
+                "cap_label": None,
+                "confidence_trim": 0.0,
+                "next_earnings_date": None,
+                "trading_days_until": None,
+            }
+        },
+    )
     out = _format_event_gate_for_prompt(gate)
+    assert "no imminent earnings/macro risk" in out
+
+
+def test_event_gate_block_renders_partial_availability_notes():
+    """A partial outage (e.g. macro calendar down) must be visible in the prompt."""
+    gate = EventGate(
+        asof="2026-07-02",
+        market="US",
+        by_ticker={
+            "NVDA": {
+                "cap_label": None,
+                "confidence_trim": 0.0,
+                "next_earnings_date": None,
+                "trading_days_until": None,
+            }
+        },
+        notes=["macro calendar fetch failed: 402 — macro trim unavailable (fail-open)"],
+        earnings_source="yfinance",
+        macro_available=False,
+    )
+    out = _format_event_gate_for_prompt(gate)
+    assert "macro calendar fetch failed" in out
     assert "no imminent earnings/macro risk" in out
 
 
@@ -208,7 +251,9 @@ def test_event_gate_block_no_risk_note():
 
 def test_macro_block_renders_via_get_macro_news(monkeypatch):
     """_macro_block fetches macro news and formats it for the prompt."""
-    monkeypatch.setattr(daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss"))
+    monkeypatch.setattr(
+        daily_briefing, "get_macro_news", lambda limit=15: (["x"], "rss")
+    )
     monkeypatch.setattr(
         daily_briefing, "format_macro_for_prompt", lambda items: "MACRO_BLOCK_OK"
     )

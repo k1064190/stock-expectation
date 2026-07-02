@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation — 22단계</title>
+    <style>
+      :root {
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e2e1dc;
+        --text: #2a2a28;
+        --muted: #8a8a84;
+        --accent: #1f6e64;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0 1.5rem 3rem;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+          "Helvetica Neue", Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2rem 0 1rem;
+      }
+
+      .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.6rem;
+        letter-spacing: -0.01em;
+      }
+
+      .subtitle {
+        margin: 0.3rem 0 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav.lang-switch {
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+
+      nav.lang-switch .current-lang {
+        color: var(--muted);
+      }
+
+      nav.lang-switch a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav.lang-switch a:hover {
+        text-decoration: underline;
+      }
+
+      nav.timeline {
+        max-width: 960px;
+        margin: 0 auto;
+        overflow-x: auto;
+        padding: 0.5rem 0 1rem;
+      }
+
+      .timeline-list {
+        display: flex;
+        align-items: flex-start;
+        list-style: none;
+        margin: 0;
+        padding: 0.5rem 0.5rem 0.25rem;
+        width: max-content;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        flex: 0 0 auto;
+        padding: 0 0.85rem;
+      }
+
+      .node:not(:first-child)::before {
+        content: "";
+        position: absolute;
+        top: 6px;
+        right: 50%;
+        width: 100%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+
+      .node .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-bottom: 6px;
+        z-index: 1;
+        background: var(--muted);
+        border: 2px solid var(--muted);
+      }
+
+      .node .label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.current .dot {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+
+      .stage-section h2 {
+        font-size: 1.35rem;
+        color: var(--accent);
+        margin: 1.5rem 0 0.4rem;
+      }
+
+      .stage-summary {
+        margin: 0 0 1.5rem;
+        color: var(--text);
+        max-width: 70ch;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 1.5rem 1.75rem;
+      }
+
+      article.card h3 {
+        margin: 0 0 1rem;
+        font-size: 1.15rem;
+      }
+
+      article.card h4 {
+        margin: 1.1rem 0 0.35rem;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      article.card h4:first-of-type {
+        margin-top: 0;
+      }
+
+      article.card p {
+        margin: 0 0 0.5rem;
+      }
+
+      article.card ul {
+        margin: 0 0 0.5rem;
+        padding-left: 1.2rem;
+      }
+
+      article.card li {
+        margin-bottom: 0.5rem;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        background: #f0f0ec;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 0.05rem 0.3rem;
+        font-size: 0.88em;
+      }
+
+      ul.code-locations {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      ul.code-locations li {
+        margin-bottom: 0.6rem;
+        font-size: 0.92rem;
+      }
+
+      p.retro {
+        color: var(--text);
+      }
+
+      p.retro em {
+        font-style: italic;
+      }
+
+      @media (max-width: 720px) {
+        article.card {
+          padding: 1.25rem 1.25rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-top">
+        <div>
+          <h1>stock-expectation</h1>
+          <p class="subtitle">단계별 진행 상황</p>
+        </div>
+        <nav aria-label="언어" class="lang-switch">
+          <a href="index.html">EN</a> | <span class="current-lang">한국어</span>
+        </nav>
+      </div>
+    </header>
+
+    <nav aria-label="단계 타임라인" class="timeline">
+      <ol class="timeline-list">
+        <li class="node">
+          <span class="dot"></span><span class="label">0단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">1단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">2단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">3단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">4단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">4.1단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">5단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">6단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">7단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">8단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">9단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">11단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">12단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">13단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">14단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">15단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">16단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">17단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">19단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">20단계</span>
+        </li>
+        <li class="node">
+          <span class="dot"></span><span class="label">21단계</span>
+        </li>
+        <li class="node current">
+          <span class="dot"></span><span class="label">22단계</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section class="stage-section">
+        <h2>22단계</h2>
+        <p class="stage-summary">
+          차단된 FMP 레거시 엔드포인트를 이관하고, 키 없이 동작하는 yfinance
+          earnings 폴백을 추가하며, 부분 장애를 조용히 fail-open 처리하는 대신
+          눈에 보이게 만들어, 조용히 죽어 있던 R3 catalyst-event 게이트를
+          복원합니다.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>R3 Event Gate Restore</h3>
+
+            <h4>왜</h4>
+            <p>
+              R3 이벤트 게이트는 조용히 죽어 있었습니다. FMP의 레거시
+              엔드포인트인
+              <code>/api/v3/earning_calendar</code>와
+              <code>/api/v3/economic_calendar</code>가 이 계정 키에 대해 403
+              Forbidden을 반환했기 때문입니다(FMP의 플랜 마이그레이션 이후
+              레거시 엔드포인트가 차단됨). 게이트는 설계상 fail-open이므로, 모든
+              실패가 <code>gate_unavailable: true</code>로 수렴되어 캡/트림이
+              전혀 적용되지 않았고, 모든 LIVE 예측은 그저
+              <code>R3 unavailable=0</code>이라고만 로그를 남길 뿐이었습니다 —
+              earnings-imminent WATCH 캡과 FOMC/CPI 매크로 트림이 전혀 적용되지
+              않았으며, 출력에는 "피드가 죽었다"와 "이벤트가 없다"를 구분할 수
+              있는 정보가 전혀 없었습니다.
+            </p>
+
+            <h4>무엇을</h4>
+            <ul>
+              <li>
+                <strong>엔드포인트 마이그레이션.</strong> 실제 키로 프로빙한
+                결과: <code>/stable/earnings-calendar</code> → 200 (동작함;
+                동일한 <code>symbol</code>/<code>date</code> 키,
+                <code>time</code>/<code>companyName</code>은 없음),
+                <code>/stable/economic-calendar</code> → 402 (유료 플랜 필요),
+                두 v3 엔드포인트 모두 → 403. <code>events.py</code>의
+                <code>FMP_BASE_URL</code>과
+                <code>pre_surge_discovery.py</code>의 earnings URL을
+                <code>/stable</code>로 마이그레이션했습니다.
+              </li>
+              <li>
+                <strong>키 없이 동작하는 yfinance earnings 폴백.</strong> 새로
+                추가된 <code>_fetch_earnings_fallback_yf</code>는 FMP earnings
+                조회가 실패하거나(또는 키가 없을 때)
+                <code>yf.Ticker(t).calendar</code>를 통해 후보 티커별 다음 실적
+                발표일을 가져와 동일한 티커별 캡/트림 로직에 공급합니다. 전체
+                장애 시에만 예외를 발생시켜, 빈 결과가 "임박한 실적 없음"과
+                혼동되지 않도록 합니다.
+              </li>
+              <li>
+                <strong>부분 가용성의 가시화.</strong> <code>EventGate</code>에
+                <code>earnings_source</code>("fmp" / "yfinance" / null)와
+                <code>macro_available</code>(불리언)가 추가되었으며, 성능 저하가
+                발생할 때마다 설명 노트가 추가됩니다.
+                <code>gate_unavailable: true</code>는 이제 "어떤 소스도 데이터를
+                만들어내지 못함"을 의미하며, 부분적 장애(예: 매크로 402)에서는
+                게이트가 계속 살아 있습니다. daily-briefing 프롬프트 블록이 이
+                노트를 렌더링합니다.
+              </li>
+              <li>
+                <strong>키 마스킹(redaction).</strong> httpx 에러 문자열에는
+                <code>apikey=…</code>를 포함한 요청 URL이 그대로 들어 있습니다;
+                새로 추가된 <code>_redact_key</code>가 이 메시지를
+                <code>notes</code>(JSON 출력 / LLM 프롬프트)나 로그에 도달하기
+                전에 제거합니다.
+              </li>
+              <li>
+                <strong>타임라인 분리.</strong> <code>catalyst timeline</code>이
+                두 캘린더를 독립적으로 조회하도록 변경되어,
+                <code>--include-macro</code>와 함께 매크로 402가 발생해도 정상
+                동작하는 earnings 타임라인을 더 이상 가리지 않습니다.
+              </li>
+              <li>
+                문서 업데이트: <code>catalyst-event-gate/SKILL.md</code>(가용성
+                필드 표, stable 엔드포인트, 폴백),
+                <code>expect/SKILL.md</code>(4단계 + R3 fail-open 항목),
+                <code>daily-briefing/SKILL.md</code>(R3 문단).
+              </li>
+            </ul>
+
+            <h4>어떻게</h4>
+            <p>
+              <code>evaluate_gate</code>는 하나의 all-or-nothing try/except
+              구조에서 두 개의 독립적인 축으로 재구성되었습니다: earnings(FMP →
+              yfinance 폴백, US 전용)와 macro(FMP 전용, 키 없이 사용 가능한
+              소스가 없음). 각 축은 게이트에 자신의 결과를 기록하며, 중립
+              판정으로의 단락(short-circuit)은 두 축이 모두 다운되었을 때만
+              발생합니다. 폴백 fetcher는 기존 테스트 스텁 관례를 따라 주입
+              가능하도록 (<code>fetch_earnings_fallback</code>) 설계되었습니다.
+              메인 체크아웃에서 읽기 전용으로 라이브 검증한 결과: 실제 키로는
+              <code>earnings_source: "fmp"</code>, 매크로 402는 노트에
+              표시됨(키는 마스킹됨), yfinance 경로는 CAT의 실제 다음 실적
+              발표일을 반환했습니다.
+            </p>
+
+            <h4>코드 위치</h4>
+            <ul class="code-locations">
+              <li>
+                <code>mcp-market-data/events.py</code> —
+                <code>FMP_BASE_URL</code>(stable),
+                <code>EventGate.earnings_source</code> /
+                <code>macro_available</code>, <code>_redact_key</code>, 재구성된
+                <code>evaluate_gate</code>(~L436-530),
+                <code>_fetch_earnings_fallback_yf</code>, stable 엔드포인트
+                fetch 래퍼(wrapper).
+              </li>
+              <li>
+                <code>stock_cli.py</code> —
+                <code>cmd_catalyst_timeline</code> 분리된 fetch (~L875-900),
+                <code>cmd_catalyst_gate</code> docstring,
+                <code>_redact_key</code> import.
+              </li>
+              <li>
+                <code>scheduler/daily_briefing.py</code> —
+                <code>_format_event_gate_for_prompt</code>가 노트를 렌더링.
+              </li>
+              <li>
+                <code>scheduler/pre_surge_discovery.py</code> — earnings URL을
+                stable로 마이그레이션.
+              </li>
+              <li>
+                <code>mcp-market-data/tests/test_events.py</code> — 9개의 신규
+                테스트 (403→폴백 캡, 키 누락 시 폴백, 매크로 다운 시 가시화,
+                양쪽 다운 시 부분 가용, 키 마스킹, yfinance 폴백 단위 테스트),
+                폴백을 주입하도록 업데이트된 기존 fail-open 테스트 2개.
+              </li>
+              <li>
+                <code>scheduler/tests/test_daily_briefing.py</code> — 부분
+                가용성 노트 렌더링.
+              </li>
+            </ul>
+
+            <h4>회고</h4>
+            <p class="retro">
+              <em>
+                소스별 가시성 없는 fail-open은 "무위험"과 구별할 수 없습니다 —
+                앞으로 만들 게이트는 처음부터 source/availability 필드를
+                포함해야 합니다. 이번 라이브 프로브는 또한 원래 구현 시점부터
+                존재했던 httpx 에러 메시지의 API 키 유출을 게이트 노트에서
+                발견해 냈습니다.
+              </em>
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -144,6 +144,10 @@ def _format_event_gate_for_prompt(gate) -> str:
         earnings caps/trims, or an "unavailable" line when the gate failed open.
     """
     lines = ["## Event Risk (RULE R3 — earnings / macro)"]
+    # Surface degradation notes (macro calendar down, yfinance earnings
+    # fallback in use, ...) so a dead feed is never read as "no risk".
+    for n in getattr(gate, "notes", None) or []:
+        lines.append(f"  (note: {n})")
     if getattr(gate, "gate_unavailable", False):
         lines.append("  (event gate unavailable — treat all R3 caps/trims as zero)")
         return "\n".join(lines)

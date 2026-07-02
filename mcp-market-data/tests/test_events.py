@@ -1,14 +1,17 @@
 """Tests for the catalyst event timeline + R3 event-risk gate.
 
-All fetchers are STUBBED — no test in this file touches the live FMP API.
-Covers:
+All fetchers are STUBBED — no test in this file touches the live FMP API or
+yfinance. Covers:
   - trading_days_between boundaries (same-day, Fri->Mon, +7 calendar days);
   - evaluate_gate R3 thresholds (earnings WATCH / trim / none, macro trim);
   - timeline merge + grouping;
-  - FAIL-OPEN (missing key, simulated fetch exception).
+  - yfinance earnings fallback (FMP 403 → per-ticker caps still applied);
+  - partial availability (macro down / earnings down — visible, not silent);
+  - FAIL-OPEN (missing key, simulated fetch exception on every source).
 """
 
 import sys
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -18,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from events import (  # noqa: E402
     EARNINGS_CONFIDENCE_TRIM,
     MACRO_CONFIDENCE_TRIM,
+    _fetch_earnings_fallback_yf,
     build_timeline,
     evaluate_gate,
     trading_days_between,
@@ -155,6 +159,9 @@ def test_evaluate_gate_earnings_one_td_caps_watch(monkeypatch):
     assert v["confidence_trim"] == 0.0
     assert v["trading_days_until"] == 1
     assert gate.gate_unavailable is False
+    # Happy path: availability fields report both sources live.
+    assert gate.earnings_source == "fmp"
+    assert gate.macro_available is True
 
 
 def test_evaluate_gate_earnings_same_day_caps_watch(monkeypatch):
@@ -392,16 +399,218 @@ def test_evaluate_gate_fetches_once_for_many_tickers(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# yfinance earnings fallback + partial availability (visible fail-open)
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_gate_fmp_403_yfinance_fallback_caps(monkeypatch):
+    """FMP earnings 403 → the yfinance fallback still produces the WATCH cap."""
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+
+    def _fmp_403(*_args, **_kwargs):
+        raise RuntimeError("403 Forbidden")
+
+    def _yf_rows(tickers):
+        assert tickers == ["NVDA", "AMD"]
+        return [
+            {
+                "symbol": "NVDA",
+                "date": "2026-06-18",
+                "time": None,
+                "source": "yfinance:calendar",
+            }
+        ]
+
+    gate = evaluate_gate(
+        "2026-06-17",  # Wed; 2026-06-18 (Thu) is 1 td away → WATCH
+        ["NVDA", "AMD"],
+        "US",
+        fetch_earnings=_fmp_403,
+        fetch_macro=_stub_macro([]),
+        fetch_earnings_fallback=_yf_rows,
+    )
+    assert gate.gate_unavailable is False
+    assert gate.earnings_source == "yfinance"
+    assert gate.by_ticker["NVDA"]["cap_label"] == "WATCH"
+    assert gate.by_ticker["NVDA"]["trading_days_until"] == 1
+    assert gate.by_ticker["AMD"]["cap_label"] is None
+    assert any("FMP earnings calendar fetch failed" in n for n in gate.notes)
+
+
+def test_evaluate_gate_missing_key_uses_yfinance_fallback(monkeypatch):
+    """No FMP key no longer kills the earnings side — yfinance covers it."""
+    monkeypatch.delenv("FMP_API_KEY", raising=False)
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings_fallback=lambda _tickers: [
+            {"symbol": "NVDA", "date": "2026-06-18", "time": None}
+        ],
+    )
+    assert gate.gate_unavailable is False
+    assert gate.earnings_source == "yfinance"
+    assert gate.by_ticker["NVDA"]["cap_label"] == "WATCH"
+    # Macro still needs the FMP key → unavailable, but VISIBLY so.
+    assert gate.macro_available is False
+    assert any("FMP_API_KEY" in n for n in gate.notes)
+
+
+def test_evaluate_gate_macro_down_is_visible_not_silent(monkeypatch):
+    """Earnings OK + macro down (402) → gate stays live, macro flagged."""
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+
+    def _macro_402(*_args, **_kwargs):
+        raise RuntimeError("402 Payment Required")
+
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_stub_earnings(
+            [{"symbol": "NVDA", "date": "2026-06-18", "time": "amc"}]
+        ),
+        fetch_macro=_macro_402,
+    )
+    assert gate.gate_unavailable is False
+    assert gate.earnings_source == "fmp"
+    assert gate.macro_available is False
+    assert gate.macro_trim == 0.0
+    assert gate.by_ticker["NVDA"]["cap_label"] == "WATCH"
+    assert any("macro calendar fetch failed" in n for n in gate.notes)
+
+
+def test_evaluate_gate_notes_redact_api_key(monkeypatch):
+    """httpx errors embed the request URL — the apikey must never reach notes."""
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+
+    def _leaky_boom(*_args, **_kwargs):
+        raise RuntimeError(
+            "Client error '402 Payment Required' for url "
+            "'https://financialmodelingprep.com/stable/economic-calendar"
+            "?from=2026-07-02&to=2026-07-11&apikey=SUPERSECRET'"
+        )
+
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_stub_earnings([]),
+        fetch_macro=_leaky_boom,
+    )
+    joined = " ".join(gate.notes)
+    assert "SUPERSECRET" not in joined
+    assert "apikey=***" in joined
+
+
+def test_evaluate_gate_earnings_both_down_macro_up_partial(monkeypatch):
+    """Both earnings sources down + macro up → live gate, earnings flagged."""
+    monkeypatch.setenv("FMP_API_KEY", "fake-key")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("simulated outage")
+
+    gate = evaluate_gate(
+        "2026-06-17",
+        ["NVDA"],
+        "US",
+        fetch_earnings=_boom,
+        fetch_macro=_stub_macro(
+            [
+                {
+                    "date": "2026-06-18",
+                    "event": "FOMC Interest Rate Decision",
+                    "impact": "High",
+                    "country": "US",
+                }
+            ]
+        ),
+        fetch_earnings_fallback=_boom,
+    )
+    assert gate.gate_unavailable is False
+    assert gate.earnings_source is None
+    assert gate.macro_available is True
+    assert gate.macro_trim == MACRO_CONFIDENCE_TRIM
+    assert gate.by_ticker["NVDA"]["cap_label"] is None
+    assert any("yfinance earnings fallback failed" in n for n in gate.notes)
+
+
+# ---------------------------------------------------------------------------
+# _fetch_earnings_fallback_yf (yfinance mocked — no network)
+# ---------------------------------------------------------------------------
+
+
+def test_yf_fallback_builds_fmp_shaped_rows(monkeypatch):
+    calendars = {
+        "NVDA": {"Earnings Date": [date(2026, 8, 27), date(2026, 8, 31)]},
+        "AMD": {},  # no scheduled earnings → omitted, not an error
+        "MSFT": {"Earnings Date": [datetime(2026, 7, 29, 21, 0)]},  # datetime OK
+    }
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            self.calendar = calendars[symbol]
+
+    monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
+    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD", "MSFT"])
+    assert rows == [
+        {
+            "symbol": "NVDA",
+            "date": "2026-08-27",  # nearest of the two candidate dates
+            "time": None,
+            "source": "yfinance:calendar",
+        },
+        {
+            "symbol": "MSFT",
+            "date": "2026-07-29",
+            "time": None,
+            "source": "yfinance:calendar",
+        },
+    ]
+
+
+def test_yf_fallback_partial_errors_keep_survivors(monkeypatch):
+    class _MixedTicker:
+        def __init__(self, symbol):
+            if symbol == "AMD":
+                raise RuntimeError("boom")
+            self.calendar = {"Earnings Date": [date(2026, 7, 30)]}
+
+    monkeypatch.setattr("yfinance.Ticker", _MixedTicker)
+    rows = _fetch_earnings_fallback_yf(["NVDA", "AMD"])
+    assert [r["symbol"] for r in rows] == ["NVDA"]
+
+
+def test_yf_fallback_total_outage_raises(monkeypatch):
+    class _BoomTicker:
+        def __init__(self, _symbol):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr("yfinance.Ticker", _BoomTicker)
+    with pytest.raises(RuntimeError, match="all 2 tickers"):
+        _fetch_earnings_fallback_yf(["NVDA", "AMD"])
+
+
+# ---------------------------------------------------------------------------
 # FAIL-OPEN
 # ---------------------------------------------------------------------------
 
 
 def test_evaluate_gate_missing_key_fails_open(monkeypatch):
     monkeypatch.delenv("FMP_API_KEY", raising=False)
-    # No injected fetchers → must short-circuit to a neutral gate.
-    gate = evaluate_gate("2026-06-17", ["NVDA", "AMD"], "US")
+
+    def _yf_boom(_tickers):
+        raise RuntimeError("simulated yfinance outage")
+
+    # No key (FMP skipped) AND the yfinance fallback down → neutral gate,
+    # clearly flagged. The fallback is injected so no network is touched.
+    gate = evaluate_gate(
+        "2026-06-17", ["NVDA", "AMD"], "US", fetch_earnings_fallback=_yf_boom
+    )
     assert gate.gate_unavailable is True
     assert gate.macro_trim == 0.0
+    assert gate.earnings_source is None
+    assert gate.macro_available is False
     for t in ("NVDA", "AMD"):
         assert gate.by_ticker[t]["cap_label"] is None
         assert gate.by_ticker[t]["confidence_trim"] == 0.0
@@ -414,14 +623,19 @@ def test_evaluate_gate_fetch_exception_fails_open(monkeypatch):
     def _boom(*_args, **_kwargs):
         raise RuntimeError("simulated FMP outage")
 
+    # Every source down (FMP earnings + yfinance fallback + macro) → neutral
+    # gate with explanatory notes for each failed side.
     gate = evaluate_gate(
         "2026-06-17",
         ["NVDA"],
         "US",
         fetch_earnings=_boom,
         fetch_macro=_boom,
+        fetch_earnings_fallback=_boom,
     )
     assert gate.gate_unavailable is True
     assert gate.macro_trim == 0.0
     assert gate.by_ticker["NVDA"]["cap_label"] is None
     assert any("fetch failed" in n for n in gate.notes)
+    assert any("yfinance earnings fallback failed" in n for n in gate.notes)
+    assert any("macro calendar fetch failed" in n for n in gate.notes)
