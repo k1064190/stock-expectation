@@ -451,3 +451,18 @@ def test_log_predictions_skips_bull_on_risk_off(monkeypatch):
     rows = conn.execute("SELECT ticker, direction FROM predictions").fetchall()
     conn.close()
     assert [(r["ticker"], r["direction"]) for r in rows] == [("SPY", "NEUTRAL")]
+
+
+def test_build_api_prompt_returns_prompt_and_risk_level(monkeypatch):
+    """API mode surfaces the assessed macro risk level alongside the prompt so
+    run_briefing can thread it into log_predictions (the deterministic
+    RISK_OFF BULL skip); the macro block itself lands in the prompt body."""
+    monkeypatch.setattr(daily_briefing, "fetch_us_market_data", lambda: "MARKET_DATA")
+    monkeypatch.setattr(daily_briefing, "get_track_record_context", lambda: "TRACK")
+    monkeypatch.setattr(
+        daily_briefing, "_macro_block_and_risk", lambda: ("MACRO_BLOCK", "RISK_OFF")
+    )
+    prompt, risk_level = daily_briefing.build_api_prompt("US")
+    assert risk_level == "RISK_OFF"
+    assert "MACRO_BLOCK" in prompt
+    assert "MARKET_DATA" in prompt

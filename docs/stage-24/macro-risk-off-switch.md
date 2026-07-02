@@ -109,6 +109,57 @@ Six tests added for the round-1 fixes (RISK_OFF api-mode BULL skip,
 stale-cache meta + source label + degrade at both the module and briefing
 level, UN-emergency-meeting non-match); suite 687 passed / 24 network-deselected.
 
+### Second-opinion review (Gemini via antigravity, commit `16a7056`)
+
+1. **KR keyword false-positive traps (blocker)** — verified and fixed:
+   - bare "전쟁" (war_conflict, w2) matched metaphorical finance headlines
+     (무역/반도체/가격 전쟁) → replaced with "전쟁 발발" / "전면전"; "무역 전쟁"
+     added to tariff_sanctions (w1), mirroring the EN "trade war escalat".
+   - bare "디폴트" (market_crash, w2) matched the routine pension term
+     "디폴트옵션" → replaced with "국가 디폴트" / "채무불이행" ("국가 부도" kept).
+   - bare "폭락" (market_crash, w2) matched single-stock plunges → scoped to
+     market-wide forms ("증시/코스피/주식시장/글로벌 증시 폭락").
+   Negative tests added for all three traps.
+2. **Syndicated-duplicate inflation (should-fix)** — verified true: upstream
+   dedup is URL-only, so one wire story republished verbatim by 3 outlets
+   summed to 6 → RISK_OFF without real corroboration. Fixed:
+   `assess_macro_risk` now collapses near-identical titles (casefold,
+   alnum-only normalization) before scoring; different headlines about the
+   same event still corroborate, by design.
+3. **Boundary test gap (should-fix)** — confirmed: the RISK_OFF-skip test
+   exercised `log_predictions` directly but nothing asserted the
+   `build_api_prompt` → `(prompt, macro_risk_level)` shape. Added
+   `test_build_api_prompt_returns_prompt_and_risk_level`.
+4. **Dismissed (nit)** — "only LIVE BULL intercepted; NEUTRAL/BEAR label
+   capping left to the LLM": BEAR is already hard-rejected at the store level
+   and NEUTRAL carries no long exposure, so the deterministic skip covers
+   exactly the harmful class. No code change.
+
+### Codex round 2 (commit `16a7056`) — 3 findings, all verified and fixed
+
+- **A. GDELT fallback query missed the risk vocabulary (P2)** — verified: the
+  curated query had no war/geopolitical terms, so on the RSS-down path the
+  switch stayed blind to exactly the shocks it exists for. Fixed: severe
+  terms (war, invasion, missile, nuclear, blockade, airstrike, "market
+  crash", "circuit breaker", "sovereign default") appended to the ONE
+  existing OR-group (no second GDELT call — 1 req/5s IP limit); test asserts
+  the vocabulary and the single-group shape.
+- **B. Round-1 CB narrowing overshot (P2)** — verified: "Fed holds emergency
+  meeting" no longer matched. Fixed with a bucket-local two-term matcher
+  (`_is_central_bank_emergency`): emergency-meeting wording ("emergency
+  meeting/session", "긴급 회의/긴급회의") counts only alongside a central-bank
+  token (word-bounded fed/fomc/ecb/boj/bok — "fedex" excluded — or substring
+  "central bank"/연준/한은/금통위 for particle-attaching Korean). UN emergency
+  meetings still score zero; not generalized beyond this bucket.
+- **C. Stale meta dropped for empty cache (P3)** — verified: a valid-but-empty
+  expired cache returned `([], "stale-cache")` but the truthiness check
+  reported source "none", losing the stale-feed note. Fixed:
+  `get_macro_news` propagates "gdelt-stale" whenever meta is stale-cache.
+
+Six more tests for these two rounds (KR trap negatives, syndicated-title
+dedup, CB two-term matcher positives + FedEx negative, stale-empty source,
+query vocabulary, api-prompt boundary); suite 693 passed / 24 network-deselected.
+
 ## Retrospective
 
 Reusing the Stage 21 feed meant the whole switch is ~150 lines + tests, with

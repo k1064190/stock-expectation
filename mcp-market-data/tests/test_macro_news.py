@@ -239,6 +239,39 @@ def test_get_macro_news_labels_stale_gdelt_cache():
     assert items == gdelt_items
 
 
+def test_get_macro_news_stale_empty_cache_still_marked_stale():
+    """A valid-but-empty expired cache keeps the 'gdelt-stale' source so the
+    stale-feed note is not silently downgraded to 'none'."""
+    with (
+        patch("macro_news.fetch_rss_macro_news", return_value=[]),
+        patch(
+            "macro_news._fetch_macro_news_with_meta",
+            return_value=([], "stale-cache"),
+        ),
+    ):
+        items, source = macro_news.get_macro_news()
+    assert source == "gdelt-stale"
+    assert items == []
+
+
+def test_default_macro_query_includes_severe_risk_vocabulary():
+    """The GDELT fallback query must fetch the risk switch's severe vocabulary,
+    or the switch stays blind on the RSS-down path (codex round 2)."""
+    q = macro_news.DEFAULT_MACRO_QUERY
+    for term in (
+        "war",
+        "invasion",
+        "missile",
+        "nuclear",
+        "blockade",
+        '"market crash"',
+        '"circuit breaker"',
+        '"sovereign default"',
+    ):
+        assert term in q, term
+    assert q.count("(") == q.count(")") == 1  # still one OR-group (GDELT limit)
+
+
 def test_fetch_macro_news_meta_marks_stale_cache(tmp_path):
     """The stale-serve path reports 'stale-cache', not a live-looking result."""
     # Populate the cache with a successful fetch.
@@ -405,13 +438,61 @@ def test_assess_macro_risk_korean_headlines_match():
     risk = macro_news.assess_macro_risk(
         [
             _item("코스피 폭락에 서킷브레이커 발동"),
-            _item("중동 전쟁 확산 우려에 유가 급등"),
+            _item("중동 전면전 우려에 유가 급등"),
         ]
     )
     assert risk["risk_level"] == "ELEVATED"
     assert risk["risk_score"] == 4  # market_crash (2) + war_conflict (2)
     buckets = {m["bucket"] for m in risk["matched"]}
     assert buckets == {"market_crash", "war_conflict"}
+
+
+def test_assess_macro_risk_kr_metaphorical_terms_scoped():
+    """Metaphorical/routine Korean finance wording must not hit the severe
+    buckets: 무역 전쟁 is escalation risk (tariff_sanctions, w1), and
+    디폴트옵션 / single-stock 폭락 headlines score nothing."""
+    risk = macro_news.assess_macro_risk([_item("미중 무역 전쟁 확산 우려")])
+    assert risk["risk_level"] == "NORMAL"  # single weight-1 item
+    assert risk["risk_score"] == 1
+    assert risk["matched"][0]["bucket"] == "tariff_sanctions"
+
+    risk = macro_news.assess_macro_risk([_item("퇴직연금 디폴트옵션 개선 논의")])
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+
+    risk = macro_news.assess_macro_risk([_item("A사 주가 폭락에 개미 한숨")])
+    assert risk["risk_level"] == "NORMAL"
+    assert risk["risk_score"] == 0
+
+
+def test_assess_macro_risk_dedups_syndicated_titles():
+    """One wire story republished by three outlets scores once, not thrice —
+    casing/spacing/punctuation variants collapse to the same title key."""
+    risk = macro_news.assess_macro_risk(
+        [
+            NewsItem(
+                headline="Russia invades neighboring country",
+                source="BBC",
+                date="2026-06-05",
+                url="u1",
+            ),
+            NewsItem(
+                headline="Russia Invades Neighboring Country!",
+                source="CNBC",
+                date="2026-06-05",
+                url="u2",
+            ),
+            NewsItem(
+                headline="  russia invades neighboring country ",
+                source="Yonhap",
+                date="2026-06-05",
+                url="u3",
+            ),
+        ]
+    )
+    assert risk["risk_score"] == 2  # not 6 — no self-corroborated RISK_OFF
+    assert len(risk["matched"]) == 1
+    assert risk["risk_level"] == "ELEVATED"
 
 
 def test_assess_macro_risk_item_counts_once_at_most_severe_bucket():
@@ -458,6 +539,24 @@ def test_assess_macro_risk_ignores_non_central_bank_emergency_meeting():
     )
     assert risk["risk_level"] == "ELEVATED"
     assert risk["matched"][0]["bucket"] == "emergency_central_bank"
+
+
+def test_assess_macro_risk_central_bank_emergency_meeting_two_term():
+    """Central-bank emergency meetings hit via the two-term matcher (CB token
+    + emergency-meeting wording) — EN word-bounded, KR substring."""
+    for headline in (
+        "Fed holds emergency meeting as markets swoon",
+        "ECB calls emergency session on bond turmoil",
+        "한은, 긴급회의 소집…환율 급변동 대응",
+    ):
+        risk = macro_news.assess_macro_risk([_item(headline)])
+        assert risk["risk_level"] == "ELEVATED", headline
+        assert risk["matched"][0]["bucket"] == "emergency_central_bank", headline
+    # Word boundary: "fedex" must not read as the Fed.
+    risk = macro_news.assess_macro_risk(
+        [_item("FedEx workers call emergency meeting over pay")]
+    )
+    assert risk["risk_score"] == 0
 
 
 def test_format_macro_for_prompt_renders_risk_off_instruction():
