@@ -60,12 +60,28 @@ def test_pullback_subscore_bands():
     assert gt._pullback_subscore(-40) == 30  # broken
 
 
+def test_pullback_subscore_boundaries():
+    # strict > semantics: the boundary value itself falls into the *next* (lower) band
+    assert gt._pullback_subscore(-5) == 100  # -5 > -5 is False -> not the >-5 band
+    assert gt._pullback_subscore(-20) == 70  # -20 > -20 is False -> not the >-20 band
+    assert gt._pullback_subscore(-35) == 30  # -35 > -35 is False -> falls to else
+
+
 def test_momentum_subscore_bands():
     assert gt._momentum_subscore(25) == 100
     assert gt._momentum_subscore(40) == 80
     assert gt._momentum_subscore(50) == 60
     assert gt._momentum_subscore(65) == 40
     assert gt._momentum_subscore(80) == 15
+
+
+def test_momentum_subscore_boundaries():
+    # strict < semantics: the boundary value itself falls into the *next* band
+    assert gt._momentum_subscore(30) == 80  # 30 < 30 is False
+    assert gt._momentum_subscore(45) == 60  # 45 < 45 is False
+    assert gt._momentum_subscore(60) == 40  # 60 < 60 is False
+    assert gt._momentum_subscore(70) == 40  # 70 <= 70 is True
+    assert gt._momentum_subscore(70.0001) == 15  # 70.0001 <= 70 is False
 
 
 def test_trend_subscore_uptrend_rising():
@@ -77,6 +93,11 @@ def test_trend_subscore_uptrend_rising():
     assert gt._trend_subscore(90, 100, None, False) == 30
 
 
+def test_trend_subscore_price_equals_ma200_boundary():
+    assert gt._trend_subscore(100, 90, 100, True) == 100  # price >= ma200 and rising
+    assert gt._trend_subscore(100, 90, 100, False) == 60  # price >= ma200, not rising
+
+
 def test_compute_technical_healthy_pullback_in_uptrend():
     # Rising series then a mild pullback -> above ma200, healthy drawdown, mid RSI.
     closes = [100 + i for i in range(260)]  # 100..359 rising
@@ -84,5 +105,10 @@ def test_compute_technical_healthy_pullback_in_uptrend():
     tech = gt.compute_technical(closes)
     assert tech["ma200"] is not None
     assert -20 < tech["drawdown_pct"] < -5
-    assert 0 <= tech["score"] <= 100
-    assert tech["label"] in {"양호", "보통", "비권장"}
+    # deterministic exact values: trend=100 (price>=ma200, rising), pullback=100
+    # (drawdown -10 is >-20), momentum=100 (RSI well under 30 after a -10% tick)
+    assert tech["trend"] == 100
+    assert tech["pullback"] == 100
+    assert tech["momentum"] == 100
+    assert tech["score"] == 100.0
+    assert tech["label"] == "양호"
