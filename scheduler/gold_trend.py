@@ -8,6 +8,7 @@ Emits an ACCUMULATE/HOLD/PAUSE verdict to Telegram and a report file.
 from __future__ import annotations
 
 import copy
+import json
 import pathlib
 from typing import Optional
 
@@ -314,3 +315,31 @@ def render_report(ctx: dict) -> str:
     else:
         lines.append("▸ 요약 생략: LLM 호출 실패 또는 비활성")
     return "\n".join(lines)
+
+
+def load_state(path: pathlib.Path) -> list[dict]:
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, list) else []
+    except (ValueError, OSError):
+        return []
+
+
+def roll_state(state: list[dict], entry: dict, cap: int = 12) -> list[dict]:
+    return (list(state) + [entry])[-cap:]
+
+
+def save_state(path: pathlib.Path, state: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+
+
+def compute_deltas(entry: dict, prev: Optional[dict]) -> Optional[dict]:
+    if not prev:
+        return None
+    return {
+        "macro": round(entry["macro_score"] - prev["macro_score"]),
+        "technical": round(entry["technical_score"] - prev["technical_score"]),
+    }

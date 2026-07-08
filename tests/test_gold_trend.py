@@ -280,3 +280,33 @@ def test_render_report_flags_degraded_and_missing_summary():
     assert "estimated" in md.lower() or "추정" in md
     assert "요약 생략" in md
     assert "조회 실패" in md
+
+
+def test_load_state_missing_returns_empty(tmp_path):
+    assert gt.load_state(tmp_path / "none.json") == []
+
+
+def test_roll_state_caps_at_12():
+    state = [
+        {"date": f"d{i}", "macro_score": i, "technical_score": i} for i in range(12)
+    ]
+    entry = {"date": "d12", "macro_score": 99, "technical_score": 99}
+    rolled = gt.roll_state(state, entry, cap=12)
+    assert len(rolled) == 12
+    assert rolled[-1]["date"] == "d12"
+    assert rolled[0]["date"] == "d1"  # oldest dropped
+
+
+def test_compute_deltas():
+    prev = {"macro_score": 65, "technical_score": 65}
+    entry = {"macro_score": 68, "technical_score": 61}
+    d = gt.compute_deltas(entry, prev)
+    assert d == {"macro": 3, "technical": -4}
+    assert gt.compute_deltas(entry, None) is None
+
+
+def test_save_and_load_roundtrip(tmp_path):
+    p = tmp_path / "gold_trend.json"
+    state = [{"date": "d1", "macro_score": 50, "technical_score": 50}]
+    gt.save_state(p, state)
+    assert gt.load_state(p) == state
