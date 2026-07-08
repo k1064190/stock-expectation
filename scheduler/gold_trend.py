@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import pathlib
 import subprocess
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ DEFAULT_CONFIG: dict = {
     "real_rate": {
         "supportive_below_pct": 1.0,
         "restrictive_above_pct": 2.0,
+        "punitive_above_pct": 3.5,
         "assumed_pct": 1.9,
     },
     "scoring": {
@@ -157,11 +159,15 @@ def _central_bank_subscore(trailing_4q: float, baseline: float) -> float:
     return 30.0
 
 
-def _real_rate_subscore(y: float, supportive_below: float, restrictive_above: float):
+def _real_rate_subscore(
+    y: float, supportive_below: float, restrictive_above: float, punitive_above: float
+):
     if y <= supportive_below:
         return (100.0, False)
-    if y >= restrictive_above:
+    if y >= punitive_above:
         return (25.0, True)
+    if y >= restrictive_above:
+        return (25.0, False)
     return (60.0, False)
 
 
@@ -189,10 +195,11 @@ def compute_macro(
         config["central_bank"]["trailing_4q_tonnes"],
         config["central_bank"]["baseline_tonnes"],
     )
-    rr, restrictive = _real_rate_subscore(
+    rr, punitive = _real_rate_subscore(
         real_yield_pct,
         config["real_rate"]["supportive_below_pct"],
         config["real_rate"]["restrictive_above_pct"],
+        config["real_rate"]["punitive_above_pct"],
     )
     dl = _dollar_subscore(config["dollar"]["reserve_share_pct"])
     fx = _fx_subscore(usdkrw, usdkrw_ma200)
@@ -206,7 +213,7 @@ def compute_macro(
         "real_rate": rr,
         "dollar": dl,
         "fx": fx,
-        "restrictive_flag": restrictive,
+        "punitive_flag": punitive,
         "score": score,
         "label": label,
     }
@@ -216,8 +223,8 @@ def decide_verdict(technical: dict, macro: dict, config: dict) -> dict:
     reasons: list[str] = []
     if technical["rsi"] > 75:
         reasons.append("RSI 과열(>75)")
-    if macro["restrictive_flag"]:
-        reasons.append("실질금리 긴축 전환")
+    if macro["punitive_flag"]:
+        reasons.append("실질금리 징벌적 수준(하드 PAUSE)")
     if config.get("risk_off"):
         reasons.append("매크로 risk-off 스위치")
     if reasons:
@@ -476,7 +483,8 @@ def build_context(
     decomp = None
     if usd_gold and closes and len(closes) > 63:
         krw_r3 = (closes[-1] / closes[-63] - 1.0) * 100.0
-        decomp = {"usd_ret_3m": usd_gold["ret_3m"], "krw_ret_3m": krw_r3}
+        if math.isfinite(usd_gold["ret_3m"]) and math.isfinite(krw_r3):
+            decomp = {"usd_ret_3m": usd_gold["ret_3m"], "krw_ret_3m": krw_r3}
     if usd_gold is None:
         degraded.append("USD 금(GC=F) 조회 실패 → 달러/원화 분해·포지션 근사 생략")
 
@@ -535,8 +543,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     config = load_config(pathlib.Path(args.config))
     state_path = pathlib.Path(args.state)
     state = load_state(state_path)
-    prev_entry = state[-1] if state else None
     date_kst = datetime.now().strftime("%Y-%m-%d")
+    if state and state[-1].get("date") == date_kst:
+        # Same-day re-run: replace rather than append, so compute_deltas keeps
+        # referencing the true prior week and state doesn't grow duplicate rows.
+        state = state[:-1]
+    prev_entry = state[-1] if state else None
 
     ctx = build_context(
         closes=fetch_krx_gold_closes(),

@@ -122,9 +122,17 @@ def test_central_bank_subscore_bands():
 
 
 def test_real_rate_subscore_and_flag():
-    assert gt._real_rate_subscore(0.8, 1.0, 2.0) == (100, False)
-    assert gt._real_rate_subscore(1.5, 1.0, 2.0) == (60, False)
-    assert gt._real_rate_subscore(2.3, 1.0, 2.0) == (25, True)
+    assert gt._real_rate_subscore(0.8, 1.0, 2.0, 3.5) == (100.0, False)
+    assert gt._real_rate_subscore(1.5, 1.0, 2.0, 3.5) == (60.0, False)
+    assert gt._real_rate_subscore(2.3, 1.0, 2.0, 3.5) == (
+        25.0,
+        False,
+    )  # restrictive, not punitive
+    assert gt._real_rate_subscore(4.0, 1.0, 2.0, 3.5) == (25.0, True)  # punitive
+    # exact boundaries
+    assert gt._real_rate_subscore(1.0, 1.0, 2.0, 3.5) == (100.0, False)
+    assert gt._real_rate_subscore(2.0, 1.0, 2.0, 3.5) == (25.0, False)
+    assert gt._real_rate_subscore(3.5, 1.0, 2.0, 3.5) == (25.0, True)
 
 
 def test_dollar_subscore_bands():
@@ -144,7 +152,7 @@ def test_compute_macro_seed_case():
     m = gt.compute_macro(cfg, real_yield_pct=1.9, usdkrw=1544, usdkrw_ma200=1450)
     assert m["central_bank"] == 100  # 950 >= 900
     assert m["real_rate"] == 60  # between thresholds
-    assert m["restrictive_flag"] is False
+    assert m["punitive_flag"] is False
     assert m["dollar"] == 55  # 58 -> 55
     assert m["fx"] == 30  # 1544/1450 = +6.5% -> weak
     # 0.35*100 + 0.30*60 + 0.20*55 + 0.15*30 = 68.5
@@ -156,8 +164,8 @@ def _tech(score=60, rsi=47):
     return {"score": score, "rsi": rsi}
 
 
-def _macro(score=68, restrictive_flag=False):
-    return {"score": score, "restrictive_flag": restrictive_flag}
+def _macro(score=68, punitive_flag=False):
+    return {"score": score, "punitive_flag": punitive_flag}
 
 
 def test_verdict_accumulate():
@@ -179,11 +187,19 @@ def test_verdict_pause_on_overbought_rsi():
     assert any("RSI" in r for r in v["reasons"])
 
 
-def test_verdict_pause_on_restrictive_real_rate():
+def test_verdict_pause_on_punitive_real_rate():
     v = gt.decide_verdict(
-        _tech(60, 47), _macro(70, restrictive_flag=True), gt.DEFAULT_CONFIG
+        _tech(60, 47), _macro(70, punitive_flag=True), gt.DEFAULT_CONFIG
     )
     assert v["verdict"] == "PAUSE"
+
+
+def test_verdict_not_paused_when_restrictive_not_punitive():
+    # A merely-restrictive real rate (punitive_flag=False) must NOT force-PAUSE.
+    v = gt.decide_verdict(
+        _tech(60, 47), _macro(70, punitive_flag=False), gt.DEFAULT_CONFIG
+    )
+    assert v["verdict"] == "ACCUMULATE"
 
 
 def test_verdict_pause_on_risk_off_switch():
@@ -398,6 +414,25 @@ def test_build_context_assembles_and_flags_degraded():
     assert ctx["state_entry"]["date"] == "2026-07-05"
 
 
+def test_build_context_omits_decomp_when_usd_ret_3m_is_nan():
+    # A short USD-gold history yields ret_3m = nan (see _returns_from_series);
+    # decomp must be omitted rather than propagate nan into the report.
+    closes = [100 + i for i in range(260)] + [359 * 0.90]
+    cfg = gt.load_config(pathlib.Path("nope"))
+    ctx = gt.build_context(
+        closes=closes,
+        usd_gold={"per_oz": 4100, "ret_3m": float("nan"), "ret_6m": float("nan")},
+        usdkrw={"last": 1544, "ma200": 1450},
+        real_yield=(1.9, False),
+        config=cfg,
+        prev_entry=None,
+        date_kst="2026-07-05",
+    )
+    assert ctx["decomp"] is None
+    # no degraded line is added for this — it's not a fetch failure
+    assert not any("GC=F" in d for d in ctx["degraded"])
+
+
 def test_main_writes_report_offline(tmp_path, monkeypatch):
     # Force deterministic offline run: KRX from stub, no USD/FX network, LLM off.
     closes = [100 + i for i in range(260)] + [359 * 0.90]
@@ -428,3 +463,42 @@ def test_main_writes_report_offline(tmp_path, monkeypatch):
     body = written[0].read_text()
     assert "[금 주간 분석]" in body
     assert state.exists()
+
+
+def test_main_same_day_rerun_replaces_state_entry(tmp_path, monkeypatch):
+    # A same-day re-run must replace the prior entry for that date, not append
+    # a duplicate, so compute_deltas keeps referencing the true prior week.
+    closes = [100 + i for i in range(260)] + [359 * 0.90]
+    monkeypatch.setattr(gt, "fetch_krx_gold_closes", lambda days=430: closes)
+    monkeypatch.setattr(
+        gt, "fetch_usd_gold", lambda: {"per_oz": 4100, "ret_3m": -13.6, "ret_6m": -5.2}
+    )
+    monkeypatch.setattr(gt, "fetch_usdkrw", lambda: {"last": 1544, "ma200": 1450})
+    monkeypatch.setattr(gt, "fetch_real_yield", lambda cfg: (1.9, False))
+
+    class _FixedDatetime(gt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 5)
+
+    monkeypatch.setattr(gt, "datetime", _FixedDatetime)
+
+    reports = tmp_path / "reports"
+    state = tmp_path / "state" / "gold_trend.json"
+    argv = [
+        "--config",
+        "data/gold_macro_factors.yaml",
+        "--llm-mode",
+        "none",
+        "--no-telegram",
+        "--reports-dir",
+        str(reports),
+        "--state",
+        str(state),
+    ]
+    assert gt.main(argv) == 0
+    assert gt.main(argv) == 0
+
+    saved = gt.load_state(state)
+    same_day = [e for e in saved if e["date"] == "2026-07-05"]
+    assert len(same_day) == 1

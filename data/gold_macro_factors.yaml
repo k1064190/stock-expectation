@@ -12,6 +12,7 @@ dollar:
 real_rate:
   supportive_below_pct: 1.0
   restrictive_above_pct: 2.0
+  punitive_above_pct: 3.5      # >= punitive -> hard PAUSE; restrictive only floors the sub-score
   assumed_pct: 1.9             # fallback when FRED fetch fails
 
 scoring:

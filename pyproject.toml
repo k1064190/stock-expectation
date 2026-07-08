@@ -25,7 +25,6 @@ api = [
 skills = [
     # Only needed for running imported skill scripts directly
     "jsonschema",
-    "pyyaml",
     "scipy>=1.11,<2",
 ]
 memory = [
