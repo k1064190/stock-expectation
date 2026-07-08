@@ -7,6 +7,7 @@ Emits an ACCUMULATE/HOLD/PAUSE verdict to Telegram and a report file.
 
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import pathlib
@@ -441,3 +442,132 @@ def run_llm_summary(prompt: str, mode: str) -> Optional[str]:
         return out or None
     except Exception:
         return None
+
+
+def build_context(
+    closes, usd_gold, usdkrw, real_yield, config, prev_entry, date_kst
+) -> dict:
+    degraded: list[str] = []
+    technical = (
+        compute_technical(closes)
+        if closes
+        else {
+            "score": 0,
+            "label": "비권장",
+            "rsi": 50,
+            "price": 0,
+            "drawdown_pct": 0,
+            "ma200": None,
+        }
+    )
+    if not closes:
+        degraded.append("KRX 금현물(411060) 조회 실패 → 기술점수 0 처리")
+
+    ry_pct, ry_est = real_yield
+    fx_last = usdkrw["last"] if usdkrw else 0.0
+    fx_ma200 = usdkrw["ma200"] if usdkrw else 1.0
+    if usdkrw is None:
+        degraded.append("USD/KRW(KRW=X) 조회 실패 → 환 요인 중립 처리")
+        fx_last, fx_ma200 = 1.0, 1.0
+
+    macro = compute_macro(config, ry_pct, fx_last or 1.0, fx_ma200 or 1.0)
+    verdict = decide_verdict(technical, macro, config)
+
+    decomp = None
+    if usd_gold and closes and len(closes) > 63:
+        krw_r3 = (closes[-1] / closes[-63] - 1.0) * 100.0
+        decomp = {"usd_ret_3m": usd_gold["ret_3m"], "krw_ret_3m": krw_r3}
+    if usd_gold is None:
+        degraded.append("USD 금(GC=F) 조회 실패 → 달러/원화 분해·포지션 근사 생략")
+
+    ma200 = technical.get("ma200")
+    ma200_gap = ((technical["price"] / ma200 - 1.0) * 100.0) if ma200 else 0.0
+    krx = {
+        "price": technical["price"],
+        "drawdown_pct": technical["drawdown_pct"],
+        "rsi": technical["rsi"],
+        "ma200_gap_pct": ma200_gap,
+    }
+
+    pos_line = None
+    if usd_gold and usdkrw:
+        pos_line = position_line(config, usd_gold["per_oz"], usdkrw["last"])
+
+    entry = {
+        "date": date_kst,
+        "verdict": verdict["verdict"],
+        "macro_score": round(macro["score"], 1),
+        "technical_score": round(technical["score"], 1),
+        "drawdown_pct": round(technical["drawdown_pct"], 1),
+    }
+    deltas = compute_deltas(entry, prev_entry)
+
+    return {
+        "date_kst": date_kst,
+        "verdict": verdict,
+        "technical": technical,
+        "macro": macro,
+        "krx": krx,
+        "decomp": decomp,
+        "real_yield": {"pct": ry_pct, "estimated": ry_est},
+        "usdkrw": fx_last,
+        "scorecard": scorecard_lines(macro, config, ry_pct, ry_est, fx_last),
+        "position_line": pos_line,
+        "deltas": deltas,
+        "summary": None,
+        "degraded": degraded,
+        "config": config,
+        "state_entry": entry,
+    }
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Weekly gold trend analysis")
+    parser.add_argument("--config", default="data/gold_macro_factors.yaml")
+    parser.add_argument(
+        "--llm-mode", choices=["claude-code", "none"], default="claude-code"
+    )
+    parser.add_argument("--no-telegram", action="store_true")
+    parser.add_argument("--state", default="state/gold_trend.json")
+    parser.add_argument("--reports-dir", default="reports")
+    args = parser.parse_args(argv)
+
+    config = load_config(pathlib.Path(args.config))
+    state_path = pathlib.Path(args.state)
+    state = load_state(state_path)
+    prev_entry = state[-1] if state else None
+    date_kst = datetime.now().strftime("%Y-%m-%d")
+
+    ctx = build_context(
+        closes=fetch_krx_gold_closes(),
+        usd_gold=fetch_usd_gold(),
+        usdkrw=fetch_usdkrw(),
+        real_yield=fetch_real_yield(config),
+        config=config,
+        prev_entry=prev_entry,
+        date_kst=date_kst,
+    )
+    ctx["summary"] = run_llm_summary(build_llm_prompt(ctx), args.llm_mode)
+
+    report = render_report(ctx)
+
+    reports_dir = pathlib.Path(args.reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / f"gold-trend-{date_kst}.md").write_text(report)
+
+    save_state(state_path, roll_state(state, ctx["state_entry"]))
+
+    if not args.no_telegram:
+        try:
+            from scheduler.telegram_sender import send_briefing
+
+            send_briefing(report, title="금 주간 분석")
+        except Exception as e:  # fail-open: report already on disk
+            print(f"[gold_trend] telegram send failed (non-fatal): {e}")
+
+    print(report)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -377,3 +377,54 @@ def test_fetch_usd_gold_failopen_returns_none(monkeypatch):
 def test_fetch_usdkrw_failopen_returns_none(monkeypatch):
     monkeypatch.setattr("yfinance.Ticker", _boom)
     assert gt.fetch_usdkrw() is None
+
+
+def test_build_context_assembles_and_flags_degraded():
+    closes = [100 + i for i in range(260)] + [359 * 0.90]
+    cfg = gt.load_config(pathlib.Path("nope"))
+    ctx = gt.build_context(
+        closes=closes,
+        usd_gold=None,  # forces degraded + no decomp
+        usdkrw={"last": 1544, "ma200": 1450},
+        real_yield=(1.9, False),
+        config=cfg,
+        prev_entry={"macro_score": 65, "technical_score": 65},
+        date_kst="2026-07-05",
+    )
+    assert ctx["decomp"] is None
+    assert any("GC=F" in d or "USD" in d for d in ctx["degraded"])
+    assert ctx["deltas"] is not None
+    assert "state_entry" in ctx
+    assert ctx["state_entry"]["date"] == "2026-07-05"
+
+
+def test_main_writes_report_offline(tmp_path, monkeypatch):
+    # Force deterministic offline run: KRX from stub, no USD/FX network, LLM off.
+    closes = [100 + i for i in range(260)] + [359 * 0.90]
+    monkeypatch.setattr(gt, "fetch_krx_gold_closes", lambda days=430: closes)
+    monkeypatch.setattr(
+        gt, "fetch_usd_gold", lambda: {"per_oz": 4100, "ret_3m": -13.6, "ret_6m": -5.2}
+    )
+    monkeypatch.setattr(gt, "fetch_usdkrw", lambda: {"last": 1544, "ma200": 1450})
+    monkeypatch.setattr(gt, "fetch_real_yield", lambda cfg: (1.9, False))
+    reports = tmp_path / "reports"
+    state = tmp_path / "state" / "gold_trend.json"
+    rc = gt.main(
+        [
+            "--config",
+            "data/gold_macro_factors.yaml",
+            "--llm-mode",
+            "none",
+            "--no-telegram",
+            "--reports-dir",
+            str(reports),
+            "--state",
+            str(state),
+        ]
+    )
+    assert rc == 0
+    written = list(reports.glob("gold-trend-*.md"))
+    assert len(written) == 1
+    body = written[0].read_text()
+    assert "[금 주간 분석]" in body
+    assert state.exists()
