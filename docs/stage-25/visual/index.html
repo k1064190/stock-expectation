@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>stock-expectation — Staged Plan Progress</title>
+    <style>
+      :root {
+        --accent: #14676a;
+        --accent-soft: rgba(20, 103, 106, 0.15);
+        --muted: #9a9a94;
+        --muted-fill: #c3c2ba;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e2e2dd;
+        --text: #26261f;
+        --text-soft: #55554d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Helvetica,
+          Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.55;
+      }
+
+      header {
+        border-bottom: 1px solid var(--border);
+        background: var(--card-bg);
+      }
+
+      .header-inner {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 1.5rem 1.5rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        letter-spacing: -0.01em;
+      }
+
+      .subtitle {
+        margin: 0.2rem 0 0;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+      }
+
+      .lang-switch {
+        font-size: 0.9rem;
+        white-space: nowrap;
+      }
+
+      .lang-switch .current-lang {
+        color: var(--muted);
+      }
+
+      .lang-switch a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .lang-switch a:hover {
+        text-decoration: underline;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 1.75rem 1.5rem 3rem;
+      }
+
+      .timeline-wrap {
+        overflow-x: auto;
+        margin-bottom: 2.25rem;
+        padding: 0.5rem 0 0.75rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .timeline {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        list-style: none;
+        margin: 0;
+        padding: 7px 1.25rem 0;
+        min-width: max-content;
+      }
+
+      .timeline::before {
+        content: "";
+        position: absolute;
+        top: 7px;
+        left: 1.25rem;
+        right: 1.25rem;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+      }
+
+      .node {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0 0.6rem;
+        flex: 0 0 auto;
+      }
+
+      .dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        display: block;
+        background: var(--card-bg);
+        border: 2px solid var(--muted-fill);
+      }
+
+      .node.muted .dot {
+        background: var(--muted-fill);
+        border-color: var(--muted-fill);
+      }
+
+      .node.current .dot {
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+
+      .node.future .dot {
+        background: var(--card-bg);
+        border-color: var(--accent);
+      }
+
+      .node .label {
+        font-size: 0.72rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .stage-section h2 {
+        margin: 0 0 0.35rem;
+        color: var(--accent);
+        font-size: 1.5rem;
+      }
+
+      .stage-summary {
+        margin: 0 0 1.5rem;
+        color: var(--text-soft);
+        max-width: 60ch;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      article.card h3 {
+        margin: 0 0 1rem;
+        font-size: 1.2rem;
+      }
+
+      article.card h4 {
+        margin: 1.1rem 0 0.4rem;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent);
+      }
+
+      article.card h4:first-of-type {
+        margin-top: 0;
+      }
+
+      article.card p {
+        margin: 0;
+        color: var(--text);
+      }
+
+      article.card ul {
+        margin: 0;
+        padding-left: 1.15rem;
+      }
+
+      article.card ul li {
+        margin-bottom: 0.4rem;
+      }
+
+      article.card ul li:last-child {
+        margin-bottom: 0;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #f1f1ee;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+        padding: 0.05rem 0.3rem;
+        font-size: 0.85em;
+      }
+
+      ul.code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      ul.code-list li {
+        margin-bottom: 0.5rem;
+        font-size: 0.92rem;
+      }
+
+      .retro {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header-inner {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <div>
+          <h1>stock-expectation</h1>
+          <p class="subtitle">Staged plan progress</p>
+        </div>
+        <nav aria-label="Language" class="lang-switch">
+          <span class="current-lang">EN</span> |
+          <a href="index.ko.html">한국어</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <div class="timeline-wrap">
+        <nav aria-label="Timeline">
+          <ol class="timeline">
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 0</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 1</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 2</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 3</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 4</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 4.1</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 5</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 6</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 7</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 8</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 9</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 11</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 12</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 13</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 14</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 15</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 16</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 17</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 19</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 20</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 21</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 22</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 23</span>
+            </li>
+            <li class="node muted">
+              <span class="dot"></span><span class="label">Stage 24</span>
+            </li>
+            <li class="node current">
+              <span class="dot"></span><span class="label">Stage 25</span>
+            </li>
+          </ol>
+        </nav>
+      </div>
+
+      <section class="stage-section">
+        <h2>Stage 25</h2>
+        <p class="stage-summary">
+          A weekly scheduled job that scores gold entry timing and long-term
+          macro bias into an ACCUMULATE / HOLD / PAUSE verdict.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>Gold Weekly Trend</h3>
+
+            <h4>Why</h4>
+            <p>
+              Doctor Cho is dollar-cost-averaging into KRX 금현물 (physical
+              gold, holds 2g) and wanted a recurring weekly checkpoint — like
+              the existing stock crontab jobs — answering two questions: is now
+              a reasonable spot to add this week's tranche, and is gold
+              structurally biased to rise long-term. A backing deep-research
+              pass (WGC / IMF / Fed / J.P. Morgan, 2026-07-03) established the
+              macro facts that seed the scorecard: central-bank buying is
+              structurally elevated (~1,000t/yr since 2022 vs ~500t/yr the prior
+              decade), the worst historical gold bears required Volcker-style
+              punitive real rates (~5–8%, currently absent), and the "dollar
+              collapse" narrative is overstated (USD reserve share ~58%, flat
+              since 2022).
+            </p>
+
+            <h4>What</h4>
+            <ul>
+              <li>
+                deterministic technical score (weekly-entry timing): trend vs
+                MA50/MA200, drawdown-from-52w-high, RSI band
+              </li>
+              <li>
+                deterministic macro scorecard (long-term bias): central-bank
+                buying + real-rate regime + dollar structural drift + FX
+                (KRW/USD), scored by Python rules from live data plus a
+                quarterly-refreshed config file
+              </li>
+              <li>
+                one optional <code>claude -p</code> Korean summary paragraph
+                (fail-open)
+              </li>
+              <li>
+                optional approximate personal 2g position P&amp;L line (spot
+                USD/oz &times; KRW/USD &divide; 31.1035, labelled approximate)
+              </li>
+              <li>
+                12-week rolling state (<code>state/gold_trend.json</code>) for
+                week-over-week deltas — never <code>predictions.db</code>
+              </li>
+              <li>
+                verdict: hard PAUSE flags (RSI &gt; 75, real-rate punitive, or
+                manual
+                <code>risk_off</code> kill-switch) override; else ACCUMULATE
+                when macro &ge; 55 and technical &ge; 50; else HOLD
+              </li>
+            </ul>
+
+            <h4>How</h4>
+            <p>
+              Built over 8 TDD tasks (config &rarr; technical &rarr; macro
+              &rarr; verdict &rarr; rendering &rarr; state &rarr; fail-open
+              fetchers &rarr; orchestration) via subagent-driven development: a
+              fresh implementer per task, a spec-and-quality review per task,
+              then a whole-branch review. Fetchers are fail-open (any failure
+              returns a sentinel; <code>build_context</code> converts each into
+              a labelled degraded line; the report is written to disk before the
+              best-effort Telegram send). Runs Sunday 21:00 KST. A calibration
+              decision surfaced from the first live dry-run: real-rate
+              <code>restrictive_above_pct</code> (2.0) originally did double
+              duty as both the sub-score floor and the hard-PAUSE veto, so a
+              live DFII10 &asymp; 2.2% force-PAUSEd accumulation — contradicting
+              the research. The two were decoupled:
+              <code>restrictive_above_pct</code> (2.0) now only floors the
+              sub-score, and a new <code>punitive_above_pct</code> (3.5) drives
+              the hard PAUSE veto. After the change the dry-run returns
+              ACCUMULATE at 2.2%.
+            </p>
+
+            <h4>Code locations</h4>
+            <ul class="code-list">
+              <li>
+                <code>scheduler/gold_trend.py</code> — the whole job (scoring
+                functions, fail-open fetchers, <code>build_context</code>,
+                <code>main</code>)
+              </li>
+              <li>
+                <code>data/gold_macro_factors.yaml</code> — slow structural
+                inputs + weights/thresholds (<code>punitive_above_pct: 3.5</code
+                >)
+              </li>
+              <li>
+                <code>tests/test_gold_trend.py</code> — 44 unit tests (2
+                network-marked)
+              </li>
+              <li>
+                <code>scheduler/crontab.example</code> — Sunday 21:00 KST line
+              </li>
+              <li>
+                <code>CLAUDE.md</code> — new "Weekly gold trend" scheduler
+                subsection
+              </li>
+              <li>
+                <code>.gitignore</code> — <code>reports/gold-trend-*.md</code>
+              </li>
+              <li>
+                <code
+                  >docs/superpowers/specs/2026-07-04-gold-weekly-trend-design.md</code
+                >
+              </li>
+              <li>
+                <code
+                  >docs/superpowers/plans/2026-07-05-gold-weekly-trend.md</code
+                >
+              </li>
+            </ul>
+
+            <h4>Retrospective</h4>
+            <p class="retro">
+              <em>
+                TDD plus per-task review caught tautological and boundary test
+                gaps early; the most valuable catch was the whole-branch review
+                flagging that the report wasn't gitignored (a personal-data leak
+                risk) and that the day-one output was a PAUSE contradicting the
+                tool's own thesis — surfaced only by running the live dry-run
+                before declaring done. Open follow-ups:
+                <code>punitive_above_pct</code> 3.5 is a seeded guess; the
+                per-gram position figure is an approximation.
+              </em>
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
