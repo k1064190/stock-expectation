@@ -139,3 +139,68 @@ def compute_technical(closes: list[float]) -> dict:
         "score": score,
         "label": label,
     }
+
+
+def _central_bank_subscore(trailing_4q: float, baseline: float) -> float:
+    if trailing_4q >= 900:
+        return 100.0
+    if trailing_4q >= 650:
+        return 70.0
+    if trailing_4q >= baseline:
+        return 50.0
+    return 30.0
+
+
+def _real_rate_subscore(y: float, supportive_below: float, restrictive_above: float):
+    if y <= supportive_below:
+        return (100.0, False)
+    if y >= restrictive_above:
+        return (25.0, True)
+    return (60.0, False)
+
+
+def _dollar_subscore(reserve_share_pct: float) -> float:
+    if reserve_share_pct < 55:
+        return 70.0
+    if reserve_share_pct <= 60:
+        return 55.0
+    return 40.0
+
+
+def _fx_subscore(usdkrw: float, usdkrw_ma200: float) -> float:
+    pct = (usdkrw / usdkrw_ma200 - 1.0) * 100.0
+    if pct > 5:
+        return 30.0
+    if pct >= -5:
+        return 60.0
+    return 80.0
+
+
+def compute_macro(
+    config: dict, real_yield_pct: float, usdkrw: float, usdkrw_ma200: float
+) -> dict:
+    cb = _central_bank_subscore(
+        config["central_bank"]["trailing_4q_tonnes"],
+        config["central_bank"]["baseline_tonnes"],
+    )
+    rr, restrictive = _real_rate_subscore(
+        real_yield_pct,
+        config["real_rate"]["supportive_below_pct"],
+        config["real_rate"]["restrictive_above_pct"],
+    )
+    dl = _dollar_subscore(config["dollar"]["reserve_share_pct"])
+    fx = _fx_subscore(usdkrw, usdkrw_ma200)
+    w = config["scoring"]["weights"]
+    score = (
+        w["central_bank"] * cb + w["real_rate"] * rr + w["dollar"] * dl + w["fx"] * fx
+    )
+    label = "높음" if score >= 65 else ("중립" if score >= 45 else "낮음")
+    return {
+        "central_bank": cb,
+        "real_rate": rr,
+        "dollar": dl,
+        "fx": fx,
+        "restrictive_flag": restrictive,
+        "score": score,
+        "label": label,
+    }

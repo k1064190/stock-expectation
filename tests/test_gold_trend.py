@@ -112,3 +112,41 @@ def test_compute_technical_healthy_pullback_in_uptrend():
     assert tech["momentum"] == 100
     assert tech["score"] == 100.0
     assert tech["label"] == "양호"
+
+
+def test_central_bank_subscore_bands():
+    assert gt._central_bank_subscore(950, 500) == 100
+    assert gt._central_bank_subscore(700, 500) == 70
+    assert gt._central_bank_subscore(550, 500) == 50
+    assert gt._central_bank_subscore(400, 500) == 30
+
+
+def test_real_rate_subscore_and_flag():
+    assert gt._real_rate_subscore(0.8, 1.0, 2.0) == (100, False)
+    assert gt._real_rate_subscore(1.5, 1.0, 2.0) == (60, False)
+    assert gt._real_rate_subscore(2.3, 1.0, 2.0) == (25, True)
+
+
+def test_dollar_subscore_bands():
+    assert gt._dollar_subscore(53) == 70
+    assert gt._dollar_subscore(58) == 55
+    assert gt._dollar_subscore(62) == 40
+
+
+def test_fx_subscore_double_edged():
+    assert gt._fx_subscore(1200, 1000) == 30  # won very weak (+20%)
+    assert gt._fx_subscore(1010, 1000) == 60  # near mean
+    assert gt._fx_subscore(920, 1000) == 80  # won strong (-8%)
+
+
+def test_compute_macro_seed_case():
+    cfg = gt.load_config(pathlib.Path("does_not_exist"))  # DEFAULT_CONFIG
+    m = gt.compute_macro(cfg, real_yield_pct=1.9, usdkrw=1544, usdkrw_ma200=1450)
+    assert m["central_bank"] == 100  # 950 >= 900
+    assert m["real_rate"] == 60  # between thresholds
+    assert m["restrictive_flag"] is False
+    assert m["dollar"] == 55  # 58 -> 55
+    assert m["fx"] == 30  # 1544/1450 = +6.5% -> weak
+    # 0.35*100 + 0.30*60 + 0.20*55 + 0.15*30 = 68.5
+    assert round(m["score"], 1) == 68.5
+    assert m["label"] == "높음"
