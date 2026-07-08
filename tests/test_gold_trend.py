@@ -150,3 +150,50 @@ def test_compute_macro_seed_case():
     # 0.35*100 + 0.30*60 + 0.20*55 + 0.15*30 = 68.5
     assert round(m["score"], 1) == 68.5
     assert m["label"] == "높음"
+
+
+def _tech(score=60, rsi=47):
+    return {"score": score, "rsi": rsi}
+
+
+def _macro(score=68, restrictive_flag=False):
+    return {"score": score, "restrictive_flag": restrictive_flag}
+
+
+def test_verdict_accumulate():
+    v = gt.decide_verdict(_tech(60, 47), _macro(68), gt.DEFAULT_CONFIG)
+    assert v["verdict"] == "ACCUMULATE"
+    assert v["emoji"] == "🟢"
+    assert v["aggressive"] is False
+
+
+def test_verdict_accumulate_aggressive():
+    v = gt.decide_verdict(_tech(78, 28), _macro(70), gt.DEFAULT_CONFIG)
+    assert v["verdict"] == "ACCUMULATE"
+    assert v["aggressive"] is True
+
+
+def test_verdict_pause_on_overbought_rsi():
+    v = gt.decide_verdict(_tech(80, 78), _macro(70), gt.DEFAULT_CONFIG)
+    assert v["verdict"] == "PAUSE"
+    assert any("RSI" in r for r in v["reasons"])
+
+
+def test_verdict_pause_on_restrictive_real_rate():
+    v = gt.decide_verdict(
+        _tech(60, 47), _macro(70, restrictive_flag=True), gt.DEFAULT_CONFIG
+    )
+    assert v["verdict"] == "PAUSE"
+
+
+def test_verdict_pause_on_risk_off_switch():
+    cfg = gt.load_config(pathlib.Path("nope"))
+    cfg["risk_off"] = True
+    v = gt.decide_verdict(_tech(60, 47), _macro(70), cfg)
+    assert v["verdict"] == "PAUSE"
+
+
+def test_verdict_hold_when_mixed():
+    v = gt.decide_verdict(_tech(45, 55), _macro(50), gt.DEFAULT_CONFIG)
+    assert v["verdict"] == "HOLD"
+    assert v["emoji"] == "🟡"

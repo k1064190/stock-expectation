@@ -204,3 +204,36 @@ def compute_macro(
         "score": score,
         "label": label,
     }
+
+
+def decide_verdict(technical: dict, macro: dict, config: dict) -> dict:
+    reasons: list[str] = []
+    if technical["rsi"] > 75:
+        reasons.append("RSI 과열(>75)")
+    if macro["restrictive_flag"]:
+        reasons.append("실질금리 긴축 전환")
+    if config.get("risk_off"):
+        reasons.append("매크로 risk-off 스위치")
+    if reasons:
+        return {
+            "verdict": "PAUSE",
+            "emoji": "🔴",
+            "reasons": reasons,
+            "aggressive": False,
+        }
+
+    if macro["score"] >= 55 and technical["score"] >= 50:
+        aggressive = macro["score"] >= 65 and technical["score"] >= 75
+        return {
+            "verdict": "ACCUMULATE",
+            "emoji": "🟢",
+            "reasons": ["장기 편향 우호 + 진입 양호"],
+            "aggressive": aggressive,
+        }
+
+    return {
+        "verdict": "HOLD",
+        "emoji": "🟡",
+        "reasons": ["편향/타이밍 혼조"],
+        "aggressive": False,
+    }
