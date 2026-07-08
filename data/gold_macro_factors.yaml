@@ -1,0 +1,24 @@
+# Slow structural macro inputs for the weekly gold trend job. Refresh quarterly.
+# Seeded 2026-07-04 from deep-research (WGC / IMF / Fed / J.P. Morgan, 2026-07-03).
+last_reviewed: 2026-07-04
+
+central_bank:
+  trailing_4q_tonnes: 950      # ~1,000t/yr structural since 2022 (2025 = 863t)
+  baseline_tonnes: 500         # prior-decade average
+
+dollar:
+  reserve_share_pct: 58.0      # IMF COFER; flat since 2022
+
+real_rate:
+  supportive_below_pct: 1.0
+  restrictive_above_pct: 2.0
+  assumed_pct: 1.9             # fallback when FRED fetch fails
+
+scoring:
+  weights: { central_bank: 0.35, real_rate: 0.30, dollar: 0.20, fx: 0.15 }
+
+risk_off: false                # manual kill-switch -> forces PAUSE
+
+position:                      # optional personal holding; null cost -> P&L line omitted
+  grams: 2.0
+  avg_cost_krw_per_g: null     # set to your actual KRW/g buy price to enable P&L
