@@ -10,11 +10,15 @@ from __future__ import annotations
 import copy
 import json
 import pathlib
+import subprocess
+from datetime import datetime, timedelta
 from typing import Optional
 
+import httpx
 import yaml
 
 GRAMS_PER_OZ = 31.1035
+FRED_DFII10_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10"
 
 DEFAULT_CONFIG: dict = {
     "last_reviewed": "2026-07-04",
@@ -343,3 +347,97 @@ def compute_deltas(entry: dict, prev: Optional[dict]) -> Optional[dict]:
         "macro": round(entry["macro_score"] - prev["macro_score"]),
         "technical": round(entry["technical_score"] - prev["technical_score"]),
     }
+
+
+def fetch_krx_gold_closes(days: int = 430) -> list[float]:
+    try:
+        from pykrx import stock as krx_stock
+
+        end = datetime.now()
+        start = end - timedelta(days=days)
+        df = krx_stock.get_market_ohlcv_by_date(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "411060"
+        )
+        if df is None or df.empty:
+            return []
+        closes = [float(c) for c in df["종가"].tolist() if c and float(c) > 0]
+        return closes
+    except Exception:
+        return []
+
+
+def _returns_from_series(closes: list[float]) -> tuple[float, float]:
+    last = closes[-1]
+    r3 = (last / closes[-63] - 1.0) * 100.0 if len(closes) > 63 else float("nan")
+    r6 = (last / closes[-126] - 1.0) * 100.0 if len(closes) > 126 else float("nan")
+    return r3, r6
+
+
+def fetch_usd_gold() -> Optional[dict]:
+    try:
+        import yfinance as yf
+
+        h = yf.Ticker("GC=F").history(period="1y")["Close"].dropna().tolist()
+        if len(h) < 5:
+            return None
+        r3, r6 = _returns_from_series(h)
+        return {"per_oz": float(h[-1]), "ret_3m": r3, "ret_6m": r6}
+    except Exception:
+        return None
+
+
+def fetch_usdkrw() -> Optional[dict]:
+    try:
+        import yfinance as yf
+
+        h = yf.Ticker("KRW=X").history(period="1y")["Close"].dropna().tolist()
+        if len(h) < 5:
+            return None
+        ma200 = _sma(h, 200) or (sum(h) / len(h))
+        return {"last": float(h[-1]), "ma200": float(ma200)}
+    except Exception:
+        return None
+
+
+def fetch_real_yield(config: dict) -> tuple[float, bool]:
+    try:
+        resp = httpx.get(FRED_DFII10_CSV, timeout=15.0)
+        resp.raise_for_status()
+        rows = [r for r in resp.text.strip().splitlines()[1:] if r]
+        for row in reversed(rows):
+            parts = row.split(",")
+            if len(parts) >= 2 and parts[-1] not in (".", ""):
+                return (float(parts[-1]), False)
+        raise ValueError("no numeric DFII10 rows")
+    except Exception:
+        return (float(config["real_rate"]["assumed_pct"]), True)
+
+
+def build_llm_prompt(ctx: dict) -> str:
+    return (
+        "다음 금 분석 수치에만 근거해 한국어로 2~3문장 요약을 작성해. "
+        "새로운 사실·숫자를 지어내지 말 것.\n"
+        f"- 판정: {ctx['verdict']['verdict']}\n"
+        f"- 장기 편향(macro): {ctx['macro']['score']:.0f}/100\n"
+        f"- 진입(technical): {ctx['technical']['score']:.0f}/100\n"
+        f"- 고점대비: {ctx['krx']['drawdown_pct']:+.1f}%, RSI {ctx['krx']['rsi']:.0f}\n"
+        "요약:"
+    )
+
+
+def run_llm_summary(prompt: str, mode: str) -> Optional[str]:
+    if mode == "none":
+        return None
+    try:
+        proc = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            return None
+        out = proc.stdout.strip()
+        return out or None
+    except Exception:
+        return None

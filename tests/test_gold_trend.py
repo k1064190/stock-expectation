@@ -310,3 +310,51 @@ def test_save_and_load_roundtrip(tmp_path):
     state = [{"date": "d1", "macro_score": 50, "technical_score": 50}]
     gt.save_state(p, state)
     assert gt.load_state(p) == state
+
+
+def test_fetch_real_yield_falls_back_when_fetch_fails(monkeypatch):
+    cfg = gt.load_config(pathlib.Path("nope"))
+
+    def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(gt.httpx, "get", boom)
+    pct, estimated = gt.fetch_real_yield(cfg)
+    assert pct == cfg["real_rate"]["assumed_pct"]
+    assert estimated is True
+
+
+def test_run_llm_summary_none_mode_returns_none():
+    assert gt.run_llm_summary("anything", mode="none") is None
+
+
+def test_run_llm_summary_failopen_on_subprocess_error(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no claude binary")
+
+    monkeypatch.setattr(gt.subprocess, "run", boom)
+    assert gt.run_llm_summary("prompt", mode="claude-code") is None
+
+
+def test_build_llm_prompt_grounds_on_numbers():
+    ctx = {
+        "verdict": {"verdict": "ACCUMULATE"},
+        "macro": {"score": 68},
+        "technical": {"score": 61},
+        "krx": {"drawdown_pct": -24.1, "rsi": 47},
+    }
+    prompt = gt.build_llm_prompt(ctx)
+    assert "68" in prompt and "61" in prompt
+    assert "한국어" in prompt
+
+
+@pytest.mark.network
+def test_fetch_krx_gold_live():
+    closes = gt.fetch_krx_gold_closes(days=60)
+    assert isinstance(closes, list) and len(closes) > 10
+
+
+@pytest.mark.network
+def test_fetch_usd_gold_and_fx_live():
+    assert gt.fetch_usd_gold()["per_oz"] > 0
+    assert gt.fetch_usdkrw()["last"] > 0
