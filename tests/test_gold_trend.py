@@ -358,3 +358,22 @@ def test_fetch_krx_gold_live():
 def test_fetch_usd_gold_and_fx_live():
     assert gt.fetch_usd_gold()["per_oz"] > 0
     assert gt.fetch_usdkrw()["last"] > 0
+
+
+def _boom(*a, **k):
+    raise RuntimeError("forced failure")
+
+
+def test_fetch_krx_gold_failopen_returns_empty(monkeypatch):
+    monkeypatch.setattr("pykrx.stock.get_market_ohlcv_by_date", _boom)
+    assert gt.fetch_krx_gold_closes() == []
+
+
+def test_fetch_usd_gold_failopen_returns_none(monkeypatch):
+    monkeypatch.setattr("yfinance.Ticker", _boom)
+    assert gt.fetch_usd_gold() is None
+
+
+def test_fetch_usdkrw_failopen_returns_none(monkeypatch):
+    monkeypatch.setattr("yfinance.Ticker", _boom)
+    assert gt.fetch_usdkrw() is None
