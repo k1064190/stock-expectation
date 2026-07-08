@@ -197,3 +197,86 @@ def test_verdict_hold_when_mixed():
     v = gt.decide_verdict(_tech(45, 55), _macro(50), gt.DEFAULT_CONFIG)
     assert v["verdict"] == "HOLD"
     assert v["emoji"] == "🟡"
+
+
+def test_dots_rounding():
+    assert gt.dots(100) == "●●●●●"
+    assert gt.dots(60) == "●●●○○"
+    assert gt.dots(55) == "●●●○○"  # 2.75 -> 3
+    assert gt.dots(30) == "●●○○○"  # 1.5 -> 2
+    assert gt.dots(0) == "○○○○○"
+
+
+def test_position_line_omitted_when_no_cost():
+    cfg = gt.load_config(pathlib.Path("nope"))  # avg_cost None
+    assert gt.position_line(cfg, usd_gold_per_oz=4100, usdkrw=1544) is None
+
+
+def test_position_line_computes_approx_pnl():
+    cfg = gt.load_config(pathlib.Path("nope"))
+    cfg["position"] = {"grams": 2.0, "avg_cost_krw_per_g": 150000}
+    line = gt.position_line(cfg, usd_gold_per_oz=4100, usdkrw=1544)
+    # krw/g = 4100 * 1544 / 31.1035 = 203,510 -> profit
+    assert "2" in line and "%" in line and "근사" in line
+
+
+def test_render_report_contains_verdict_and_scores():
+    ctx = {
+        "date_kst": "2026-07-05",
+        "verdict": {
+            "verdict": "ACCUMULATE",
+            "emoji": "🟢",
+            "reasons": ["x"],
+            "aggressive": False,
+        },
+        "technical": {"score": 61, "label": "양호", "rsi": 47},
+        "macro": {"score": 68, "label": "높음"},
+        "krx": {
+            "price": 28740,
+            "drawdown_pct": -24.1,
+            "rsi": 47,
+            "ma200_gap_pct": -3.0,
+        },
+        "decomp": {"usd_ret_3m": -13.6, "krw_ret_3m": -9.0},
+        "real_yield": {"pct": 1.9, "estimated": False},
+        "usdkrw": 1544,
+        "scorecard": ["  중앙은행 매수   ●●●●●  구조적 강세"],
+        "position_line": None,
+        "deltas": {"macro": 3, "technical": -4},
+        "summary": None,
+        "degraded": [],
+        "config": gt.DEFAULT_CONFIG,
+    }
+    md = gt.render_report(ctx)
+    assert "ACCUMULATE" in md
+    assert "macro 68" in md
+    assert "technical 61" in md
+    assert "28,740" in md
+
+
+def test_render_report_flags_degraded_and_missing_summary():
+    ctx = {
+        "date_kst": "2026-07-05",
+        "verdict": {
+            "verdict": "HOLD",
+            "emoji": "🟡",
+            "reasons": ["x"],
+            "aggressive": False,
+        },
+        "technical": {"score": 50, "label": "보통", "rsi": 55},
+        "macro": {"score": 50, "label": "중립"},
+        "krx": {"price": 28000, "drawdown_pct": -10.0, "rsi": 55, "ma200_gap_pct": 1.0},
+        "decomp": None,
+        "real_yield": {"pct": 1.9, "estimated": True},
+        "usdkrw": 1500,
+        "scorecard": ["x"],
+        "position_line": None,
+        "deltas": None,
+        "summary": None,
+        "degraded": ["USD 금(GC=F) 조회 실패 → 달러/원화 분해 생략"],
+        "config": gt.DEFAULT_CONFIG,
+    }
+    md = gt.render_report(ctx)
+    assert "estimated" in md.lower() or "추정" in md
+    assert "요약 생략" in md
+    assert "조회 실패" in md
