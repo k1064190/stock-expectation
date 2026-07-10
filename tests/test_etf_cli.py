@@ -178,3 +178,53 @@ def test_info_unknown_code_errors(monkeypatch, capsys):
     rc, out = _run(capsys, stock_cli.cmd_etf_info, args)
     assert rc != 0
     assert "error" in out
+
+
+def test_info_uppercases_alnum_code(monkeypatch, capsys):
+    """``etf info 193t0`` must find the post-2024 alphanumeric KRX code
+    0193T0 — input is zero-padded AND uppercased."""
+    alnum_payload = {
+        "result": {
+            "etfItemList": [
+                {
+                    "itemcode": "0193T0",
+                    "itemname": "KODEX SK하이닉스단일종목레버리지",
+                    "nowVal": 23095,
+                    "nav": 23067.0,
+                    "threeMonthEarnRate": None,
+                    "amonut": 3108407,
+                    "marketSum": 53575,
+                    "etfTabCode": 2,
+                }
+            ]
+        }
+    }
+    rows, _ = etf_kr._parse_universe(alnum_payload)
+    monkeypatch.setattr(etf_kr, "get_etf_universe", lambda **kw: (rows, "live", []))
+    seen = {}
+
+    def fake_detail(code, **kw):
+        seen["code"] = code
+        return {"fund_pay_pct": 0.4, "base_index": "SK하이닉스", "notes": []}
+
+    monkeypatch.setattr(etf_kr, "fetch_etf_detail", fake_detail)
+    args = types.SimpleNamespace(code="193t0")
+    rc, out = _run(capsys, stock_cli.cmd_etf_info, args)
+    assert rc == 0
+    assert out["code"] == "0193T0"
+    assert seen["code"] == "0193T0"
+
+
+def test_list_universe_unavailable_is_error_json(monkeypatch, capsys):
+    """Both live and cache down → controlled error JSON + nonzero exit, never
+    a raw traceback."""
+    monkeypatch.setattr(
+        etf_kr,
+        "get_etf_universe",
+        lambda **kw: (_ for _ in ()).throw(
+            etf_kr.EtfDataUnavailable("etf universe cache corrupt: boom")
+        ),
+    )
+    rc, out = _run(capsys, stock_cli.cmd_etf_list, _list_args())
+    assert rc == 1
+    assert "cache corrupt" in out["error"]

@@ -1015,8 +1015,9 @@ def cmd_etf_info(args) -> int:
         0 on success. 1 when the universe is unavailable or the code is not a
         listed KR ETF.
     """
-    # Normalize user input: "69500" must find KODEX 200 ("069500").
-    code = args.code.strip().zfill(6)
+    # Normalize user input: "69500" must find KODEX 200 ("069500") and
+    # "193t0" the alphanumeric "0193T0" (KRX codes are uppercase).
+    code = args.code.strip().zfill(6).upper()
     try:
         rows, source, notes = etf_kr.get_etf_universe()
     except etf_kr.EtfDataUnavailable as e:

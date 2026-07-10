@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
@@ -73,7 +74,12 @@ def _parse_row(it: dict) -> EtfInfo:
     if not raw_code or len(code) != 6 or not code.isalnum():
         raise ValueError(f"invalid itemcode: {raw_code!r}")
     name = it.get("itemname", "")
-    price = float(it.get("nowVal") or 0)
+    raw_price = it.get("nowVal")
+    if raw_price in (None, ""):
+        # A zero-defaulted price would fabricate a ~-100% NAV deviation;
+        # better to skip the row (visible note) than pollute the universe.
+        raise ValueError(f"missing nowVal for {code}")
+    price = float(raw_price)
     nav = it.get("nav")
     nav = float(nav) if nav not in (None, "", 0) else None
     deviation = round((price - nav) / nav * 100, 3) if nav else None
@@ -201,27 +207,38 @@ _INT_FIELDS = ("aum_100m_krw", "value_million_krw", "tab_code")
 def _save_cache(rows: list[EtfInfo], path: Path) -> None:
     """Write the universe to a CSV cache (None ↔ "", bools as "1"/"0").
 
+    Atomic: writes to a same-directory temp file, then ``os.replace`` — a
+    mid-write failure must never destroy the previous good cache (it is the
+    only fallback when the live fetch is down).
+
     Args: rows — parsed universe; path — CSV destination (parents created).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     names = [f.name for f in fields(EtfInfo)]
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=names)
-        w.writeheader()
-        for row in rows:
-            d = asdict(row)
-            for k in _OPTIONAL_FLOAT_FIELDS:
-                d[k] = "" if d[k] is None else d[k]
-            for k in _BOOL_FIELDS:
-                d[k] = "1" if d[k] else "0"
-            w.writerow(d)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with tmp.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=names)
+            w.writeheader()
+            for row in rows:
+                d = asdict(row)
+                for k in _OPTIONAL_FLOAT_FIELDS:
+                    d[k] = "" if d[k] is None else d[k]
+                for k in _BOOL_FIELDS:
+                    d[k] = "1" if d[k] else "0"
+                w.writerow(d)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # best-effort cleanup; keep old cache
+        raise
 
 
 def _load_cache(path: Path) -> list[EtfInfo]:
     """Read the CSV cache back into EtfInfo rows (inverse of ``_save_cache``).
 
     Returns: cached rows. Raises EtfDataUnavailable if the file is missing,
-    unreadable, or empty.
+    unreadable, empty, or corrupt/schema-mismatched — so the both-down path
+    stays a controlled JSON error instead of a raw traceback.
     """
     try:
         with path.open(newline="", encoding="utf-8") as fh:
@@ -231,15 +248,18 @@ def _load_cache(path: Path) -> list[EtfInfo]:
     if not raw:
         raise EtfDataUnavailable("etf universe cache is empty")
     out: list[EtfInfo] = []
-    for d in raw:
-        for k in _OPTIONAL_FLOAT_FIELDS:
-            d[k] = float(d[k]) if d[k] != "" else None
-        for k in _BOOL_FIELDS:
-            d[k] = d[k] == "1"
-        for k in _INT_FIELDS:
-            d[k] = int(d[k])
-        d["price"] = float(d["price"])
-        out.append(EtfInfo(**d))
+    try:
+        for d in raw:
+            for k in _OPTIONAL_FLOAT_FIELDS:
+                d[k] = float(d[k]) if d[k] != "" else None
+            for k in _BOOL_FIELDS:
+                d[k] = d[k] == "1"
+            for k in _INT_FIELDS:
+                d[k] = int(d[k])
+            d["price"] = float(d["price"])
+            out.append(EtfInfo(**d))
+    except (ValueError, KeyError, TypeError) as e:
+        raise EtfDataUnavailable(f"etf universe cache corrupt: {e}") from e
     return out
 
 

@@ -94,6 +94,30 @@ code normalization, token coverage`:
 - (internal suggestion) typing-introspection for `_OPTIONAL_FLOAT_FIELDS`:
   over-engineering; drift is now caught by the round-trip equality test.
 
+Round 2 (Codex bot on `27751bf`), all 5 findings verified valid and fixed in
+`fix(etf): address codex round 2 — atomic cache write, blank-price skip,
+cache-corruption fail-open, code case normalization`:
+
+- (P2) `_save_cache` truncated the previous good cache before writing, so a
+  mid-write failure destroyed the only fallback (and the swallowed
+  cache-write OSError hid it) → atomic write: same-directory `.tmp` file +
+  `os.replace`, best-effort temp cleanup on failure.
+- (P2) Blank/missing `nowVal` became price 0 via `or 0`, fabricating a ~-100%
+  NAV deviation in `etf list` → a blank required price now raises inside the
+  per-row try, landing the row in the skipped-rows note.
+- (P2) Corrupt/schema-mismatched cache rows raised raw ValueError/KeyError
+  past the CLI's `except EtfDataUnavailable` → cache-row parsing wrapped in
+  `EtfDataUnavailable("etf universe cache corrupt: ...")`; both-down stays a
+  controlled JSON error.
+- (P3) `etf info 193t0` failed case-sensitively against `0193T0` →
+  `cmd_etf_info` normalizes `.strip().zfill(6).upper()`.
+- (P3) `data/etf_universe_kr.csv` added to `.gitignore` (generated runtime
+  snapshot, same class as the sector-RS snapshots).
+
+Each fix carries a regression test (atomic write via a mid-write
+`DictWriter.writerow` failure; blank-price skip note; corrupt-cache
+`EtfDataUnavailable` + CLI error JSON; lowercase alnum code lookup).
+
 ## Retrospective
 
 Probing the data source before writing the plan paid off — the cp949 quirk and pykrx

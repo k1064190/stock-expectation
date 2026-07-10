@@ -322,3 +322,73 @@ def test_live_universe_smoke():
     codes = {r.code for r in rows}
     assert "069500" in codes  # KODEX 200
     assert all(len(r.code) == 6 for r in rows)
+
+
+def test_blank_price_row_skipped_with_note():
+    """Blank nowVal must not become a zero-priced entry (~-100% deviation) —
+    the row is skipped and counted in the malformed-rows note."""
+    payload = {
+        "result": {
+            "etfItemList": [
+                PAYLOAD["result"]["etfItemList"][0],
+                {
+                    "itemcode": "500004",
+                    "itemname": "가격없음 ETF",
+                    "nowVal": "",
+                    "nav": 10000.0,
+                    "threeMonthEarnRate": 1.0,
+                    "amonut": 1,
+                    "marketSum": 100,
+                    "etfTabCode": 1,
+                },
+            ]
+        }
+    }
+    rows, notes = _parse_universe(payload)
+    assert [r.code for r in rows] == ["069500"]
+    assert notes == ["skipped 1 malformed universe rows"]
+
+
+def test_save_cache_atomic_preserves_previous_on_failure(tmp_path, monkeypatch):
+    """A mid-write failure must not destroy the previous good cache — it is
+    the only fallback when the live fetch is down."""
+    import csv as _csv
+
+    import etf_kr
+
+    rows = _rows()
+    cache = tmp_path / "u.csv"
+    etf_kr._save_cache(rows, cache)
+
+    calls = {"n": 0}
+    orig_writerow = _csv.DictWriter.writerow
+
+    def flaky_writerow(self, rowdict):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise OSError("disk full")
+        return orig_writerow(self, rowdict)
+
+    monkeypatch.setattr(_csv.DictWriter, "writerow", flaky_writerow)
+    with pytest.raises(OSError):
+        etf_kr._save_cache(rows, cache)
+    monkeypatch.undo()
+
+    assert not (tmp_path / "u.csv.tmp").exists()  # temp file cleaned up
+    assert etf_kr._load_cache(cache) == rows  # previous cache intact
+
+
+def test_corrupt_cache_raises_etf_data_unavailable(tmp_path, monkeypatch):
+    """Garbage CSV + live down must stay inside EtfDataUnavailable so the CLI
+    keeps its controlled JSON error path (no raw ValueError/KeyError)."""
+    import etf_kr
+
+    cache = tmp_path / "u.csv"
+    cache.write_text("garbage,columns\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(
+        etf_kr,
+        "fetch_etf_universe",
+        lambda **kw: (_ for _ in ()).throw(etf_kr.EtfDataUnavailable("down")),
+    )
+    with pytest.raises(etf_kr.EtfDataUnavailable, match="cache corrupt"):
+        etf_kr.get_etf_universe(cache_path=cache)
