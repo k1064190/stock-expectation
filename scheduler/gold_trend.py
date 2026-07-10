@@ -11,11 +11,13 @@ import argparse
 import copy
 import json
 import math
+import os
 import pathlib
 import subprocess
 import sys
 from datetime import datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 import yaml
@@ -75,7 +77,7 @@ def load_config(path: pathlib.Path) -> dict:
     """
     if not path.exists():
         return copy.deepcopy(DEFAULT_CONFIG)
-    loaded = yaml.safe_load(path.read_text()) or {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return _deep_merge(DEFAULT_CONFIG, loaded)
 
 
@@ -350,7 +352,7 @@ def load_state(path: pathlib.Path) -> list[dict]:
     if not path.exists():
         return []
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, list) else []
     except (ValueError, OSError):
         return []
@@ -362,7 +364,7 @@ def roll_state(state: list[dict], entry: dict, cap: int = 12) -> list[dict]:
 
 def save_state(path: pathlib.Path, state: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, ensure_ascii=False, indent=2))
+    path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def compute_deltas(entry: dict, prev: Optional[dict]) -> Optional[dict]:
@@ -378,14 +380,18 @@ def fetch_krx_gold_closes(days: int = 430) -> list[float]:
     try:
         from pykrx import stock as krx_stock
 
-        end = datetime.now()
+        end = datetime.now(ZoneInfo("Asia/Seoul"))
         start = end - timedelta(days=days)
         fd, td = start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
         # Market endpoint first — empirically it returns rows for the 411060
         # ETF on the current pykrx while get_etf_ohlcv_by_date comes back
         # empty; keep the ETF endpoint as a fallback for versions where the
-        # surfaces are swapped.
-        df = krx_stock.get_market_ohlcv_by_date(fd, td, "411060")
+        # surfaces are swapped. A raise from the primary must not skip the
+        # fallback, so it is caught locally.
+        try:
+            df = krx_stock.get_market_ohlcv_by_date(fd, td, "411060")
+        except Exception:
+            df = None
         if df is None or df.empty:
             df = krx_stock.get_etf_ohlcv_by_date(fd, td, "411060")
         if df is None or df.empty:
@@ -562,10 +568,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--reports-dir", default="reports")
     args = parser.parse_args(argv)
 
-    config = load_config(pathlib.Path(args.config))
+    config_path = pathlib.Path(args.config)
+    config = load_config(config_path)
+    # Personal position via env (.env is untracked) so the cost basis never
+    # lands in the tracked yaml; env wins over the yaml values when set.
+    env_grams = os.environ.get("GOLD_POSITION_GRAMS")
+    env_cost = os.environ.get("GOLD_AVG_COST_KRW_PER_G")
+    if env_grams:
+        config["position"]["grams"] = float(env_grams)
+    if env_cost:
+        config["position"]["avg_cost_krw_per_g"] = float(env_cost)
     state_path = pathlib.Path(args.state)
     state = load_state(state_path)
-    date_kst = datetime.now().strftime("%Y-%m-%d")
+    # Explicit KST: cron pins TZ=Asia/Seoul but manual runs may not.
+    date_kst = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d")
     if state and state[-1].get("date") == date_kst:
         # Same-day re-run: replace rather than append, so compute_deltas keeps
         # referencing the true prior week and state doesn't grow duplicate rows.
@@ -581,13 +597,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         prev_entry=prev_entry,
         date_kst=date_kst,
     )
+    if not config_path.exists():
+        ctx["degraded"].append(
+            f"매크로 설정 파일 없음({args.config}) → 시드 기본값 사용"
+        )
     ctx["summary"] = run_llm_summary(build_llm_prompt(ctx), args.llm_mode)
 
     report = render_report(ctx)
 
     reports_dir = pathlib.Path(args.reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    (reports_dir / f"gold-trend-{date_kst}.md").write_text(report)
+    (reports_dir / f"gold-trend-{date_kst}.md").write_text(report, encoding="utf-8")
 
     save_state(state_path, roll_state(state, ctx["state_entry"]))
 

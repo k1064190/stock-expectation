@@ -22,4 +22,7 @@ risk_off: false                # manual kill-switch -> forces PAUSE
 
 position:                      # optional personal holding; null cost -> P&L line omitted
   grams: 2.0
-  avg_cost_krw_per_g: null     # set to your actual KRW/g buy price to enable P&L
+  # Do NOT put your real cost here — this file is tracked in git. Set
+  # GOLD_AVG_COST_KRW_PER_G (and optionally GOLD_POSITION_GRAMS) in the
+  # untracked .env instead; env values override these.
+  avg_cost_krw_per_g: null

@@ -554,3 +554,57 @@ def test_script_mode_entrypoint_resolves_imports():
     )
     assert proc.returncode == 0
     assert "Weekly gold trend analysis" in proc.stdout
+
+
+def test_fetch_krx_gold_etf_fallback_when_market_raises(monkeypatch):
+    import pykrx.stock as krx_stock
+
+    def boom(*a, **k):
+        raise RuntimeError("market endpoint error")
+
+    monkeypatch.setattr(krx_stock, "get_market_ohlcv_by_date", boom)
+    monkeypatch.setattr(
+        krx_stock,
+        "get_etf_ohlcv_by_date",
+        lambda *a, **k: _FakeOhlcvDf([200.0, 201.0]),
+    )
+    assert gt.fetch_krx_gold_closes(days=30) == [200.0, 201.0]
+
+
+def _offline_main_env(monkeypatch, tmp_path):
+    closes = [100 + i for i in range(260)] + [359 * 0.90]
+    monkeypatch.setattr(gt, "fetch_krx_gold_closes", lambda days=430: closes)
+    monkeypatch.setattr(
+        gt, "fetch_usd_gold", lambda: {"per_oz": 4100, "ret_3m": -13.6, "ret_6m": -5.2}
+    )
+    monkeypatch.setattr(gt, "fetch_usdkrw", lambda: {"last": 1544, "ma200": 1450})
+    monkeypatch.setattr(gt, "fetch_real_yield", lambda cfg: (1.9, False))
+    reports = tmp_path / "reports"
+    state = tmp_path / "state" / "gold_trend.json"
+    return reports, state
+
+
+def test_main_flags_missing_config_in_report(monkeypatch, tmp_path):
+    reports, state = _offline_main_env(monkeypatch, tmp_path)
+    rc = gt.main([
+        "--config", str(tmp_path / "no_such_config.yaml"),
+        "--llm-mode", "none", "--no-telegram",
+        "--reports-dir", str(reports), "--state", str(state),
+    ])
+    assert rc == 0
+    body = next(reports.glob("gold-trend-*.md")).read_text(encoding="utf-8")
+    assert "매크로 설정 파일 없음" in body
+
+
+def test_main_env_overrides_position(monkeypatch, tmp_path):
+    reports, state = _offline_main_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("GOLD_AVG_COST_KRW_PER_G", "150000")
+    monkeypatch.setenv("GOLD_POSITION_GRAMS", "2")
+    rc = gt.main([
+        "--config", "data/gold_macro_factors.yaml",
+        "--llm-mode", "none", "--no-telegram",
+        "--reports-dir", str(reports), "--state", str(state),
+    ])
+    assert rc == 0
+    body = next(reports.glob("gold-trend-*.md")).read_text(encoding="utf-8")
+    assert "내 포지션" in body and "근사" in body
