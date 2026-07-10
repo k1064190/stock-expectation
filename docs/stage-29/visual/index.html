@@ -676,6 +676,84 @@
         </div>
 
         <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Round 1 (internal: clean, 3 non-blocking observations;
+            Gemini/antigravity: real findings; Codex: deferred — quota
+            exhausted, noted on the PR), addressed in
+            <code
+              >fix(isa): explicit SELL-only contribution sign, same-day snapshot
+              replace, benchmark session dates (review round 1)</code
+            >.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round">Fixed (Gemini)</span>
+              <ul>
+                <li>
+                  <strong>(BLOCKER)</strong>
+                  <code>_isa_cum_contributions</code>'
+                  <code>ELSE -quantity * price</code> treated ANY non-BUY side
+                  as a sell. The schema CHECK-constrains side to BUY/SELL today,
+                  but the SQL is now explicit and future-proof:
+                  <code>WHEN 'BUY' → +</code>, <code>WHEN 'SELL' → −</code>,
+                  <code>ELSE 0</code> (a future side must opt in rather than
+                  silently counting as a sell). BUY/SELL sign behavior pinned by
+                  the existing cum-contribution tests.
+                </li>
+                <li>
+                  Scheduler dry-run substituted
+                  <code>status["rebalance"]</code>, which lacks
+                  <code>min_contribution_to_restore</code> — breaking the prompt
+                  contract SKILL.md expects. The dry-run block now keeps the key
+                  (null) with the visible note "dry-run: remedy not computed
+                  (rebalance skipped to avoid decision logging)"; test asserts
+                  the prompt shape.
+                </li>
+                <li>
+                  Same-day <code>isa snapshot</code> re-runs appended duplicate
+                  rows. <code>save_nav_snapshot</code> now replaces an existing
+                  row from the same calendar date (delete-then-insert on
+                  <code>date(snapped_at)</code>) with a visible "replaced
+                  same-day snapshot" note; monthly cadence unaffected. Tests:
+                  same-day rerun → 1 row with latest values + note; different
+                  days → 2 rows. (The internal reviewer had flagged the same as
+                  an observation.)
+                </li>
+                <li>
+                  Benchmarks stored close-only, so a stale <code>^KS11</code>
+                  close was indistinguishable when calendars diverge. Each
+                  benchmark is now
+                  <code
+                    >{"close": float|null, "session": "YYYY-MM-DD"|null}</code
+                  >
+                  with the close's actual session date captured from the price
+                  series; semantics documented in the module and the README
+                  line. This also resolves the internal reviewer's
+                  benchmark-timezone observation.
+                </li>
+                <li>
+                  Added the missing test: <code>isa snapshot</code> with a
+                  missing target → rc 1 early exit and no
+                  <code>isa_nav</code> row written.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round">Dismissed</span>
+              <ul>
+                <li>
+                  (Gemini nit) importing <code>_macro_block</code> etc. from
+                  <code>daily_briefing</code>: intentional, documented reuse
+                  inside one repo — extracting a shared module is refactoring
+                  beyond this change's need (internal reviewer concurred).
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
           <h4>Retrospective</h4>
           <p>
             <em
