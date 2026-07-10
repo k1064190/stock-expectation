@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 28 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --body-bg: #f7f7f5;
+        --text: #1a1a1a;
+        --text-soft: #333;
+        --heading: #0f1e26;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --header-bg: #fff;
+        --callout-bg: #fff6e0;
+        --callout-border: #d9a441;
+        --callout-heading: #7a5200;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #8a9aaa;
+          --border: #33404a;
+          --card-bg: #1c232a;
+          --body-bg: #12171b;
+          --text: #e6e9ec;
+          --text-soft: #c9cfd4;
+          --heading: #f2f4f6;
+          --code-bg: #232b32;
+          --code-border: #3a4650;
+          --header-bg: #171d22;
+          --callout-bg: #2a2110;
+          --callout-border: #a97a1f;
+          --callout-heading: #e8c374;
+        }
+      }
+
+      body {
+        background: var(--body-bg);
+        color: var(--text);
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node.dashed .circle {
+        background: transparent;
+        border-style: dashed;
+        border-color: var(--muted);
+        color: var(--muted);
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-node.dashed .label {
+        font-style: italic;
+        max-width: 96px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+      .tl-connector.dashed {
+        height: 0;
+        background: none;
+        border-top: 2px dashed var(--border);
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      /* ── Callout ── */
+      .callout {
+        margin-top: 0.9rem;
+        background: var(--callout-bg);
+        border: 1px solid var(--callout-border);
+        border-radius: 6px;
+        padding: 0.9rem 1.1rem;
+      }
+      .callout .callout-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--callout-heading);
+        margin-bottom: 0.4rem;
+      }
+      .callout p {
+        font-size: 0.88rem;
+        color: var(--text-soft);
+      }
+      .callout p + p {
+        margin-top: 0.5rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="R3 event-gate restore">
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="LIVE 1Y gate">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="Macro risk-off switch">
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node dashed"
+          title="Unmerged branch, developed in parallel with stages 26-27"
+        >
+          <div class="circle">25</div>
+          <span class="label">Weekly gold trend (unmerged branch)</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="KR ETF data layer">
+          <div class="circle">26</div>
+          <span class="label">KR ETF data layer</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="ETF scoring + compare">
+          <div class="circle">27</div>
+          <span class="label">ETF scoring + compare</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current" title="This stage">
+          <div class="circle">28</div>
+          <span class="label">ISA targets + drift-DCA allocator</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">29</div>
+          <span class="label">ISA briefing + track record</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 28</h2>
+        <p>
+          Stages 26-27 delivered the ETF data and same-index selection; the ISA
+          book still needed its decision core — an approved target allocation, a
+          deterministic rule for where each monthly contribution goes, and an
+          audit trail.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>ISA Targets, Drift-DCA Allocator, Decision Log</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            The ISA book still needs its decision core: an approved target
+            allocation, a deterministic rule for where each monthly contribution
+            goes, and an audit trail. The LLM (stage 29 skill) may only PROPOSE
+            tilts — the allocator clamps them in code (gate philosophy), and the
+            book is sell-minimizing by design (비과세/의무기간).
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>portfolio/isa_allocator.py</code> — pure allocation math (no
+              I/O): <code>clamp_tilt</code>, <code>effective_targets</code>,
+              <code>allocate_contribution</code>, <code>compute_drift</code>,
+              <code>check_rebalance</code>,
+              <code>min_contribution_to_restore</code>.
+            </li>
+            <li>
+              <code>portfolio/isa_store.py</code> — <code>isa_targets</code> +
+              <code>isa_decisions</code> tables in the existing
+              <code>data/portfolio.db</code> (WAL, IF NOT EXISTS; zero changes
+              to existing tables).
+            </li>
+            <li>
+              <code
+                >stock-cli isa init / status / allocate / rebalance / log</code
+              >
+              — the ISA book is a normal KR portfolio named "ISA"; valuation
+              reuses <code>compute_positions</code> + the KR provider (no
+              duplicated pricing logic).
+            </li>
+            <li>
+              21 new tests: 10 allocator, 8 store, 13 CLI (offline: tmp SQLite,
+              patched universe/prices).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            <strong>Constants (code-enforced):</strong>
+            <code>TILT_CAP_PP = 10.0</code> (hard ±10%p clamp on any proposed
+            tilt), <code>REBALANCE_BAND_PP = 5.0</code> (±5%p band on |drift|).
+          </p>
+          <p style="margin-top: 0.75rem">
+            <strong>Allocation algorithm</strong> (verbatim in the module
+            docstring): effective targets = clamped tilt applied, floored at 0,
+            renormalized to 100 → <code>total_after = current + amount</code> →
+            per-class
+            <code>deficit = max(0, total_after·eff% − current)</code> →
+            contribution split proportional to deficits (underweight-first
+            waterfall; all-at-target → proportional to targets) → floor to
+            integer KRW, remainder distributed by largest fractional part then
+            class name ascending, so <code>sum(buys) == amount</code>
+            exactly.
+          </p>
+
+          <div class="callout">
+            <div class="callout-title">
+              Closed form refuted → binary search deviation
+            </div>
+            <p>
+              <code>min_contribution_to_restore</code> — the plan suggested a
+              closed form (max over overweight classes), but a counterexample
+              (targets 90/5/5, holdings 0/50/50: closed form gives 400, true
+              answer 567 — the underweight class binds) shows it is
+              insufficient.
+            </p>
+            <p>
+              Implemented instead as the documented fallback: deterministic
+              doubling + binary search on integer KRW against the exact band
+              predicate (float-exact standard allocation, no rounding), monotone
+              in M. Pinned by exact-arithmetic tests: the 60/40 two-class case →
+              818,182 KRW (hand-derivable: 5.4M·100/55 − 9M), the counterexample
+              case → 567.
+            </p>
+          </div>
+
+          <p style="margin-top: 0.75rem">
+            <strong>Sell-minimizing rationale:</strong>
+            <code>allocate</code> never emits sells;
+            <code>rebalance</code> reports band breaches plus the
+            contribution-only remedy. Every decision (contribution / rebalance /
+            target_change) is logged with inputs, raw proposal, and the final
+            clamped action.
+          </p>
+          <p style="margin-top: 0.75rem">
+            <code>isa init</code> validates weights (sum 100 ±0.01), etf_map
+            coverage (exact class match), and each mapped code against the live
+            universe (unknown or leveraged/inverse → rejected; universe down →
+            visible "code validation skipped" note, fail-open).
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>portfolio/isa_allocator.py</code> — algorithm + constants +
+              band search
+            </li>
+            <li>
+              <code>portfolio/isa_store.py</code> —
+              <code>CREATE_ISA_TABLES_SQL</code>, <code>save_target</code>,
+              <code>get_active_target</code>, <code>log_decision</code>,
+              <code>list_decisions</code>
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_isa_*</code>,
+              <code>_parse_kv_list</code>, <code>_find_isa_portfolio</code>,
+              <code>_isa_class_values</code>, <code>_isa_context</code>,
+              <code>isa</code> subparser group
+            </li>
+            <li>
+              <code>portfolio/tests/test_isa_allocator.py</code>,
+              <code>portfolio/tests/test_isa_store.py</code>,
+              <code>tests/test_isa_cli.py</code>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Deviations from the Plan</h4>
+          <ul>
+            <li>
+              <code>min_contribution_to_restore</code> is a documented
+              deterministic binary search, not a closed form — the plan's own
+              escape hatch, taken because the closed form is provably wrong when
+              an underweight class binds (counterexample above, pinned as a
+              test).
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Round 1 (internal: fully clean LGTM, suggestions only;
+            Gemini/antigravity: real findings; Codex: pending — to be reconciled
+            if it replies), addressed in
+            <code
+              >fix(isa): guard zeroed-tilt renormalization, weight-range
+              validation, band float edge (review round 1)</code
+            >.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round">Fixed (Gemini)</span>
+              <ul>
+                <li>
+                  <strong>(BLOCKER)</strong> Tilts flooring EVERY class to 0
+                  (e.g. ten 10% classes each tilted -10pp) made renormalization
+                  impossible: <code>eff</code> stayed all-zero, the proportional
+                  path produced all-zero raws, and the remainder loop
+                  distributed at most one won per class — violating
+                  <code>sum(buys) == amount</code> (money destroyed). Fixed at
+                  the source: <code>effective_targets</code> falls back to the
+                  ORIGINAL targets with a visible "tilt zeroed all classes —
+                  tilt ignored" note when the post-floor total is 0.
+                  <code>allocate_contribution</code> additionally asserts the
+                  invariant and raises ValueError with context if ever violated
+                  — money code fails loud, not wrong.
+                </li>
+                <li>
+                  Band-edge float noise: drift 5.0000000001 (prints as 5.0) was
+                  a spurious breach → <code>check_rebalance</code> compares
+                  <code>abs(round(d, 3)) &gt; band_pp</code>. (The remedy search
+                  keeps the stricter exact predicate; exact-within-band implies
+                  rounded-within-band, so the remedy always satisfies the
+                  check.)
+                </li>
+                <li>
+                  <code>save_target</code> accepted negative weights that sum to
+                  100 (A=110/B=-10) → every weight validated within [0, 100],
+                  ValueError lists offending classes; mirrored in a CLI init
+                  error-path test.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round">Applied (internal suggestion)</span>
+              <ul>
+                <li>
+                  Worked rounding example (100 over 66.7/33.3 → 67/33, tie →
+                  name ascending) added to the
+                  <code>allocate_contribution</code> docstring.
+                </li>
+              </ul>
+            </li>
+          </ul>
+          <p style="margin-top: 0.75rem">
+            New tests: zeroed-tilt fallback (note + money conserved + eff ==
+            originals), band-edge non-breach, store negative-weight rejection,
+            CLI negative-weight rc 1.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Deriving the remedy math before coding caught a real spec bug
+              (the overweight-only closed form) at test-design time instead of
+              in production. Reusing the portfolio valuation path kept the CLI
+              layer thin — the only new logic is class mapping.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

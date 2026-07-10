@@ -68,6 +68,11 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
 
+# Monthly ISA contribution briefing — 07:37 KST on the 1st (off the :00 mark).
+# Adjust the day-of-month and --amount to your contribution schedule; the
+# amount is ALWAYS explicit here (never defaulted inside the scripts).
+37 7 1 * * cd $PROJECT && uv run python scheduler/isa_briefing.py --amount 1000000 --mode claude-code >> $LOG_DIR/isa_briefing.log 2>&1
+
 # === Codex CLI mode (commented fallback) ===
 # Uncomment + comment out the claude-code lines above if claude-code headless
 # auth/quota becomes unreliable. Uses `codex exec` (ChatGPT Plus credit, no

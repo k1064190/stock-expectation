@@ -99,3 +99,15 @@ read this index first, then open only the linked stage files that match.
 
 ## Stage 25 — Weekly gold trend analysis job
 - [gold-weekly-trend](stage-25/gold-weekly-trend.md) — Adds a weekly KRX-gold (411060) scheduler job scoring technical entry + a macro scorecard into an ACCUMULATE/HOLD/PAUSE verdict, with a decoupled real-rate hard-PAUSE (punitive ≥3.5% vs restrictive-only sub-score at ≥2.0%).
+
+## Stage 26 — KR ETF data layer
+- [etf-data-layer](stage-26/etf-data-layer.md) — Adds the KR ETF universe + metadata layer (Naver source, cp949; pykrx broken) with tax/asset classification, CSV stale-fallback cache, and `stock-cli etf list/info`.
+
+## Stage 27 — ETF scoring and same-index comparison
+- [etf-scoring-compare](stage-27/etf-scoring-compare.md) — Adds deterministic set-relative cost+liquidity scoring and `stock-cli etf compare` (codes or --query) picking the best ticker among same-index ETFs; 추적오차 absent by documented degradation.
+
+## Stage 28 — ISA targets, drift-DCA allocator, decision log
+- [isa-targets-allocator](stage-28/isa-targets-allocator.md) — Adds the ISA decision core: approved targets + class→ETF map, a deterministic sell-free contribution allocator with a ±10%p tilt clamp and ±5%p band, contribution-only rebalance remedies, and a full decision log via `stock-cli isa`.
+
+## Stage 29 — ISA monthly briefing + track record
+- [isa-briefing-track-record](stage-29/isa-briefing-track-record.md) — Closes the ISA loop: `isa snapshot` NAV track record vs S&P 500/KOSPI, a monthly `scheduler/isa_briefing.py` runner (Telegram, explicit --amount), and the `/isa-briefing` skill whose tilts stay inside the code-enforced clamp; RISK_OFF gates stocks, never the DCA.

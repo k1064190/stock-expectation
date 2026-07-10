@@ -102,6 +102,11 @@ from events import (
     _fetch_macro_window,
     _redact_key,
 )
+
+# Imported as a module (not from-imports) so tests can monkeypatch
+# etf_kr.get_etf_universe / etf_kr.fetch_etf_detail at call time.
+import etf_kr
+from etf_score import score_candidates
 from news_features import summarize_news
 from macro_news import DEFAULT_MACRO_QUERY, assess_macro_risk, get_macro_news
 from llm_context import validate_llm_context, score_from_debate
@@ -117,6 +122,21 @@ from portfolio.db import (
     compute_positions,
 )
 from portfolio.csv_import import parse_csv
+from portfolio.isa_allocator import (
+    allocate_contribution,
+    check_rebalance,
+    compute_drift,
+    min_contribution_to_restore,
+)
+from portfolio.isa_store import (
+    get_active_target,
+    init_isa_tables,
+    list_decisions,
+    list_nav_snapshots,
+    log_decision,
+    save_nav_snapshot,
+    save_target,
+)
 from portfolio.evaluator import (
     compute_report,
     compute_risk,
@@ -956,6 +976,690 @@ def cmd_catalyst_gate(args) -> int:
         return 1
 
 
+def cmd_etf_list(args) -> int:
+    """List the KR ETF universe, filtered and sorted for ISA screening.
+
+    Serves live Naver data with the stale-CSV fallback of
+    ``etf_kr.get_etf_universe`` (source + notes are surfaced in the JSON).
+    Leverage/inverse ETFs are EXCLUDED unless ``--include-leverage`` — they are
+    unsuitable for the long-term ISA book this layer feeds.
+
+    Args:
+        args: Parsed CLI arguments with asset_class, min_aum (억원),
+            include_leverage, limit.
+
+    Returns:
+        0 on success (including cache-stale). 1 when no universe source
+        (live or cache) is available.
+    """
+    try:
+        rows, source, notes = etf_kr.get_etf_universe()
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+    if not args.include_leverage:
+        rows = [r for r in rows if not r.leveraged_or_inverse]
+    if args.asset_class:
+        rows = [r for r in rows if r.asset_class == args.asset_class]
+    if args.min_aum is not None:
+        rows = [r for r in rows if r.aum_100m_krw >= args.min_aum]
+    rows = sorted(rows, key=lambda r: r.aum_100m_krw, reverse=True)
+    if args.limit is not None:
+        rows = rows[: args.limit]
+    _print_json(
+        {
+            "asof": datetime.now().date().isoformat(),
+            "source": source,
+            "count": len(rows),
+            "notes": notes,
+            "etfs": [asdict(r) for r in rows],
+        }
+    )
+    return 0
+
+
+def _normalize_etf_code(raw: str) -> str:
+    """Normalize user-supplied ETF code input.
+
+    Args:
+        raw: e.g. "69500" or "193t0".
+
+    Returns:
+        Zero-padded, uppercased 6-char code — "69500" → "069500", "193t0" →
+        "0193T0" (KRX codes are uppercase).
+    """
+    return raw.strip().zfill(6).upper()
+
+
+def cmd_etf_info(args) -> int:
+    """Show one KR ETF: universe row merged with per-ETF detail.
+
+    The detail fetch (펀드보수/기초지수) is fail-open enrichment — its notes
+    are combined with the universe-source notes rather than failing the call.
+
+    Args:
+        args: Parsed CLI arguments with code.
+
+    Returns:
+        0 on success. 1 when the universe is unavailable or the code is not a
+        listed KR ETF.
+    """
+    code = _normalize_etf_code(args.code)
+    try:
+        rows, source, notes = etf_kr.get_etf_universe()
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+    match = next((r for r in rows if r.code == code), None)
+    if match is None:
+        _print_json({"error": f"unknown KR ETF code: {code}"})
+        return 1
+    detail = etf_kr.fetch_etf_detail(code)
+    out = asdict(match)
+    out["fund_pay_pct"] = detail["fund_pay_pct"]
+    out["base_index"] = detail["base_index"]
+    out["asof"] = datetime.now().date().isoformat()
+    out["source"] = source
+    out["notes"] = notes + detail["notes"]
+    _print_json(out)
+    return 0
+
+
+# --query prefilter cap: bounds per-candidate detail fetches (fail-open but
+# each one is a live HTTP call).
+MAX_COMPARE_CANDIDATES = 15
+
+
+def cmd_etf_compare(args) -> int:
+    """Compare ETFs tracking the same index and pick the best ticker.
+
+    Candidates come from exactly one of an explicit comma code list or a
+    name-substring ``--query`` prefilter (matched case- and space-insensitively,
+    leverage/inverse excluded unless ``--include-leverage``, AUM-desc, capped
+    at MAX_COMPARE_CANDIDATES with a visible note). Per-candidate detail is
+    fail-open; scoring is set-relative via ``score_candidates``. Differing
+    base indexes are flagged (``base_index_mismatch``) but still scored — the
+    user may be comparing across indexes deliberately.
+
+    Args:
+        args: Parsed CLI arguments with codes, query, include_leverage.
+
+    Returns:
+        0 on success. 1 on selector misuse, unknown codes, no candidates, or
+        universe unavailability.
+    """
+    if bool(args.codes) == bool(args.query):
+        _print_json({"error": "exactly one of CODES or --query is required"})
+        return 1
+    try:
+        rows, source, notes = etf_kr.get_etf_universe()
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+
+    if args.codes:
+        wanted = [_normalize_etf_code(c) for c in args.codes.split(",") if c.strip()]
+        # Dedup (first-seen order) so 360750,360750 doesn't score against itself.
+        wanted = list(dict.fromkeys(wanted))
+        if not wanted:
+            _print_json({"error": "no valid ETF codes given (empty code list)"})
+            return 1
+        by_code = {r.code: r for r in rows}
+        unknown = [c for c in wanted if c not in by_code]
+        if unknown:
+            _print_json({"error": f"unknown KR ETF code(s): {', '.join(unknown)}"})
+            return 1
+        candidates = [by_code[c] for c in wanted]
+    else:
+        q = args.query.lower().replace(" ", "")
+        if not q:
+            # A blank query would substring-match every ETF name and silently
+            # compare the top 15 by AUM.
+            _print_json({"error": "empty query text"})
+            return 1
+        candidates = [r for r in rows if q in r.name.lower().replace(" ", "")]
+        if not args.include_leverage:
+            candidates = [r for r in candidates if not r.leveraged_or_inverse]
+        candidates.sort(key=lambda r: r.aum_100m_krw, reverse=True)
+        if len(candidates) > MAX_COMPARE_CANDIDATES:
+            notes = notes + [
+                f"query matched {len(candidates)} ETFs; comparing top "
+                f"{MAX_COMPARE_CANDIDATES} by AUM"
+            ]
+            candidates = candidates[:MAX_COMPARE_CANDIDATES]
+    if not candidates:
+        _print_json({"error": f"no ETFs matched query: {args.query!r}"})
+        return 1
+
+    details = {}
+    for c in candidates:
+        # fetch_etf_detail is fail-open by contract — never raises (stage 26);
+        # a failed detail yields Nones + note, so no try/except is needed here.
+        d = etf_kr.fetch_etf_detail(c.code)
+        details[c.code] = d
+        notes = notes + d["notes"]
+
+    # Base-index consistency: flag (not fail) when candidates track different
+    # indexes.
+    groups: dict[str, list[str]] = {}
+    for c in candidates:
+        idx = details[c.code].get("base_index")
+        if idx is not None:
+            groups.setdefault(idx, []).append(c.code)
+    mismatch = len(groups) > 1
+    if mismatch:
+        listing = "; ".join(f"{idx}: {codes}" for idx, codes in sorted(groups.items()))
+        notes = notes + [f"base_index mismatch — {listing}"]
+
+    result = score_candidates(candidates, details)
+    _print_json(
+        {
+            "asof": datetime.now().date().isoformat(),
+            "source": source,
+            "count": len(candidates),
+            "base_index_mismatch": mismatch,
+            "best": result["best"],
+            "scored": result["scored"],
+            "notes": notes + result["notes"],
+        }
+    )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# ISA commands (Stage 28: targets, drift-DCA allocator, decision log)
+# ---------------------------------------------------------------------------
+
+
+def _parse_kv_list(raw: str) -> dict[str, str]:
+    """Parse a comma-separated k=v list ("a=1,b=2") into a dict.
+
+    Args:
+        raw: e.g. "overseas_equity=50,bond=50". Blank parts are skipped.
+
+    Returns:
+        Ordered dict of stripped keys → stripped string values.
+
+    Raises:
+        ValueError: on a part without "=".
+    """
+    out: dict[str, str] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise ValueError(f"expected key=value, got {part!r}")
+        k, v = part.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _find_isa_portfolio(conn):
+    """Return the KR portfolio named "ISA", or None if it doesn't exist."""
+    for pf in list_portfolios(conn):
+        if pf.market == "KR" and pf.name == "ISA":
+            return pf
+    return None
+
+
+def _isa_class_values(conn, pf, etf_map: dict[str, str]):
+    """Value the ISA book per asset class at current prices.
+
+    Reuses the existing portfolio valuation path (compute_positions + the KR
+    provider's get_current_price) — no duplicated pricing logic.
+
+    Args:
+        conn: portfolio.db connection.
+        pf: the ISA Portfolio.
+        etf_map: asset class → ETF code from the active target.
+
+    Returns:
+        (value_by_class, notes) — positions whose ticker is not in the
+        etf_map are EXCLUDED from class values with a visible warning; a
+        missing live price falls back to avg cost with a note.
+    """
+    notes: list[str] = []
+    code_to_class = {code: cls for cls, code in etf_map.items()}
+    provider = _get_provider("KR")
+    value_by_class: dict[str, float] = {}
+    unmapped: list[str] = []
+    for pos in compute_positions(conn, pf.id):
+        # Positions may be recorded unpadded/lowercase ("69500", "193t0") —
+        # normalize before the map lookup or they'd be silently excluded.
+        code = _normalize_etf_code(pos.ticker)
+        cls = code_to_class.get(code)
+        if cls is None:
+            unmapped.append(pos.ticker)
+            continue
+        price = provider.get_current_price(code)
+        if price is None:
+            price = pos.avg_price
+            notes.append(f"price unavailable for {code} — using avg cost")
+        value_by_class[cls] = value_by_class.get(cls, 0.0) + pos.quantity * price
+    if unmapped:
+        notes.append(
+            "positions not in etf_map excluded from class values: "
+            + ", ".join(sorted(unmapped))
+        )
+    return value_by_class, notes
+
+
+def cmd_isa_init(args) -> int:
+    """Store an approved ISA target allocation (+ class→ETF map).
+
+    Validates weights (sum 100) and map coverage via ``save_target``, and each
+    mapped code against the live ETF universe (unknown or leveraged/inverse
+    codes are rejected; an unavailable universe skips validation with a
+    visible note — fail open). The stored target becomes active immediately
+    and a ``target_change`` decision is logged.
+
+    Args:
+        args: Parsed CLI arguments with allocation, map, note.
+
+    Returns:
+        0 on success, 1 on validation failure.
+    """
+    try:
+        allocation = {
+            cls: float(w) for cls, w in _parse_kv_list(args.allocation).items()
+        }
+        etf_map = {
+            cls: _normalize_etf_code(code)
+            for cls, code in _parse_kv_list(args.map).items()
+        }
+    except ValueError as e:
+        _print_json({"error": str(e)})
+        return 1
+
+    notes: list[str] = []
+    try:
+        rows, _source, _notes = etf_kr.get_etf_universe()
+        by_code = {r.code: r for r in rows}
+        for cls, code in etf_map.items():
+            row = by_code.get(code)
+            if row is None:
+                _print_json({"error": f"unknown KR ETF code for {cls}: {code}"})
+                return 1
+            if row.leveraged_or_inverse:
+                _print_json(
+                    {"error": f"leveraged/inverse ETF not allowed in ISA: {code}"}
+                )
+                return 1
+    except etf_kr.EtfDataUnavailable:
+        notes.append("universe unavailable — code validation skipped")
+
+    conn = pf_get_connection()
+    try:
+        init_isa_tables(conn)
+        try:
+            target_id = save_target(conn, allocation, etf_map, args.note)
+        except ValueError as e:
+            _print_json({"error": str(e)})
+            return 1
+        _print_json(
+            {
+                "target_id": target_id,
+                "allocation": allocation,
+                "etf_map": etf_map,
+                "note": args.note,
+                "notes": notes,
+            }
+        )
+        return 0
+    finally:
+        conn.close()
+
+
+def _isa_context(conn):
+    """Load (target, portfolio) or print the blocking error and return None.
+
+    Returns:
+        (target dict, Portfolio) on success; None after printing an error
+        JSON (missing target or missing ISA portfolio).
+    """
+    init_isa_tables(conn)
+    target = get_active_target(conn)
+    if target is None:
+        _print_json({"error": "no ISA target — run isa init"})
+        return None
+    pf = _find_isa_portfolio(conn)
+    if pf is None:
+        _print_json(
+            {
+                "error": "no ISA portfolio — run: "
+                "portfolio create --market KR --name ISA, then record ISA "
+                "trades with --portfolio ISA (plain --market KR goes to the "
+                "first KR portfolio, e.g. Toss KR)"
+            }
+        )
+        return None
+    return target, pf
+
+
+def _isa_cum_contributions(conn, pf_id: str) -> int:
+    """Cumulative net contributions to the ISA book, in integer KRW.
+
+    Sum of BUY transaction cost minus SELL proceeds over the portfolio's
+    entire history (simple net-cost basis; a money-weighted return refinement
+    is future work).
+
+    Args:
+        conn: portfolio.db connection.
+        pf_id: portfolio id.
+
+    Returns:
+        Net contributed KRW (can be negative after large sells).
+    """
+    # Sides are explicit (schema CHECKs BUY/SELL today; a future side must
+    # opt into this sum rather than silently counting as a sell).
+    row = conn.execute(
+        "SELECT COALESCE(SUM(CASE "
+        "WHEN side = 'BUY' THEN quantity * price "
+        "WHEN side = 'SELL' THEN -quantity * price "
+        "ELSE 0 END), 0) AS cum "
+        "FROM transactions WHERE portfolio_id = ?",
+        (pf_id,),
+    ).fetchone()
+    return int(round(row["cum"]))
+
+
+# Benchmark index tickers for the NAV track record. Both are fetched via the
+# US provider's yfinance path — verified 2026-07-10: yfinance serves ^GSPC and
+# ^KS11 (KOSPI) directly, while the KR provider mangles index symbols
+# (its ticker normalization produces "0^KS11", which 404s on every source).
+ISA_BENCHMARKS = {"sp500": "^GSPC", "kospi": "^KS11"}
+
+
+def cmd_isa_status(args) -> int:
+    """Active target + current class weights, drift, band check, track record.
+
+    Args:
+        args: (no arguments).
+
+    Returns:
+        0 on success, 1 when the target or the ISA portfolio is missing.
+    """
+    try:
+        conn = pf_get_connection()
+        try:
+            ctx = _isa_context(conn)
+            if ctx is None:
+                return 1
+            target, pf = ctx
+            value_by_class, notes = _isa_class_values(conn, pf, target["etf_map"])
+            total = sum(value_by_class.values())
+            weights = {
+                cls: round(v / total * 100.0, 3) if total > 0 else 0.0
+                for cls, v in value_by_class.items()
+            }
+            drift = compute_drift(value_by_class, target["allocation"])
+            rb = check_rebalance(value_by_class, target["allocation"])
+            contributions = _isa_cum_contributions(conn, pf.id)
+            # Simple since-inception return on net contributions (not
+            # money-weighted — refinement is future work).
+            return_pct = (
+                round((total - contributions) / contributions * 100.0, 2)
+                if contributions > 0
+                else None
+            )
+            _print_json(
+                {
+                    "asof": datetime.now().date().isoformat(),
+                    "target": target,
+                    "value_by_class": value_by_class,
+                    "total_value_krw": total,
+                    "weights_pct": weights,
+                    "drift_pp": {cls: round(d, 3) for cls, d in drift.items()},
+                    "rebalance": rb,
+                    "contributions_cum_krw": contributions,
+                    "since_inception_return_pct": return_pct,
+                    "recent_snapshots": list_nav_snapshots(conn, limit=3),
+                    "notes": notes + rb["notes"],
+                }
+            )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_isa_snapshot(args) -> int:
+    """Record a NAV snapshot: book value, cumulative contributions, benchmarks.
+
+    Pure Python (no LLM). Benchmark closes (S&P 500 ^GSPC, KOSPI ^KS11) come
+    from the US provider's yfinance path and are stored as
+    ``{"close": float|null, "session": "YYYY-MM-DD"|null}`` — closes are
+    prior-session values and market calendars diverge, so the session date
+    disambiguates. A failed fetch stores nulls with a visible note
+    (fail-open). Same-day re-runs replace the day's row (see
+    ``save_nav_snapshot``).
+
+    Args:
+        args: (no arguments).
+
+    Returns:
+        0 on success, 1 when the target or the ISA portfolio is missing.
+    """
+    try:
+        conn = pf_get_connection()
+        try:
+            ctx = _isa_context(conn)
+            if ctx is None:
+                return 1
+            target, pf = ctx
+            value_by_class, notes = _isa_class_values(conn, pf, target["etf_map"])
+            nav = int(round(sum(value_by_class.values())))
+            contributions = _isa_cum_contributions(conn, pf.id)
+            us = _get_provider("US")
+            benchmarks = {}
+            for name, ticker in ISA_BENCHMARKS.items():
+                # Store the close WITH its actual session date — market
+                # calendars diverge (^KS11 can have a KST session ^GSPC
+                # doesn't yet), so closes are prior-session values and the
+                # session field says which one.
+                bars = us.get_price_history(ticker, days=7)
+                if bars:
+                    benchmarks[name] = {
+                        "close": bars[-1].close,
+                        "session": bars[-1].date,
+                    }
+                else:
+                    benchmarks[name] = {"close": None, "session": None}
+                    notes.append(f"benchmark fetch failed: {name} ({ticker})")
+            snapshot_id = save_nav_snapshot(conn, nav, contributions, benchmarks, notes)
+            _print_json(
+                {
+                    "id": snapshot_id,
+                    "snapped_at": datetime.now().isoformat(),
+                    "nav_krw": nav,
+                    "contributions_cum_krw": contributions,
+                    "benchmarks": benchmarks,
+                    "notes": notes,
+                }
+            )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_isa_allocate(args) -> int:
+    """Allocate a monthly contribution across the ISA book (never sells).
+
+    Runs the deterministic drift-DCA allocator (tilts clamped in code), maps
+    class buys to ETFs via the active target's etf_map with estimated share
+    counts, and logs a ``contribution`` decision unless ``--dry-run``.
+
+    Args:
+        args: Parsed CLI arguments with amount, tilt, dry_run.
+
+    Returns:
+        0 on success, 1 on missing target/portfolio or bad tilt syntax.
+    """
+    try:
+        tilt = None
+        if args.tilt:
+            try:
+                tilt = {cls: float(v) for cls, v in _parse_kv_list(args.tilt).items()}
+            except ValueError as e:
+                _print_json({"error": str(e)})
+                return 1
+        conn = pf_get_connection()
+        try:
+            ctx = _isa_context(conn)
+            if ctx is None:
+                return 1
+            target, pf = ctx
+            value_by_class, notes = _isa_class_values(conn, pf, target["etf_map"])
+            result = allocate_contribution(
+                args.amount, value_by_class, target["allocation"], tilt_pp=tilt
+            )
+            notes = notes + result["notes"]
+
+            provider = _get_provider("KR")
+            per_etf = []
+            for cls, buy in result["buys_by_class"].items():
+                code = target["etf_map"][cls]
+                price = provider.get_current_price(code)
+                if price is None:
+                    notes.append(f"price unavailable for {code} — shares not estimated")
+                    shares = None
+                else:
+                    shares = int(buy // price)
+                per_etf.append(
+                    {
+                        "asset_class": cls,
+                        "code": code,
+                        "buy_krw": buy,
+                        "est_price": price,
+                        "est_shares": shares,
+                    }
+                )
+
+            decision_id = None
+            if not args.dry_run:
+                decision_id = log_decision(
+                    conn,
+                    kind="contribution",
+                    amount_krw=args.amount,
+                    inputs={
+                        "current_value_by_class": value_by_class,
+                        "targets": target["allocation"],
+                        "tilt": tilt,
+                    },
+                    proposal={"tilt": tilt} if tilt else None,
+                    final={
+                        "buys_by_class": result["buys_by_class"],
+                        "per_etf": per_etf,
+                    },
+                    notes=notes,
+                )
+            _print_json(
+                {
+                    "asof": datetime.now().date().isoformat(),
+                    "amount_krw": args.amount,
+                    "buys_by_class": result["buys_by_class"],
+                    "per_etf": per_etf,
+                    "effective_targets": result["effective_targets"],
+                    "notes": notes,
+                    "dry_run": bool(args.dry_run),
+                    "decision_id": decision_id,
+                }
+            )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_isa_rebalance(args) -> int:
+    """Band check + contribution-only remedy (sell-minimizing by design).
+
+    Reports band breaches and the minimum extra contribution that restores
+    every class to within the band via the standard allocator — no sells are
+    ever suggested (ISA 비과세/의무기간 rationale). Logs a ``rebalance``
+    decision.
+
+    Args:
+        args: (no arguments).
+
+    Returns:
+        0 on success, 1 when the target or the ISA portfolio is missing.
+    """
+    try:
+        conn = pf_get_connection()
+        try:
+            ctx = _isa_context(conn)
+            if ctx is None:
+                return 1
+            target, pf = ctx
+            value_by_class, notes = _isa_class_values(conn, pf, target["etf_map"])
+            rb = check_rebalance(value_by_class, target["allocation"])
+            notes = notes + rb["notes"]
+            remedy = min_contribution_to_restore(value_by_class, target["allocation"])
+            if remedy is None:
+                notes.append(
+                    "no finite contribution restores the band — review targets"
+                )
+            decision_id = log_decision(
+                conn,
+                kind="rebalance",
+                amount_krw=None,
+                inputs={
+                    "current_value_by_class": value_by_class,
+                    "targets": target["allocation"],
+                },
+                proposal=None,
+                final={
+                    "needed": rb["needed"],
+                    "breaches": rb["breaches"],
+                    "min_contribution_to_restore": remedy,
+                },
+                notes=notes,
+            )
+            _print_json(
+                {
+                    "asof": datetime.now().date().isoformat(),
+                    "needed": rb["needed"],
+                    "breaches": rb["breaches"],
+                    "min_contribution_to_restore": remedy,
+                    "notes": notes,
+                    "decision_id": decision_id,
+                }
+            )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_isa_log(args) -> int:
+    """Show the ISA decision history (newest first).
+
+    Args:
+        args: Parsed CLI arguments with limit.
+
+    Returns:
+        0 always (read-only).
+    """
+    conn = pf_get_connection()
+    try:
+        init_isa_tables(conn)
+        _print_json({"decisions": list_decisions(conn, limit=args.limit)})
+        return 0
+    finally:
+        conn.close()
+
+
 def cmd_health(args) -> int:
     """Check if market data providers are responsive."""
     us = USMarketProvider()
@@ -1593,6 +2297,41 @@ def cmd_portfolio_list(args) -> int:
         conn.close()
 
 
+def _resolve_portfolio(conn, market: str, name: str | None):
+    """Resolve the target portfolio for a trade/import.
+
+    Args:
+        conn: portfolio.db connection.
+        market: "US" or "KR" (case-insensitive).
+        name: optional portfolio name. When given, routes to the portfolio
+            with that exact name in the market (e.g. --portfolio ISA keeps ISA
+            trades out of "Toss KR"). When None, keeps the historical behavior
+            of the first portfolio for the market.
+
+    Returns:
+        (Portfolio, None) on success, (None, error message) on failure — the
+        error lists the available names in the market when a name is unknown.
+    """
+    market = market.upper()
+    if name is None:
+        pf = get_portfolio_for_market(conn, market)
+        if pf is None:
+            return (
+                None,
+                f"No portfolio for market {market}. Run 'portfolio create' first.",
+            )
+        return pf, None
+    candidates = [p for p in list_portfolios(conn) if p.market == market]
+    for pf in candidates:
+        if pf.name == name:
+            return pf, None
+    available = ", ".join(p.name for p in candidates) or "(none)"
+    return None, (
+        f"No portfolio named {name!r} for market {market} "
+        f"(available: {available}). Run 'portfolio create' first."
+    )
+
+
 def _portfolio_trade(args, side: str) -> int:
     """Shared logic for buy and sell commands.
 
@@ -1606,13 +2345,9 @@ def _portfolio_trade(args, side: str) -> int:
     try:
         conn = pf_get_connection()
         try:
-            pf = get_portfolio_for_market(conn, args.market)
+            pf, err = _resolve_portfolio(conn, args.market, args.portfolio)
             if pf is None:
-                _print_json(
-                    {
-                        "error": f"No portfolio for market {args.market}. Run 'portfolio create' first."
-                    }
-                )
+                _print_json({"error": err})
                 return 1
 
             currency = "KRW" if args.market.upper() == "KR" else "USD"
@@ -1725,13 +2460,9 @@ def cmd_portfolio_import(args) -> int:
 
         conn = pf_get_connection()
         try:
-            pf = get_portfolio_for_market(conn, args.market)
+            pf, err = _resolve_portfolio(conn, args.market, args.portfolio)
             if pf is None:
-                _print_json(
-                    {
-                        "error": f"No portfolio for market {args.market}. Run 'portfolio create' first."
-                    }
-                )
+                _print_json({"error": err})
                 return 1
 
             currency = "KRW" if args.market.upper() == "KR" else "USD"
@@ -2416,6 +3147,125 @@ def build_parser() -> argparse.ArgumentParser:
     cg.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     cg.set_defaults(func=cmd_catalyst_gate)
 
+    # --- etf (KR ETF universe + metadata, stage 26) ---
+    etf = sub.add_parser(
+        "etf",
+        help="KR-listed ETF universe + metadata (Naver source, ISA layer)",
+    )
+    etf_sub = etf.add_subparsers(dest="etf_command", required=True)
+
+    el = etf_sub.add_parser(
+        "list",
+        help="List KR ETFs sorted by AUM (leverage/inverse excluded by default)",
+    )
+    el.add_argument(
+        "--asset-class",
+        choices=sorted(set(etf_kr.TAB_ASSET_CLASS.values())),
+        help="Keep only one asset class (e.g. domestic_equity, overseas_equity)",
+    )
+    el.add_argument(
+        "--min-aum",
+        type=_positive_int,
+        help="Minimum AUM in 억원 (marketSum)",
+    )
+    el.add_argument(
+        "--include-leverage",
+        action="store_true",
+        help="Include leverage/inverse ETFs (excluded by default)",
+    )
+    el.add_argument("--limit", type=_positive_int, help="Max rows to return")
+    el.set_defaults(func=cmd_etf_list)
+
+    ei = etf_sub.add_parser(
+        "info",
+        help="One KR ETF: universe row + 펀드보수/기초지수 detail",
+    )
+    ei.add_argument("code", help="6-digit KR ETF code (e.g. 360750)")
+    ei.set_defaults(func=cmd_etf_info)
+
+    ec = etf_sub.add_parser(
+        "compare",
+        help="Pick the best ticker among ETFs tracking the same index",
+    )
+    ec.add_argument(
+        "codes",
+        nargs="?",
+        default=None,
+        help="Comma-separated ETF codes (e.g. 360750,379800) — or use --query",
+    )
+    ec.add_argument(
+        "--query",
+        help="Name substring to prefilter the universe (space-insensitive, "
+        f"AUM-desc, capped at {MAX_COMPARE_CANDIDATES})",
+    )
+    ec.add_argument(
+        "--include-leverage",
+        action="store_true",
+        help="Include leverage/inverse ETFs in --query matches",
+    )
+    ec.set_defaults(func=cmd_etf_compare)
+
+    # --- isa (Stage 28: targets, drift-DCA allocator, decision log) ---
+    isa = sub.add_parser(
+        "isa",
+        help="ISA book: target allocation, contribution allocator, decision log",
+    )
+    isa_sub = isa.add_subparsers(dest="isa_command", required=True)
+
+    ii = isa_sub.add_parser(
+        "init", help="Store an approved target allocation + class→ETF map"
+    )
+    ii.add_argument(
+        "--allocation",
+        required=True,
+        help='Comma k=v weights summing to 100 (e.g. "overseas_equity=50,bond=30,gold=20")',
+    )
+    ii.add_argument(
+        "--map",
+        required=True,
+        help='Comma class=ETF-code map (e.g. "overseas_equity=360750,bond=114260,gold=411060")',
+    )
+    ii.add_argument("--note", help="Approval note")
+    ii.set_defaults(func=cmd_isa_init)
+
+    ist = isa_sub.add_parser(
+        "status", help="Current class weights, drift vs target, band check"
+    )
+    ist.set_defaults(func=cmd_isa_status)
+
+    ia = isa_sub.add_parser(
+        "allocate", help="Allocate a contribution (drift-DCA, never sells)"
+    )
+    ia.add_argument(
+        "--amount", type=_positive_int, required=True, help="Contribution in KRW"
+    )
+    ia.add_argument(
+        "--tilt",
+        help='Proposed %%p tilts, clamped to ±10 (e.g. "overseas_equity=+5,bond=-5")',
+    )
+    ia.add_argument(
+        "--dry-run", action="store_true", help="Preview without logging a decision"
+    )
+    ia.set_defaults(func=cmd_isa_allocate)
+
+    ir = isa_sub.add_parser(
+        "rebalance",
+        help="Band breaches + minimum contribution-only remedy (no sells)",
+    )
+    ir.set_defaults(func=cmd_isa_rebalance)
+
+    isn = isa_sub.add_parser(
+        "snapshot",
+        help="Record a NAV snapshot (book value + contributions + benchmarks)",
+    )
+    isn.set_defaults(func=cmd_isa_snapshot)
+
+    il = isa_sub.add_parser("log", help="ISA decision history (newest first)")
+    il.add_argument(
+        "--limit", type=_positive_int, default=20, help="Max rows (default 20)"
+    )
+    il.set_defaults(func=cmd_isa_log)
+
     # --- memory (Stage 7-A: mem0 semantic memory) ---
     memory = sub.add_parser(
         "memory",
@@ -2642,6 +3492,11 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     pb.add_argument("--note", default=None)
     pb.add_argument("--thesis-id", default=None)
+    pb.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     pb.set_defaults(func=cmd_portfolio_buy)
 
     ps = pf_sub.add_parser("sell", help="Record a sell")
@@ -2652,6 +3507,11 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     ps.add_argument("--note", default=None)
     ps.add_argument("--thesis-id", default=None)
+    ps.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     ps.set_defaults(func=cmd_portfolio_sell)
 
     pt = pf_sub.add_parser("transactions", help="List transactions")
@@ -2668,6 +3528,11 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("csv_file")
     pi.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     pi.add_argument("--dry-run", action="store_true")
+    pi.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     pi.set_defaults(func=cmd_portfolio_import)
 
     pp = pf_sub.add_parser("positions", help="Current positions")
