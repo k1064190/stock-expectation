@@ -130,3 +130,29 @@ def test_band_edge_float_noise_not_a_breach():
     current = {"overseas_equity": 5_500_000.00011, "bond": 4_499_999.99989}
     rb = check_rebalance(current, TARGETS)
     assert rb["needed"] is False and rb["breaches"] == []
+
+
+def test_min_contribution_empty_book_is_zero():
+    """No positions → nothing to restore (check_rebalance says needed=False);
+    the search must not report a bogus 1-KRW remedy."""
+    from portfolio.isa_allocator import min_contribution_to_restore
+
+    assert min_contribution_to_restore({}, TARGETS) == 0
+    assert min_contribution_to_restore({"overseas_equity": 0.0}, TARGETS) == 0
+
+
+def test_min_contribution_integer_rounding_boundary():
+    """Codex boundary example: current a=0/b=1, targets 6/94, band 5. The
+    fractional-KRW model says M=1 restores the band, but the REAL integer
+    allocator gives that won to b (larger fractional part) leaving a at
+    -6pp. The returned M must restore the band through the real allocator."""
+    from portfolio.isa_allocator import min_contribution_to_restore
+
+    current = {"a": 0.0, "b": 1.0}
+    targets = {"a": 6.0, "b": 94.0}
+    m = min_contribution_to_restore(current, targets)
+    assert m == 9  # minimal M under the integer allocator (M=1..8 all fail)
+    # And prove it end-to-end through the real allocator:
+    buys = allocate_contribution(m, current, targets)["buys_by_class"]
+    after = {cls: current.get(cls, 0.0) + buys.get(cls, 0) for cls in targets}
+    assert check_rebalance(after, targets)["needed"] is False

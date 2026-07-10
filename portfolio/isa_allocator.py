@@ -217,37 +217,6 @@ def check_rebalance(
     return {"needed": bool(breaches), "breaches": breaches, "notes": []}
 
 
-def _drift_after_contribution(
-    amount: float,
-    current_value_by_class: dict[str, float],
-    targets_pct: dict[str, float],
-) -> dict[str, float]:
-    """Drift per class after allocating ``amount`` by the standard algorithm.
-
-    Float-exact version of the allocation (no KRW rounding) used as the band
-    predicate inside ``min_contribution_to_restore``.
-
-    Args:
-        amount: hypothetical contribution (KRW, float).
-        current_value_by_class: current market value per class.
-        targets_pct: target weights summing to 100.
-
-    Returns:
-        Post-allocation drift in %p per class (see ``compute_drift``).
-    """
-    total_after = sum(current_value_by_class.values()) + amount
-    deficits = {
-        cls: max(0.0, total_after * w / 100.0 - current_value_by_class.get(cls, 0.0))
-        for cls, w in targets_pct.items()
-    }
-    deficit_sum = sum(deficits.values())
-    after = dict(current_value_by_class)
-    for cls, w in targets_pct.items():
-        share = deficits[cls] / deficit_sum if deficit_sum > 0 else w / 100.0
-        after[cls] = after.get(cls, 0.0) + amount * share
-    return compute_drift(after, targets_pct)
-
-
 # Search ceiling for min_contribution_to_restore (≈ 1.15e18 KRW). If even this
 # cannot restore the band the situation is structurally unreachable.
 _MIN_CONTRIBUTION_SEARCH_CAP = 2**60
@@ -260,13 +229,20 @@ def min_contribution_to_restore(
 ) -> int | None:
     """Minimum extra contribution that brings every |drift| within the band.
 
-    Uses the standard (sell-free) allocation algorithm as the model of where
-    the money goes. A pure closed form over overweight classes is NOT
-    sufficient — a heavily underweight class can bind instead (e.g. targets
-    90/5/5 with holdings 0/50/50) — so this is a deterministic doubling +
-    binary search on integer KRW against the exact band predicate. Larger
-    contributions move the book monotonically toward the effective targets,
-    so the predicate is monotone in M and bisection finds the exact minimum.
+    Uses the REAL integer allocation (``allocate_contribution``, including
+    KRW rounding) as the band predicate — a fractional-KRW model can claim
+    M=1 restores the band while the rounded allocation gives that won to a
+    different class (e.g. current a=0/b=1, targets 6/94: the model says 1,
+    the integer allocator leaves a at -6pp; the true answer is 9).
+
+    A pure closed form over overweight classes is also insufficient — a
+    heavily underweight class can bind instead (targets 90/5/5 with holdings
+    0/50/50) — so this is a deterministic doubling + binary search on integer
+    KRW. Larger contributions move the book toward the effective targets, but
+    integer rounding can break strict monotonicity by a few won, so the
+    bisection invariant only guarantees the returned M satisfies the band
+    (it may exceed the true minimum by a won-scale amount); a bounded forward
+    scan re-verifies the result before returning.
 
     Args:
         current_value_by_class: current market value per class (KRW).
@@ -274,13 +250,26 @@ def min_contribution_to_restore(
         band_pp: allowed |drift| in %p (default REBALANCE_BAND_PP).
 
     Returns:
-        Minimal integer KRW M with all post-allocation |drift| ≤ band; 0 when
-        already within band; None when no M up to the search cap works
-        (structurally unreachable, e.g. a 0% band).
+        Integer KRW M whose real allocation brings all |drift| ≤ band; 0 when
+        already within band or the book is empty (nothing to restore — matches
+        ``check_rebalance``'s needed=False); None when no M up to the search
+        cap works (structurally unreachable, e.g. a 0% band).
     """
+    if not current_value_by_class or sum(current_value_by_class.values()) <= 0:
+        return 0
 
-    def ok(m: float) -> bool:
-        drift = _drift_after_contribution(m, current_value_by_class, targets_pct)
+    def ok(m: int) -> bool:
+        if m == 0:
+            after = dict(current_value_by_class)
+        else:
+            buys = allocate_contribution(m, current_value_by_class, targets_pct)[
+                "buys_by_class"
+            ]
+            after = {
+                cls: current_value_by_class.get(cls, 0.0) + buys.get(cls, 0)
+                for cls in set(current_value_by_class) | set(buys)
+            }
+        drift = compute_drift(after, targets_pct)
         return all(abs(d) <= band_pp for d in drift.values())
 
     if ok(0):
@@ -297,4 +286,10 @@ def min_contribution_to_restore(
             hi = mid
         else:
             lo = mid
-    return hi
+    # Bisection keeps ok(hi) True throughout, but re-verify defensively and
+    # scan forward a few won in case a future predicate change reintroduces
+    # non-monotone edges — the returned M must actually satisfy the band.
+    for m in range(hi, hi + len(targets_pct) + 2):
+        if ok(m):
+            return m
+    return None

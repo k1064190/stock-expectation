@@ -125,3 +125,13 @@ def test_kind_check_constraint(conn):
 def test_save_target_rejects_out_of_range_weights(conn):
     with pytest.raises(ValueError, match="between 0 and 100"):
         save_target(conn, {"a": 110.0, "b": -10.0}, {"a": "1", "b": "2"}, None)
+
+
+def test_save_target_rejects_duplicate_codes(conn):
+    with pytest.raises(ValueError, match="duplicate"):
+        save_target(
+            conn,
+            {"a": 50.0, "b": 50.0},
+            {"a": "360750", "b": "360750"},
+            None,
+        )

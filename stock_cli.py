@@ -1223,14 +1223,17 @@ def _isa_class_values(conn, pf, etf_map: dict[str, str]):
     value_by_class: dict[str, float] = {}
     unmapped: list[str] = []
     for pos in compute_positions(conn, pf.id):
-        cls = code_to_class.get(pos.ticker)
+        # Positions may be recorded unpadded/lowercase ("69500", "193t0") —
+        # normalize before the map lookup or they'd be silently excluded.
+        code = _normalize_etf_code(pos.ticker)
+        cls = code_to_class.get(code)
         if cls is None:
             unmapped.append(pos.ticker)
             continue
-        price = provider.get_current_price(pos.ticker)
+        price = provider.get_current_price(code)
         if price is None:
             price = pos.avg_price
-            notes.append(f"price unavailable for {pos.ticker} — using avg cost")
+            notes.append(f"price unavailable for {code} — using avg cost")
         value_by_class[cls] = value_by_class.get(cls, 0.0) + pos.quantity * price
     if unmapped:
         notes.append(
@@ -1323,7 +1326,9 @@ def _isa_context(conn):
         _print_json(
             {
                 "error": "no ISA portfolio — run: "
-                "portfolio create --market KR --name ISA"
+                "portfolio create --market KR --name ISA, then record ISA "
+                "trades with --portfolio ISA (plain --market KR goes to the "
+                "first KR portfolio, e.g. Toss KR)"
             }
         )
         return None
@@ -2183,6 +2188,41 @@ def cmd_portfolio_list(args) -> int:
         conn.close()
 
 
+def _resolve_portfolio(conn, market: str, name: str | None):
+    """Resolve the target portfolio for a trade/import.
+
+    Args:
+        conn: portfolio.db connection.
+        market: "US" or "KR" (case-insensitive).
+        name: optional portfolio name. When given, routes to the portfolio
+            with that exact name in the market (e.g. --portfolio ISA keeps ISA
+            trades out of "Toss KR"). When None, keeps the historical behavior
+            of the first portfolio for the market.
+
+    Returns:
+        (Portfolio, None) on success, (None, error message) on failure — the
+        error lists the available names in the market when a name is unknown.
+    """
+    market = market.upper()
+    if name is None:
+        pf = get_portfolio_for_market(conn, market)
+        if pf is None:
+            return (
+                None,
+                f"No portfolio for market {market}. Run 'portfolio create' first.",
+            )
+        return pf, None
+    candidates = [p for p in list_portfolios(conn) if p.market == market]
+    for pf in candidates:
+        if pf.name == name:
+            return pf, None
+    available = ", ".join(p.name for p in candidates) or "(none)"
+    return None, (
+        f"No portfolio named {name!r} for market {market} "
+        f"(available: {available}). Run 'portfolio create' first."
+    )
+
+
 def _portfolio_trade(args, side: str) -> int:
     """Shared logic for buy and sell commands.
 
@@ -2196,13 +2236,9 @@ def _portfolio_trade(args, side: str) -> int:
     try:
         conn = pf_get_connection()
         try:
-            pf = get_portfolio_for_market(conn, args.market)
+            pf, err = _resolve_portfolio(conn, args.market, args.portfolio)
             if pf is None:
-                _print_json(
-                    {
-                        "error": f"No portfolio for market {args.market}. Run 'portfolio create' first."
-                    }
-                )
+                _print_json({"error": err})
                 return 1
 
             currency = "KRW" if args.market.upper() == "KR" else "USD"
@@ -2315,13 +2351,9 @@ def cmd_portfolio_import(args) -> int:
 
         conn = pf_get_connection()
         try:
-            pf = get_portfolio_for_market(conn, args.market)
+            pf, err = _resolve_portfolio(conn, args.market, args.portfolio)
             if pf is None:
-                _print_json(
-                    {
-                        "error": f"No portfolio for market {args.market}. Run 'portfolio create' first."
-                    }
-                )
+                _print_json({"error": err})
                 return 1
 
             currency = "KRW" if args.market.upper() == "KR" else "USD"
@@ -3345,6 +3377,11 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     pb.add_argument("--note", default=None)
     pb.add_argument("--thesis-id", default=None)
+    pb.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     pb.set_defaults(func=cmd_portfolio_buy)
 
     ps = pf_sub.add_parser("sell", help="Record a sell")
@@ -3355,6 +3392,11 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--date", default=None, help="YYYY-MM-DD (default: today)")
     ps.add_argument("--note", default=None)
     ps.add_argument("--thesis-id", default=None)
+    ps.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     ps.set_defaults(func=cmd_portfolio_sell)
 
     pt = pf_sub.add_parser("transactions", help="List transactions")
@@ -3371,6 +3413,11 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("csv_file")
     pi.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     pi.add_argument("--dry-run", action="store_true")
+    pi.add_argument(
+        "--portfolio",
+        default=None,
+        help='Route to the named portfolio (default: first portfolio for the market, e.g. "ISA")',
+    )
     pi.set_defaults(func=cmd_portfolio_import)
 
     pp = pf_sub.add_parser("positions", help="Current positions")

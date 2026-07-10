@@ -75,8 +75,9 @@ def save_target(
         The new isa_targets row id. Also logs a ``target_change`` decision.
 
     Raises:
-        ValueError: a weight outside [0, 100], weights don't sum to 100, or
-            etf_map coverage mismatch.
+        ValueError: a weight outside [0, 100], weights don't sum to 100,
+            etf_map coverage mismatch, or a duplicated ETF code across
+            classes.
     """
     out_of_range = sorted(cls for cls, w in allocation.items() if not 0.0 <= w <= 100.0)
     if out_of_range:
@@ -93,6 +94,16 @@ def save_target(
             "etf_map must cover exactly the allocation classes "
             f"(missing: {sorted(missing)}, extra: {sorted(extra)})"
         )
+    # The reverse code→class map must be bijective: a duplicated code would
+    # silently drop a class and corrupt class values, drift, and buys.
+    by_code: dict[str, list[str]] = {}
+    for cls, code in etf_map.items():
+        by_code.setdefault(code, []).append(cls)
+    dups = {
+        code: sorted(classes) for code, classes in by_code.items() if len(classes) > 1
+    }
+    if dups:
+        raise ValueError(f"etf_map has duplicate codes across classes: {dups}")
     now = datetime.now().isoformat()
     cur = conn.execute(
         "INSERT INTO isa_targets (created_at, allocation, etf_map, note) "

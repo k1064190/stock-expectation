@@ -103,3 +103,42 @@ float edge (review round 1)`:
 
 New tests: zeroed-tilt fallback (note + money conserved + eff == originals),
 band-edge non-breach, store negative-weight rejection, CLI negative-weight rc 1.
+
+Round 2 (Codex bot — reviewed the pre-fix commit e35c545), reconciled +
+addressed in `fix(isa): address codex review — portfolio routing, dup-code
+rejection, ticker normalization, integer-exact restore search`:
+
+**Already fixed in round 1 (reconciliation)**
+- Negative weights persisting through `save_target` → fixed in a878227
+  (weight-range validation).
+- Zeroed-tilt renormalization destroying money → fixed in a878227
+  (original-targets fallback + sum invariant).
+
+**Fixed (new findings)**
+- (P2, real user setup) `portfolio buy/sell/import --market KR` always wrote
+  to the FIRST KR portfolio ("Toss KR" for the actual user), so following our
+  own guidance would leave the ISA book empty. Added optional
+  `--portfolio NAME` routing to buy/sell/import (default keeps the historical
+  first-portfolio behavior — zero change without the flag; unknown name →
+  error listing available portfolios). `isa status` guidance now says to
+  trade with `--portfolio ISA`.
+- (P2) `save_target` rejects duplicate ETF codes across classes — the reverse
+  code→class map must be bijective or a class silently vanishes from class
+  values/drift/buys.
+- (P2) Held tickers recorded unpadded/lowercase ("69500") were silently
+  excluded by `_isa_class_values`' exact map lookup → tickers normalized with
+  `_normalize_etf_code` before class lookup and price fetch.
+- (P3) Empty book: `isa rebalance` reported `min_contribution_to_restore: 1`
+  next to "no positions" → the search returns 0 for an empty/zero book
+  (consistent with `check_rebalance` needed=False).
+- (P3, math) The restore-search predicate modeled fractional KRW; the real
+  integer allocator can route the marginal won elsewhere (Codex boundary
+  example: current a=0/b=1, targets 6/94, band 5 → model said 1, integer
+  allocation leaves -6pp; true answer 9). The predicate now runs the REAL
+  `allocate_contribution` (integer path). Integer rounding can break strict
+  monotonicity by a few won, so bisection's invariant only guarantees the
+  returned M satisfies the band; a bounded forward scan re-verifies before
+  returning. Pinned regression: the boundary example returns 9 AND the
+  returned M is proven through the real allocator + `check_rebalance`.
+  The round-1 pinned values (818,182 / 567) are unchanged under the integer
+  predicate.

@@ -47,12 +47,13 @@ UNIVERSE = [
         ("360750", "TIGER 미국S&P500", False),
         ("114260", "KODEX 국고채3년", False),
         ("411060", "ACE KRX금현물", False),
+        ("069500", "KODEX 200", False),
         ("122630", "KODEX 레버리지", True),
     ]
 ]
 
 # Prices chosen so the fixture book is exactly 5.4M/3.6M (60/40).
-PRICES = {"360750": 54_000.0, "114260": 72_000.0}
+PRICES = {"360750": 54_000.0, "114260": 72_000.0, "069500": 54_000.0}
 
 
 class _StubProvider:
@@ -297,3 +298,114 @@ def test_init_rejects_negative_weight(env, capsys):
         _init_args(allocation="overseas_equity=110,bond=-10"),
     )
     assert rc == 1 and "between 0 and 100" in out["error"]
+
+
+# --- codex round: portfolio routing + ticker normalization --------------------
+
+
+def _buy_args(**overrides):
+    defaults = {
+        "ticker": "360750",
+        "qty": 10.0,
+        "price": 50_000.0,
+        "market": "KR",
+        "date": None,
+        "note": None,
+        "thesis_id": None,
+        "portfolio": None,
+    }
+    defaults.update(overrides)
+    return types.SimpleNamespace(**defaults)
+
+
+def _tx_portfolio_names(factory):
+    conn = factory()
+    rows = conn.execute(
+        "SELECT p.name AS name FROM transactions t "
+        "JOIN portfolios p ON t.portfolio_id = p.id"
+    ).fetchall()
+    conn.close()
+    return [r["name"] for r in rows]
+
+
+def test_portfolio_buy_routes_to_named_portfolio(env, capsys):
+    conn = env()
+    create_portfolio(conn, "KR", "Toss KR")
+    create_portfolio(conn, "KR", "ISA")
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_portfolio_buy, _buy_args(portfolio="ISA"))
+    assert rc == 0
+    assert _tx_portfolio_names(env) == ["ISA"]
+
+
+def test_portfolio_buy_default_unchanged_first_kr(env, capsys):
+    conn = env()
+    create_portfolio(conn, "KR", "Toss KR")
+    create_portfolio(conn, "KR", "ISA")
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_portfolio_buy, _buy_args())
+    assert rc == 0
+    assert _tx_portfolio_names(env) == ["Toss KR"]  # zero behavior change
+
+
+def test_portfolio_buy_unknown_name_errors(env, capsys):
+    conn = env()
+    create_portfolio(conn, "KR", "Toss KR")
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_portfolio_buy, _buy_args(portfolio="Nope"))
+    assert rc == 1 and "Nope" in out["error"]
+
+
+def test_portfolio_import_routes_to_named_portfolio(env, capsys, tmp_path):
+    conn = env()
+    create_portfolio(conn, "KR", "Toss KR")
+    create_portfolio(conn, "KR", "ISA")
+    conn.close()
+    csv_file = tmp_path / "trades.csv"
+    csv_file.write_text(
+        "date,ticker,side,quantity,price\n2026-01-02,360750,BUY,10,50000\n",
+        encoding="utf-8",
+    )
+    args = types.SimpleNamespace(
+        csv_file=str(csv_file), market="KR", dry_run=False, portfolio="ISA"
+    )
+    rc, out = _run(capsys, stock_cli.cmd_portfolio_import, args)
+    assert rc == 0 and out["inserted"] == 1
+    assert _tx_portfolio_names(env) == ["ISA"]
+
+
+def test_status_normalizes_held_ticker_codes(env, capsys):
+    """A position recorded as '69500' must match the normalized map code
+    '069500' instead of being silently excluded (distorting weights)."""
+    _do_init(
+        capsys,
+        allocation="domestic_equity=50,bond=50",
+        map="domestic_equity=069500,bond=114260",
+    )
+    conn = env()
+    pf = create_portfolio(conn, "KR", "ISA")
+    add_transaction(
+        conn,
+        portfolio_id=pf.id,
+        ticker="69500",
+        side="BUY",
+        quantity=100,
+        price=50_000,
+        currency="KRW",
+        transacted_at="2026-01-02",
+    )
+    add_transaction(
+        conn,
+        portfolio_id=pf.id,
+        ticker="114260",
+        side="BUY",
+        quantity=50,
+        price=70_000,
+        currency="KRW",
+        transacted_at="2026-01-02",
+    )
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_isa_status, types.SimpleNamespace())
+    assert rc == 0
+    assert out["value_by_class"]["domestic_equity"] == 5_400_000.0
+    assert not any("excluded" in n for n in out["notes"])
