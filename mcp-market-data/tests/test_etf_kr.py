@@ -1,11 +1,14 @@
-"""Offline tests for the KR ETF universe layer (canned Naver payload).
+"""Tests for the KR ETF universe layer (canned Naver payload).
 
 Covers ``_parse_universe`` field mapping, asset-class/tax classification,
-hedge/leverage flags, and None-NAV handling — no network.
+hedge/leverage flags, None-NAV handling, detail parsing, and the CSV cache —
+all offline. One ``@pytest.mark.network`` smoke test hits the live endpoint.
 """
 
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -146,7 +149,22 @@ def test_universe_both_down_raises(tmp_path, monkeypatch):
     import pytest as _pytest
 
     monkeypatch.setattr(
-        etf_kr, "fetch_etf_universe",
-        lambda **kw: (_ for _ in ()).throw(etf_kr.EtfDataUnavailable("down")))
+        etf_kr,
+        "fetch_etf_universe",
+        lambda **kw: (_ for _ in ()).throw(etf_kr.EtfDataUnavailable("down")),
+    )
     with _pytest.raises(etf_kr.EtfDataUnavailable):
         etf_kr.get_etf_universe(cache_path=tmp_path / "none.csv")
+
+
+@pytest.mark.network
+def test_live_universe_smoke():
+    """Live smoke: the Naver universe endpoint still serves cp949 JSON with
+    hundreds of classified ETFs (deselect with -m "not network")."""
+    from etf_kr import fetch_etf_universe
+
+    rows = fetch_etf_universe()
+    assert len(rows) > 500
+    codes = {r.code for r in rows}
+    assert "069500" in codes  # KODEX 200
+    assert all(len(r.code) == 6 for r in rows)
