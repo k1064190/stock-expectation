@@ -78,3 +78,37 @@ def test_drift_and_band():
         {"overseas_equity": 5_100_000.0, "bond": 4_900_000.0}, TARGETS
     )
     assert rb2["needed"] is False and rb2["breaches"] == []
+
+
+def test_min_contribution_two_class_exact():
+    from portfolio.isa_allocator import min_contribution_to_restore
+
+    # 60/40 book, band 5: overweight side binds.
+    # weight_o(M) = 5.4M*100/(9M+M') ≤ 55 → M' ≥ 5,400,000*100/55 - 9,000,000
+    # = 818,181.81... → minimal integer 818,182.
+    m = min_contribution_to_restore(CURRENT, TARGETS)
+    assert m == 818_182
+
+
+def test_min_contribution_underweight_binds():
+    from portfolio.isa_allocator import min_contribution_to_restore
+
+    # Counterexample to the pure overweight closed form: the underweight class
+    # a (target 90, held 0) binds. All contributions flow to a (only deficit
+    # class while M ≤ 900): weight_a(M) = M/(100+M)*100 ≥ 85 → M ≥ 566.67
+    # → 567. The overweight-only formula would give 400.
+    targets = {"a": 90.0, "b": 5.0, "c": 5.0}
+    current = {"a": 0.0, "b": 50.0, "c": 50.0}
+    m = min_contribution_to_restore(current, targets)
+    assert m == 567
+
+
+def test_min_contribution_zero_when_within_band():
+    from portfolio.isa_allocator import min_contribution_to_restore
+
+    assert (
+        min_contribution_to_restore(
+            {"overseas_equity": 5_100_000.0, "bond": 4_900_000.0}, TARGETS
+        )
+        == 0
+    )

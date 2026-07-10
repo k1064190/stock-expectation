@@ -191,3 +191,88 @@ def check_rebalance(
     ]
     breaches.sort(key=lambda b: -abs(b["drift_pp"]))
     return {"needed": bool(breaches), "breaches": breaches, "notes": []}
+
+
+def _drift_after_contribution(
+    amount: float,
+    current_value_by_class: dict[str, float],
+    targets_pct: dict[str, float],
+) -> dict[str, float]:
+    """Drift per class after allocating ``amount`` by the standard algorithm.
+
+    Float-exact version of the allocation (no KRW rounding) used as the band
+    predicate inside ``min_contribution_to_restore``.
+
+    Args:
+        amount: hypothetical contribution (KRW, float).
+        current_value_by_class: current market value per class.
+        targets_pct: target weights summing to 100.
+
+    Returns:
+        Post-allocation drift in %p per class (see ``compute_drift``).
+    """
+    total_after = sum(current_value_by_class.values()) + amount
+    deficits = {
+        cls: max(0.0, total_after * w / 100.0 - current_value_by_class.get(cls, 0.0))
+        for cls, w in targets_pct.items()
+    }
+    deficit_sum = sum(deficits.values())
+    after = dict(current_value_by_class)
+    for cls, w in targets_pct.items():
+        share = (
+            deficits[cls] / deficit_sum if deficit_sum > 0 else w / 100.0
+        )
+        after[cls] = after.get(cls, 0.0) + amount * share
+    return compute_drift(after, targets_pct)
+
+
+# Search ceiling for min_contribution_to_restore (≈ 1.15e18 KRW). If even this
+# cannot restore the band the situation is structurally unreachable.
+_MIN_CONTRIBUTION_SEARCH_CAP = 2**60
+
+
+def min_contribution_to_restore(
+    current_value_by_class: dict[str, float],
+    targets_pct: dict[str, float],
+    band_pp: float = REBALANCE_BAND_PP,
+) -> int | None:
+    """Minimum extra contribution that brings every |drift| within the band.
+
+    Uses the standard (sell-free) allocation algorithm as the model of where
+    the money goes. A pure closed form over overweight classes is NOT
+    sufficient — a heavily underweight class can bind instead (e.g. targets
+    90/5/5 with holdings 0/50/50) — so this is a deterministic doubling +
+    binary search on integer KRW against the exact band predicate. Larger
+    contributions move the book monotonically toward the effective targets,
+    so the predicate is monotone in M and bisection finds the exact minimum.
+
+    Args:
+        current_value_by_class: current market value per class (KRW).
+        targets_pct: target weights summing to 100.
+        band_pp: allowed |drift| in %p (default REBALANCE_BAND_PP).
+
+    Returns:
+        Minimal integer KRW M with all post-allocation |drift| ≤ band; 0 when
+        already within band; None when no M up to the search cap works
+        (structurally unreachable, e.g. a 0% band).
+    """
+
+    def ok(m: float) -> bool:
+        drift = _drift_after_contribution(m, current_value_by_class, targets_pct)
+        return all(abs(d) <= band_pp for d in drift.values())
+
+    if ok(0):
+        return 0
+    hi = 1
+    while not ok(hi):
+        hi *= 2
+        if hi > _MIN_CONTRIBUTION_SEARCH_CAP:
+            return None
+    lo = hi // 2  # ok(lo) is False (or lo == 0, also False)
+    while lo + 1 < hi:
+        mid = (lo + hi) // 2
+        if ok(mid):
+            hi = mid
+        else:
+            lo = mid
+    return hi
