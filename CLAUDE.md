@@ -49,6 +49,7 @@ uv run <command>
 ./bin/stock-cli price NVDA --market US --days 30
 ./bin/stock-cli price 005930 --market KR --days 10
 ./bin/stock-cli track-record --days 30
+./bin/stock-cli etf list --asset-class overseas_equity --min-aum 5000 --limit 10
 
 # Batch commands (multiple tickers at once)
 ./bin/stock-cli price-batch AAPL,MSFT,NVDA --market US --days 30

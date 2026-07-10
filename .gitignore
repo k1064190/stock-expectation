@@ -26,6 +26,9 @@ state/watchlist_alerts.json
 data/sector_rs_us.json
 data/sector_rs_kr.json
 
+# KR ETF universe cache (rewritten on every successful `stock-cli etf` fetch)
+data/etf_universe_kr.csv
+
 # IDE
 .idea/
 .vscode/
