@@ -102,3 +102,6 @@ read this index first, then open only the linked stage files that match.
 
 ## Stage 27 — ETF scoring and same-index comparison
 - [etf-scoring-compare](stage-27/etf-scoring-compare.md) — Adds deterministic set-relative cost+liquidity scoring and `stock-cli etf compare` (codes or --query) picking the best ticker among same-index ETFs; 추적오차 absent by documented degradation.
+
+## Stage 28 — ISA targets, drift-DCA allocator, decision log
+- [isa-targets-allocator](stage-28/isa-targets-allocator.md) — Adds the ISA decision core: approved targets + class→ETF map, a deterministic sell-free contribution allocator with a ±10%p tilt clamp and ±5%p band, contribution-only rebalance remedies, and a full decision log via `stock-cli isa`.
