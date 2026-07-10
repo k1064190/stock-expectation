@@ -112,3 +112,21 @@ def test_min_contribution_zero_when_within_band():
         )
         == 0
     )
+
+
+def test_zeroed_tilt_falls_back_to_targets_with_note():
+    """Tilts that floor EVERY class to 0 must be ignored (visible note) —
+    otherwise renormalization is impossible and allocated money is destroyed."""
+    targets = {f"c{i}": 10.0 for i in range(10)}
+    tilt = {f"c{i}": -10.0 for i in range(10)}
+    out = allocate_contribution(1_000_000, {}, targets, tilt_pp=tilt)
+    assert sum(out["buys_by_class"].values()) == 1_000_000  # money conserved
+    assert out["effective_targets"] == targets  # fell back to originals
+    assert any("tilt ignored" in n for n in out["notes"])
+
+
+def test_band_edge_float_noise_not_a_breach():
+    """Drift of 5.0000000001 prints as 5.0 — must not be a spurious breach."""
+    current = {"overseas_equity": 5_500_000.00011, "bond": 4_499_999.99989}
+    rb = check_rebalance(current, TARGETS)
+    assert rb["needed"] is False and rb["breaches"] == []

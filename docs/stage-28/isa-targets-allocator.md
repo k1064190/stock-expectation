@@ -71,3 +71,35 @@ rejected; universe down → visible "code validation skipped" note, fail-open).
 Deriving the remedy math before coding caught a real spec bug (the overweight-only
 closed form) at test-design time instead of in production. Reusing the portfolio
 valuation path kept the CLI layer thin — the only new logic is class mapping.
+
+## Review
+
+Round 1 (internal: fully clean LGTM, suggestions only; Gemini/antigravity: real
+findings; Codex: pending — to be reconciled if it replies), addressed in
+`fix(isa): guard zeroed-tilt renormalization, weight-range validation, band
+float edge (review round 1)`:
+
+**Fixed (Gemini)**
+- (BLOCKER) Tilts flooring EVERY class to 0 (e.g. ten 10% classes each tilted
+  -10pp) made renormalization impossible: `eff` stayed all-zero, the
+  proportional path produced all-zero raws, and the remainder loop distributed
+  at most one won per class — violating `sum(buys) == amount` (money
+  destroyed). Fixed at the source: `effective_targets` falls back to the
+  ORIGINAL targets with a visible "tilt zeroed all classes — tilt ignored"
+  note when the post-floor total is 0. `allocate_contribution` additionally
+  asserts the invariant and raises ValueError with context if ever violated —
+  money code fails loud, not wrong.
+- Band-edge float noise: drift 5.0000000001 (prints as 5.0) was a spurious
+  breach → `check_rebalance` compares `abs(round(d, 3)) > band_pp`. (The
+  remedy search keeps the stricter exact predicate; exact-within-band implies
+  rounded-within-band, so the remedy always satisfies the check.)
+- `save_target` accepted negative weights that sum to 100 (A=110/B=-10) →
+  every weight validated within [0, 100], ValueError lists offending classes;
+  mirrored in a CLI init error-path test.
+
+**Applied (internal suggestion)**
+- Worked rounding example (100 over 66.7/33.3 → 67/33, tie → name ascending)
+  added to the `allocate_contribution` docstring.
+
+New tests: zeroed-tilt fallback (note + money conserved + eff == originals),
+band-edge non-breach, store negative-weight rejection, CLI negative-weight rc 1.

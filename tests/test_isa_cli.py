@@ -288,3 +288,12 @@ def test_log_limit(env, capsys):
     _do_init(capsys)  # two target_change decisions
     rc, out = _run(capsys, stock_cli.cmd_isa_log, types.SimpleNamespace(limit=1))
     assert rc == 0 and len(out["decisions"]) == 1
+
+
+def test_init_rejects_negative_weight(env, capsys):
+    rc, out = _run(
+        capsys,
+        stock_cli.cmd_isa_init,
+        _init_args(allocation="overseas_equity=110,bond=-10"),
+    )
+    assert rc == 1 and "between 0 and 100" in out["error"]

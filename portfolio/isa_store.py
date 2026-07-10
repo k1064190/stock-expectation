@@ -65,7 +65,8 @@ def save_target(
 
     Args:
         conn: portfolio.db connection (ISA tables must exist).
-        allocation: asset class → target weight in %, must sum to 100 ±0.01.
+        allocation: asset class → target weight in %, each within [0, 100],
+            summing to 100 ±0.01.
         etf_map: asset class → ETF code; must cover exactly the allocation's
             classes (no missing, no extra).
         note: optional free-form approval note.
@@ -74,8 +75,14 @@ def save_target(
         The new isa_targets row id. Also logs a ``target_change`` decision.
 
     Raises:
-        ValueError: weights don't sum to 100, or etf_map coverage mismatch.
+        ValueError: a weight outside [0, 100], weights don't sum to 100, or
+            etf_map coverage mismatch.
     """
+    out_of_range = sorted(cls for cls, w in allocation.items() if not 0.0 <= w <= 100.0)
+    if out_of_range:
+        raise ValueError(
+            f"allocation weights must be between 0 and 100 (offending: {out_of_range})"
+        )
     total = sum(allocation.values())
     if abs(total - 100.0) > SUM_TOLERANCE:
         raise ValueError(f"allocation weights must sum to 100 (got {total:g})")

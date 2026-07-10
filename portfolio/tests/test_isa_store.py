@@ -120,3 +120,8 @@ def test_kind_check_constraint(conn):
             "(created_at, kind, amount_krw, inputs, proposal, final, notes) "
             "VALUES ('2026-07-10', 'bogus', NULL, '{}', NULL, '{}', '[]')"
         )
+
+
+def test_save_target_rejects_out_of_range_weights(conn):
+    with pytest.raises(ValueError, match="between 0 and 100"):
+        save_target(conn, {"a": 110.0, "b": -10.0}, {"a": "1", "b": "2"}, None)

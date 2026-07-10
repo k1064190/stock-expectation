@@ -74,6 +74,13 @@ def effective_targets(
             notes.append(f"tilt for unknown class {cls} ignored")
     eff = {cls: max(0.0, w + tilt_pp.get(cls, 0.0)) for cls, w in targets_pct.items()}
     total = sum(eff.values())
+    if total <= 0:
+        # Every class floored to 0 — renormalization is impossible and any
+        # allocation over all-zero weights would destroy money. Fall back to
+        # the original targets, visibly.
+        notes.append("tilt zeroed all classes — tilt ignored")
+        eff = dict(targets_pct)
+        total = sum(eff.values())
     if total > 0 and total != 100.0:
         eff = {cls: w * 100.0 / total for cls, w in eff.items()}
     return eff, notes
@@ -116,6 +123,16 @@ def allocate_contribution(
     Returns:
         ``{"buys_by_class": {class: int KRW}, "effective_targets": {...},
         "notes": [str]}`` with ``sum(buys) == amount_krw`` exactly.
+
+    Rounding worked example: amount 100 over eff {"a": 66.7, "b": 33.3} on an
+    empty book → raw {a: 66.7, b: 33.3} → floors {a: 66, b: 33}, remainder 1 →
+    fractional parts a 0.7 > b 0.3 → the extra won goes to a → {a: 67, b: 33}.
+    On a fractional-part tie the class name ascending wins the won.
+
+    Raises:
+        ValueError: if the rounded buys do not sum to ``amount_krw`` (money
+        code — fail loud beats fail wrong; cannot happen given the
+        effective-targets zeroed-tilt fallback).
     """
     notes: list[str] = []
     clamped, clamp_notes = clamp_tilt(tilt_pp or {})
@@ -136,6 +153,11 @@ def allocate_contribution(
         notes.append("all classes at/above target — allocating proportional to targets")
         raw = {cls: amount_krw * w / 100.0 for cls, w in eff.items()}
     buys = _round_preserving_sum(raw, amount_krw)
+    if sum(buys.values()) != amount_krw:
+        raise ValueError(
+            f"allocation invariant violated: buys sum to {sum(buys.values())}, "
+            f"expected {amount_krw} (eff={eff}, raw={raw})"
+        )
     return {"buys_by_class": buys, "effective_targets": eff, "notes": notes}
 
 
@@ -184,10 +206,12 @@ def check_rebalance(
     if not current_value_by_class or sum(current_value_by_class.values()) <= 0:
         return {"needed": False, "breaches": [], "notes": ["no positions"]}
     drift = compute_drift(current_value_by_class, targets_pct)
+    # Compare on the rounded value: float noise at the band edge (e.g.
+    # 5.0000000001, which prints as 5.0) must not be a spurious breach.
     breaches = [
         {"asset_class": cls, "drift_pp": round(d, 3)}
         for cls, d in drift.items()
-        if abs(d) > band_pp
+        if abs(round(d, 3)) > band_pp
     ]
     breaches.sort(key=lambda b: -abs(b["drift_pp"]))
     return {"needed": bool(breaches), "breaches": breaches, "notes": []}
@@ -219,9 +243,7 @@ def _drift_after_contribution(
     deficit_sum = sum(deficits.values())
     after = dict(current_value_by_class)
     for cls, w in targets_pct.items():
-        share = (
-            deficits[cls] / deficit_sum if deficit_sum > 0 else w / 100.0
-        )
+        share = deficits[cls] / deficit_sum if deficit_sum > 0 else w / 100.0
         after[cls] = after.get(cls, 0.0) + amount * share
     return compute_drift(after, targets_pct)
 
