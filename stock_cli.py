@@ -102,6 +102,10 @@ from events import (
     _fetch_macro_window,
     _redact_key,
 )
+
+# Imported as a module (not from-imports) so tests can monkeypatch
+# etf_kr.get_etf_universe / etf_kr.fetch_etf_detail at call time.
+import etf_kr
 from news_features import summarize_news
 from macro_news import DEFAULT_MACRO_QUERY, assess_macro_risk, get_macro_news
 from llm_context import validate_llm_context, score_from_debate
@@ -954,6 +958,81 @@ def cmd_catalyst_gate(args) -> int:
     except Exception as e:
         _print_json({"error": str(e)})
         return 1
+
+
+def cmd_etf_list(args) -> int:
+    """List the KR ETF universe, filtered and sorted for ISA screening.
+
+    Serves live Naver data with the stale-CSV fallback of
+    ``etf_kr.get_etf_universe`` (source + notes are surfaced in the JSON).
+    Leverage/inverse ETFs are EXCLUDED unless ``--include-leverage`` — they are
+    unsuitable for the long-term ISA book this layer feeds.
+
+    Args:
+        args: Parsed CLI arguments with asset_class, min_aum (억원),
+            include_leverage, refresh, limit.
+
+    Returns:
+        0 on success (including cache-stale). 1 when no universe source
+        (live or cache) is available.
+    """
+    try:
+        rows, source, notes = etf_kr.get_etf_universe(refresh=args.refresh)
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+    if not args.include_leverage:
+        rows = [r for r in rows if not r.leveraged_or_inverse]
+    if args.asset_class:
+        rows = [r for r in rows if r.asset_class == args.asset_class]
+    if args.min_aum is not None:
+        rows = [r for r in rows if r.aum_100m_krw >= args.min_aum]
+    rows = sorted(rows, key=lambda r: r.aum_100m_krw, reverse=True)
+    if args.limit is not None:
+        rows = rows[: args.limit]
+    _print_json(
+        {
+            "asof": datetime.now().date().isoformat(),
+            "source": source,
+            "count": len(rows),
+            "notes": notes,
+            "etfs": [asdict(r) for r in rows],
+        }
+    )
+    return 0
+
+
+def cmd_etf_info(args) -> int:
+    """Show one KR ETF: universe row merged with per-ETF detail.
+
+    The detail fetch (펀드보수/기초지수) is fail-open enrichment — its notes
+    are combined with the universe-source notes rather than failing the call.
+
+    Args:
+        args: Parsed CLI arguments with code, refresh.
+
+    Returns:
+        0 on success. 1 when the universe is unavailable or the code is not a
+        listed KR ETF.
+    """
+    try:
+        rows, source, notes = etf_kr.get_etf_universe(refresh=args.refresh)
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+    match = next((r for r in rows if r.code == args.code), None)
+    if match is None:
+        _print_json({"error": f"unknown KR ETF code: {args.code}"})
+        return 1
+    detail = etf_kr.fetch_etf_detail(args.code)
+    out = asdict(match)
+    out["fund_pay_pct"] = detail["fund_pay_pct"]
+    out["base_index"] = detail["base_index"]
+    out["asof"] = datetime.now().date().isoformat()
+    out["source"] = source
+    out["notes"] = notes + detail["notes"]
+    _print_json(out)
+    return 0
 
 
 def cmd_health(args) -> int:
@@ -2415,6 +2494,52 @@ def build_parser() -> argparse.ArgumentParser:
     cg.add_argument("tickers", help="Comma-separated tickers (e.g. NVDA,AMD or 005930)")
     cg.add_argument("--market", required=True, choices=["US", "KR", "us", "kr"])
     cg.set_defaults(func=cmd_catalyst_gate)
+
+    # --- etf (KR ETF universe + metadata, stage 26) ---
+    etf = sub.add_parser(
+        "etf",
+        help="KR-listed ETF universe + metadata (Naver source, ISA layer)",
+    )
+    etf_sub = etf.add_subparsers(dest="etf_command", required=True)
+
+    el = etf_sub.add_parser(
+        "list",
+        help="List KR ETFs sorted by AUM (leverage/inverse excluded by default)",
+    )
+    el.add_argument(
+        "--asset-class",
+        choices=sorted(set(etf_kr.TAB_ASSET_CLASS.values())),
+        help="Keep only one asset class (e.g. domestic_equity, overseas_equity)",
+    )
+    el.add_argument(
+        "--min-aum",
+        type=_positive_int,
+        help="Minimum AUM in 억원 (marketSum)",
+    )
+    el.add_argument(
+        "--include-leverage",
+        action="store_true",
+        help="Include leverage/inverse ETFs (excluded by default)",
+    )
+    el.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force a live fetch (cache only serves when live fails)",
+    )
+    el.add_argument("--limit", type=_positive_int, help="Max rows to return")
+    el.set_defaults(func=cmd_etf_list)
+
+    ei = etf_sub.add_parser(
+        "info",
+        help="One KR ETF: universe row + 펀드보수/기초지수 detail",
+    )
+    ei.add_argument("code", help="6-digit KR ETF code (e.g. 360750)")
+    ei.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force a live universe fetch (cache only serves when live fails)",
+    )
+    ei.set_defaults(func=cmd_etf_info)
 
     # --- memory (Stage 7-A: mem0 semantic memory) ---
     memory = sub.add_parser(
