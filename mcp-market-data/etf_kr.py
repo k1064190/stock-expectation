@@ -8,8 +8,11 @@ stale CSV cache with a visible note instead of silent zeros.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import csv
 import json
+from dataclasses import asdict, dataclass, fields
+from datetime import datetime
+from pathlib import Path
 
 import httpx
 
@@ -140,10 +143,100 @@ def fetch_etf_detail(code: str, timeout: float = 10.0) -> dict:
     Nones with an explanatory note instead of raising — detail is enrichment,
     not a hard dependency."""
     try:
-        r = httpx.get(DETAIL_URL.format(code=code), headers=_HEADERS,
-                      timeout=timeout, follow_redirects=True)
+        r = httpx.get(
+            DETAIL_URL.format(code=code),
+            headers=_HEADERS,
+            timeout=timeout,
+            follow_redirects=True,
+        )
         r.raise_for_status()
         return _parse_detail(r.json())
     except Exception as e:  # noqa: BLE001
-        return {"fund_pay_pct": None, "base_index": None,
-                "notes": [f"etf detail fetch failed for {code}: {e}"]}
+        return {
+            "fund_pay_pct": None,
+            "base_index": None,
+            "notes": [f"etf detail fetch failed for {code}: {e}"],
+        }
+
+
+# Universe cache — rewritten on every successful live fetch; served stale (with
+# a visible note) when the live fetch fails.
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[1] / "data" / "etf_universe_kr.csv"
+
+# Fields serialized as empty string when None and parsed back to None/float.
+_OPTIONAL_FLOAT_FIELDS = ("nav", "deviation_pct", "ret_3m_pct")
+_BOOL_FIELDS = ("hedged", "leveraged_or_inverse")
+_INT_FIELDS = ("aum_100m_krw", "value_million_krw", "tab_code")
+
+
+def _save_cache(rows: list[EtfInfo], path: Path) -> None:
+    """Write the universe to a CSV cache (None ↔ "", bools as "1"/"0").
+
+    Args: rows — parsed universe; path — CSV destination (parents created).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    names = [f.name for f in fields(EtfInfo)]
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=names)
+        w.writeheader()
+        for row in rows:
+            d = asdict(row)
+            for k in _OPTIONAL_FLOAT_FIELDS:
+                d[k] = "" if d[k] is None else d[k]
+            for k in _BOOL_FIELDS:
+                d[k] = "1" if d[k] else "0"
+            w.writerow(d)
+
+
+def _load_cache(path: Path) -> list[EtfInfo]:
+    """Read the CSV cache back into EtfInfo rows (inverse of ``_save_cache``).
+
+    Returns: cached rows. Raises EtfDataUnavailable if the file is missing,
+    unreadable, or empty.
+    """
+    try:
+        with path.open(newline="", encoding="utf-8") as fh:
+            raw = list(csv.DictReader(fh))
+    except OSError as e:
+        raise EtfDataUnavailable(f"etf universe cache unreadable: {e}") from e
+    if not raw:
+        raise EtfDataUnavailable("etf universe cache is empty")
+    out: list[EtfInfo] = []
+    for d in raw:
+        for k in _OPTIONAL_FLOAT_FIELDS:
+            d[k] = float(d[k]) if d[k] != "" else None
+        for k in _BOOL_FIELDS:
+            d[k] = d[k] == "1"
+        for k in _INT_FIELDS:
+            d[k] = int(d[k])
+        d["price"] = float(d["price"])
+        out.append(EtfInfo(**d))
+    return out
+
+
+def get_etf_universe(
+    cache_path: Path | None = None, refresh: bool = False
+) -> tuple[list[EtfInfo], str, list[str]]:
+    """Get the KR ETF universe, live-first with a stale-cache fallback.
+
+    Args:
+        cache_path: CSV cache location (default data/etf_universe_kr.csv).
+        refresh: unused hint kept for CLI symmetry — fetches are always
+            live-first; the cache only serves when the live fetch fails.
+
+    Returns:
+        (rows, source, notes) where source is "live" or "cache-stale". A live
+        fetch rewrites the cache. On EtfDataUnavailable the stale cache is
+        served with a visible note; if the cache also fails, re-raises.
+    """
+    path = cache_path or DEFAULT_CACHE_PATH
+    try:
+        rows = fetch_etf_universe()
+    except EtfDataUnavailable as live_err:
+        rows = _load_cache(path)  # re-raises EtfDataUnavailable if unusable
+        mtime = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+        return rows, "cache-stale", [
+            f"etf universe: live fetch failed ({live_err}); serving stale cache from {mtime}"
+        ]
+    _save_cache(rows, path)
+    return rows, "live", []

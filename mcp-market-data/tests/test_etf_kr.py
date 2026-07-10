@@ -113,3 +113,40 @@ def test_parse_detail_missing_fields_noted():
     d = _parse_detail({"totalInfos": []})
     assert d["fund_pay_pct"] is None and d["base_index"] is None
     assert any("unavailable" in n for n in d["notes"])
+
+
+def test_universe_cache_roundtrip(tmp_path, monkeypatch):
+    import etf_kr
+
+    rows = etf_kr._parse_universe(PAYLOAD)
+    monkeypatch.setattr(etf_kr, "fetch_etf_universe", lambda **kw: rows)
+    cache = tmp_path / "u.csv"
+    got, source, notes = etf_kr.get_etf_universe(cache_path=cache)
+    assert source == "live" and len(got) == 4 and cache.exists()
+
+
+def test_universe_stale_cache_on_failure(tmp_path, monkeypatch):
+    import etf_kr
+
+    rows = etf_kr._parse_universe(PAYLOAD)
+    cache = tmp_path / "u.csv"
+    etf_kr._save_cache(rows, cache)
+
+    def boom(**kw):
+        raise etf_kr.EtfDataUnavailable("down")
+
+    monkeypatch.setattr(etf_kr, "fetch_etf_universe", boom)
+    got, source, notes = etf_kr.get_etf_universe(cache_path=cache)
+    assert source == "cache-stale" and len(got) == 4
+    assert any("stale" in n for n in notes)
+
+
+def test_universe_both_down_raises(tmp_path, monkeypatch):
+    import etf_kr
+    import pytest as _pytest
+
+    monkeypatch.setattr(
+        etf_kr, "fetch_etf_universe",
+        lambda **kw: (_ for _ in ()).throw(etf_kr.EtfDataUnavailable("down")))
+    with _pytest.raises(etf_kr.EtfDataUnavailable):
+        etf_kr.get_etf_universe(cache_path=tmp_path / "none.csv")
