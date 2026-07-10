@@ -309,6 +309,7 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 
 # KR ETF 유니버스 (Stage 26, 네이버 소스)
 ./bin/stock-cli etf list --asset-class overseas_equity --min-aum 5000 --limit 10
+./bin/stock-cli etf compare --query "미국 S&P500"   # 동일 지수 ETF 중 최적 티커 선정 (Stage 27)
 
 # KR 공시 (Stage 2, Open DART)
 ./bin/stock-cli disclosure 005930 --since-days 14

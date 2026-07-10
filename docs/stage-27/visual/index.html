@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 27 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --body-bg: #f7f7f5;
+        --text: #1a1a1a;
+        --text-soft: #333;
+        --heading: #0f1e26;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --header-bg: #fff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #8a9aaa;
+          --border: #33404a;
+          --card-bg: #1c232a;
+          --body-bg: #12171b;
+          --text: #e6e9ec;
+          --text-soft: #c9cfd4;
+          --heading: #f2f4f6;
+          --code-bg: #232b32;
+          --code-border: #3a4650;
+          --header-bg: #171d22;
+        }
+      }
+
+      body {
+        background: var(--body-bg);
+        color: var(--text);
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node.dashed .circle {
+        background: transparent;
+        border-style: dashed;
+        border-color: var(--muted);
+        color: var(--muted);
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-node.dashed .label {
+        font-style: italic;
+        max-width: 96px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+      .tl-connector.dashed {
+        height: 0;
+        background: none;
+        border-top: 2px dashed var(--border);
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      .review-round {
+        font-weight: 700;
+        color: var(--heading);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="R3 event-gate restore">
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="LIVE 1Y gate">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="Macro risk-off switch">
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node dashed"
+          title="Unmerged branch, developed in parallel with stages 26-27"
+        >
+          <div class="circle">25</div>
+          <span class="label">Weekly gold trend (unmerged branch)</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="KR ETF data layer">
+          <div class="circle">26</div>
+          <span class="label">KR ETF data layer</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current" title="This stage">
+          <div class="circle">27</div>
+          <span class="label">ETF scoring + compare</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">28</div>
+          <span class="label">ISA targets + allocator</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">29</div>
+          <span class="label">ISA briefing + track record</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 27</h2>
+        <p>
+          A deterministic answer to "which of the N ETFs tracking the same index
+          should I buy?" — the KR ETF universe from stage 26 needed a
+          cost/liquidity scoring layer so the ISA book decision isn't left to
+          narrative.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>ETF Scoring + Same-Index Comparison</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            Stage 26 delivered the KR ETF universe and metadata; the ISA book
+            still needed a deterministic answer to "which of the N ETFs tracking
+            the same index should I buy?" — cost and liquidity decide that, not
+            narrative.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>mcp-market-data/etf_score.py</code> — pure-function,
+              set-relative candidate scoring (<code>score_candidates</code>),
+              stdlib only, no I/O.
+            </li>
+            <li>
+              <code
+                >stock-cli etf compare CODES | --query TEXT
+                [--include-leverage]</code
+              >
+              — resolves candidates (explicit codes or a space-insensitive name
+              prefilter, AUM-desc, capped at 15 with a visible note), fetches
+              per-candidate fee/base-index fail-open, flags
+              <code>base_index_mismatch</code>, and emits
+              <code
+                >{asof, source, count, base_index_mismatch, best, scored,
+                notes}</code
+              >.
+            </li>
+            <li>
+              <code>_normalize_etf_code</code> helper extracted in
+              <code>stock_cli.py</code> (shared by <code>etf info</code> and
+              <code>etf compare</code>).
+            </li>
+            <li>5 module tests + 5 CLI tests, all offline.</li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            Scoring is min-max normalized WITHIN the candidate set (same-index
+            tiebreaker, not an absolute rating): <code>cost_score</code> inverts
+            fees (lowest → 100; missing fee → None + visible note, composite
+            renormalizes to liquidity only);
+            <code>liquidity_score</code> weights AUM 0.5, traded value 0.3,
+            |괴리율| 0.2 (missing deviation redistributes its weight to
+            AUM/value); <code>composite</code> = 0.5/0.5 mean of available
+            subscores. Ties break deterministically: lower fee → higher AUM →
+            code ascending. Degenerate sets (all equal / single candidate) score
+            100 with a note.
+          </p>
+          <p style="margin-top: 0.75rem">
+            <strong
+              >추적오차 degradation note (spec rule, stage-26 decision):</strong
+            >
+            tracking error has no available source, so "cost" is fee-only and
+            execution quality is covered by |괴리율| inside liquidity — a
+            documented downgrade with visible notes, never silent.
+          </p>
+          <p style="margin-top: 0.75rem">
+            Live verification (2026-07-10, no key):
+            <code>etf compare --query "미국 S&amp;P500"</code> → 50 matches
+            truncated to top 15 by AUM with note, best = 360750 (TIGER
+            미국S&amp;P500, fee 0.007%, composite 91.8),
+            <code>base_index_mismatch=true</code>
+            correctly flagging the futures/covered-call/dividend-aristocrats
+            variants against plain S&amp;P 500 trackers.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>mcp-market-data/etf_score.py</code> —
+              <code>COST_WEIGHT</code
+              >/<code>LIQ_WEIGHT</code>/<code>AUM_WEIGHT</code>/<code>VALUE_WEIGHT</code>/<code>DEVIATION_WEIGHT</code>,
+              <code>_minmax</code>, <code>score_candidates</code>
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>_normalize_etf_code</code>,
+              <code>cmd_etf_compare</code>, <code>MAX_COMPARE_CANDIDATES</code>,
+              <code>compare</code> subparser under the <code>etf</code> group
+            </li>
+            <li>
+              <code>mcp-market-data/tests/test_etf_score.py</code>,
+              <code>tests/test_etf_cli.py</code> (compare section)
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Round 1 (internal + Gemini/antigravity; Codex unresponsive —
+            re-triggered, to be reconciled if it replies), addressed in
+            <code
+              >fix(etf): address review round 1 — degenerate-set note, input
+              validation, dedup, error-path tests</code
+            >.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round">Refuted (evidence)</span>
+              <ul>
+                <li>
+                  <strong>(Gemini "blocker")</strong> "sort tie-break
+                  <code>-s["aum_100m_krw"]</code> can TypeError on a string
+                  value": false — every constructor path coerces to int (<code
+                    >etf_kr._parse_row</code
+                  >
+                  → <code>int(it.get("marketSum") or 0)</code>,
+                  <code>etf_kr._load_cache</code> → <code>_INT_FIELDS</code>
+                  <code>int(d[k])</code>), the scored dict copies that int
+                  verbatim, and the <code>float()</code> at the
+                  <code>_minmax</code> call is normalization-math input, not a
+                  defensive cast. No str path exists.
+                </li>
+                <li>
+                  <strong>(internal warning)</strong> "missing try/except around
+                  <code>fetch_etf_detail</code> breaks per-candidate fail-open":
+                  false — <code>fetch_etf_detail</code> catches ALL exceptions
+                  internally and returns Nones + note (stage-26 contract,
+                  documented in its docstring). Added a one-line contract
+                  comment at the call site instead of a redundant try/except.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round">Fixed</span>
+              <ul>
+                <li>
+                  <strong>(Gemini)</strong> Multi-candidate sets equal in EVERY
+                  dimension now emit "candidates indistinguishable on
+                  cost/liquidity — scores degenerate" (the scoring-rules doc
+                  promised a degenerate-set note).
+                </li>
+                <li>
+                  <strong>(Gemini)</strong> <code>etf compare " "</code> now
+                  errors with "no valid ETF codes given (empty code list)"
+                  instead of the misleading "no ETFs matched query: None".
+                </li>
+                <li>
+                  <strong>(Gemini nit)</strong> Positional code lists are
+                  deduplicated first-seen-order, so <code>360750,360750</code>
+                  no longer scores against itself.
+                </li>
+                <li>
+                  <strong>(Gemini)</strong> Test added: <code>--query</code> +
+                  <code>--include-leverage</code>
+                  includes leveraged rows.
+                </li>
+                <li>
+                  <strong>(Gemini)</strong> Test added: query truncation at
+                  <code>MAX_COMPARE_CANDIDATES=15</code> + the visible
+                  truncation note (AUM-desc keeps the largest).
+                </li>
+                <li>
+                  <strong>(internal)</strong> Test added:
+                  <code>--query "nonexistent"</code> → rc 1 with "no ETFs
+                  matched".
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Keeping scoring pure (data in <code>etf_kr</code>, math here)
+              made the tests trivial and the live run correct on the first try.
+              The base-index mismatch note proved immediately useful — the
+              S&amp;P 500 query surfaces futures/covered-call variants that a
+              naive fee sort would have crowned.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
