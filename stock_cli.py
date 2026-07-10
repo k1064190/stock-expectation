@@ -1097,6 +1097,11 @@ def cmd_etf_compare(args) -> int:
         candidates = [by_code[c] for c in wanted]
     else:
         q = args.query.lower().replace(" ", "")
+        if not q:
+            # A blank query would substring-match every ETF name and silently
+            # compare the top 15 by AUM.
+            _print_json({"error": "empty query text"})
+            return 1
         candidates = [r for r in rows if q in r.name.lower().replace(" ", "")]
         if not args.include_leverage:
             candidates = [r for r in candidates if not r.leveraged_or_inverse]

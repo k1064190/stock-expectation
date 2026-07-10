@@ -391,3 +391,13 @@ def test_compare_query_no_match_errors(monkeypatch, capsys):
     )
     assert rc == 1
     assert "no ETFs matched" in out["error"]
+
+
+def test_compare_blank_query_errors(monkeypatch, capsys):
+    """`etf compare --query "   "` normalizes to "" which would match every
+    name — must error out, not silently compare the top 15 by AUM."""
+    _patch_compare(monkeypatch)
+    rc, out = _run(capsys, stock_cli.cmd_etf_compare, _compare_args(query="   "))
+    assert rc == 1
+    assert "empty query" in out["error"]
+    assert "scored" not in out

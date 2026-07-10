@@ -84,3 +84,12 @@ degenerate-set note, input validation, dedup, error-path tests`:
 - (Gemini) Test added: query truncation at MAX_COMPARE_CANDIDATES=15 + the
   visible truncation note (AUM-desc keeps the largest).
 - (internal) Test added: `--query "nonexistent"` → rc 1 with "no ETFs matched".
+
+Round 2 (Codex bot), 1 finding, verified valid and fixed in
+`fix(etf): reject blank query text (codex round 2)`:
+
+- (P2) `etf compare --query "   "` passed the truthy selector check but
+  normalized to `""`, substring-matching every ETF name and silently comparing
+  the top 15 by AUM → the stripped/normalized query is validated; blank →
+  rc 1 `"empty query text"` (mirrors the round-1 empty-code-list error style).
+  Regression test asserts rc 1 and no comparison output.
