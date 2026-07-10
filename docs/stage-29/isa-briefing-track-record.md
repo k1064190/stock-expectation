@@ -27,8 +27,14 @@ the stage-28 CLI clamps and logs.
 
 **Benchmarks:** both fetched via the **US provider's yfinance path** — verified
 2026-07-10: `^GSPC` and `^KS11` (KOSPI) work there, while the KR provider's ticker
-normalization mangles index symbols into `0^KS11` (404 on pykrx and FDR). A failed
-fetch stores `null` for that index with a visible note (fail-open).
+normalization mangles index symbols into `0^KS11` (404 on pykrx and FDR). Each
+benchmark is stored as `{"close": float|null, "session": "YYYY-MM-DD"|null}`:
+closes are **prior-session values** and market calendars diverge (a KST morning
+run sees yesterday's ^GSPC but possibly today's ^KS11), so the session date
+disambiguates which trading day each close belongs to. A failed fetch stores
+nulls with a visible note (fail-open). Same-day snapshot re-runs replace that
+day's row (with a visible "replaced same-day snapshot" note) so debugging never
+pollutes the monthly history.
 
 **Reuse, not copy:** the scheduler imports `call_claude_code` / `call_codex_cli` /
 `_macro_block` from `scheduler/daily_briefing.py` and `send_briefing` from
@@ -67,3 +73,42 @@ evaluate yet.
 Probing the benchmark tickers against the real providers before writing tests avoided
 baking in a KR-provider path that 404s. Confining dry-run to a truly write-free path
 (status only) keeps the flag honest — anything that logs is skipped, visibly.
+
+## Review
+
+Round 1 (internal: clean, 3 non-blocking observations; Gemini/antigravity: real
+findings; Codex: deferred — quota exhausted, noted on the PR), addressed in
+`fix(isa): explicit SELL-only contribution sign, same-day snapshot replace,
+benchmark session dates (review round 1)`:
+
+**Fixed (Gemini)**
+- (BLOCKER) `_isa_cum_contributions`' `ELSE -quantity * price` treated ANY
+  non-BUY side as a sell. The schema CHECK-constrains side to BUY/SELL today,
+  but the SQL is now explicit and future-proof: `WHEN 'BUY' → +`,
+  `WHEN 'SELL' → −`, `ELSE 0` (a future side must opt in rather than silently
+  counting as a sell). BUY/SELL sign behavior pinned by the existing
+  cum-contribution tests.
+- Scheduler dry-run substituted `status["rebalance"]`, which lacks
+  `min_contribution_to_restore` — breaking the prompt contract SKILL.md
+  expects. The dry-run block now keeps the key (null) with the visible note
+  "dry-run: remedy not computed (rebalance skipped to avoid decision
+  logging)"; test asserts the prompt shape.
+- Same-day `isa snapshot` re-runs appended duplicate rows. `save_nav_snapshot`
+  now replaces an existing row from the same calendar date
+  (delete-then-insert on `date(snapped_at)`) with a visible "replaced
+  same-day snapshot" note; monthly cadence unaffected. Tests: same-day rerun
+  → 1 row with latest values + note; different days → 2 rows. (The internal
+  reviewer had flagged the same as an observation.)
+- Benchmarks stored close-only, so a stale `^KS11` close was indistinguishable
+  when calendars diverge. Each benchmark is now
+  `{"close": float|null, "session": "YYYY-MM-DD"|null}` with the close's
+  actual session date captured from the price series; semantics documented
+  here and in the README line. This also resolves the internal reviewer's
+  benchmark-timezone observation.
+- Added the missing test: `isa snapshot` with a missing target → rc 1 early
+  exit and no `isa_nav` row written.
+
+**Dismissed**
+- (Gemini nit) importing `_macro_block` etc. from `daily_briefing`:
+  intentional, documented reuse inside one repo — extracting a shared module
+  is refactoring beyond this change's need (internal reviewer concurred).

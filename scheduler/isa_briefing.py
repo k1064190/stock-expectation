@@ -161,10 +161,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         # No side effects: skip the snapshot AND the decision-logging
-        # `isa rebalance`; the status payload's band check stands in.
+        # `isa rebalance`; the status payload's band check stands in, with
+        # the remedy key kept so the prompt shape SKILL.md expects holds.
         rebalance = dict(status.get("rebalance", {}))
+        rebalance["min_contribution_to_restore"] = None
         rebalance["notes"] = rebalance.get("notes", []) + [
-            "dry-run: contribution-only remedy omitted (isa rebalance not run)"
+            "dry-run: remedy not computed (rebalance skipped to avoid decision logging)"
         ]
         print(build_prompt(args.amount, status, rebalance, _macro_block()))
         return 0

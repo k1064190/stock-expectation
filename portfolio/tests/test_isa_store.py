@@ -160,9 +160,48 @@ def test_nav_snapshot_roundtrip_with_null_benchmark(conn):
 def test_nav_snapshots_newest_first_and_limit(conn):
     from portfolio.isa_store import list_nav_snapshots, save_nav_snapshot
 
-    for i in range(4):
-        save_nav_snapshot(
-            conn, nav_krw=i, contributions_cum_krw=i, benchmarks={}, notes=[]
+    # Distinct dates (same-day saves REPLACE — covered separately below).
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO isa_nav "
+            "(snapped_at, nav_krw, contributions_cum_krw, benchmarks, notes) "
+            f"VALUES ('2026-0{i + 1}-01T07:37:00', {i}, {i}, '{{}}', '[]')"
         )
+    conn.commit()
+    save_nav_snapshot(conn, nav_krw=3, contributions_cum_krw=3, benchmarks={}, notes=[])
     rows = list_nav_snapshots(conn, limit=2)
     assert [r["nav_krw"] for r in rows] == [3, 2]
+
+
+def test_same_day_snapshot_replaced_not_duplicated(conn):
+    from portfolio.isa_store import list_nav_snapshots, save_nav_snapshot
+
+    save_nav_snapshot(
+        conn, nav_krw=1_000, contributions_cum_krw=900, benchmarks={}, notes=[]
+    )
+    save_nav_snapshot(
+        conn, nav_krw=2_000, contributions_cum_krw=900, benchmarks={}, notes=[]
+    )
+    rows = list_nav_snapshots(conn)
+    assert len(rows) == 1  # same calendar date → replaced, not appended
+    assert rows[0]["nav_krw"] == 2_000  # latest values win
+    assert any("replaced same-day snapshot" in n for n in rows[0]["notes"])
+
+
+def test_different_day_snapshots_both_kept(conn):
+    from portfolio.isa_store import list_nav_snapshots, save_nav_snapshot
+
+    conn.execute(
+        "INSERT INTO isa_nav "
+        "(snapped_at, nav_krw, contributions_cum_krw, benchmarks, notes) "
+        "VALUES ('2026-06-01T07:37:00', 500, 400, '{}', '[]')"
+    )
+    conn.commit()
+    save_nav_snapshot(
+        conn, nav_krw=1_000, contributions_cum_krw=900, benchmarks={}, notes=[]
+    )
+    rows = list_nav_snapshots(conn)
+    assert len(rows) == 2
+    assert not any(
+        "replaced" in n for r in rows for n in r["notes"]
+    )  # nothing replaced across days

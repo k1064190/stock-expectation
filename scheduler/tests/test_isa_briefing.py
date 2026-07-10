@@ -124,3 +124,18 @@ def test_no_telegram_flag(monkeypatch):
 
     rc = isa_briefing.main(["--amount", "1000000", "--no-telegram"])
     assert rc == 0
+
+
+def test_dry_run_prompt_keeps_rebalance_contract(monkeypatch, capsys):
+    """The dry-run prompt must keep the rebalance block shape SKILL.md expects
+    (min_contribution_to_restore present, clearly marked as not computed)."""
+    monkeypatch.setattr(isa_briefing, "_stock_cli_json", lambda cli_args: STATUS)
+    monkeypatch.setattr(isa_briefing, "_macro_block", lambda: "MACRO")
+    monkeypatch.setattr(isa_briefing, "call_claude_code", _no_call("claude runner"))
+    monkeypatch.setattr(isa_briefing, "send_briefing", _no_call("telegram"))
+
+    rc = isa_briefing.main(["--amount", "1000000", "--dry-run"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "min_contribution_to_restore" in out
+    assert "dry-run: remedy not computed" in out

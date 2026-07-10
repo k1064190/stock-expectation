@@ -234,25 +234,41 @@ def save_nav_snapshot(
     benchmarks: dict,
     notes: list[str],
 ) -> int:
-    """Append one NAV snapshot to the track record.
+    """Record one NAV snapshot; a same-day re-run replaces that day's row.
+
+    The track record is monthly — debugging or manual re-runs on the same
+    calendar date must not pollute the history, so an existing row from
+    today is deleted first and the replacement carries a visible note.
 
     Args:
         conn: portfolio.db connection (ISA tables must exist).
         nav_krw: current book value in integer KRW.
         contributions_cum_krw: cumulative net contributions (BUY − SELL cost).
-        benchmarks: index closes, e.g. {"sp500": 6123.4, "kospi": None} —
-            None per index when its fetch failed (fail-open, noted).
+        benchmarks: per-index ``{"close": float|None, "session": str|None}``
+            dicts (None close when the fetch failed — fail-open, noted).
         notes: visible notes (e.g. benchmark fetch failures).
 
     Returns:
         The new isa_nav row id.
     """
     now = datetime.now().isoformat()
+    today = now[:10]
+    deleted = conn.execute(
+        "DELETE FROM isa_nav WHERE date(snapped_at) = ?", (today,)
+    ).rowcount
+    if deleted:
+        notes = notes + ["replaced same-day snapshot"]
     cur = conn.execute(
         "INSERT INTO isa_nav "
         "(snapped_at, nav_krw, contributions_cum_krw, benchmarks, notes) "
         "VALUES (?, ?, ?, ?, ?)",
-        (now, nav_krw, contributions_cum_krw, json.dumps(benchmarks), json.dumps(notes)),
+        (
+            now,
+            nav_krw,
+            contributions_cum_krw,
+            json.dumps(benchmarks),
+            json.dumps(notes),
+        ),
     )
     conn.commit()
     return cur.lastrowid

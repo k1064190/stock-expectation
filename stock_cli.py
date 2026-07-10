@@ -1351,9 +1351,13 @@ def _isa_cum_contributions(conn, pf_id: str) -> int:
     Returns:
         Net contributed KRW (can be negative after large sells).
     """
+    # Sides are explicit (schema CHECKs BUY/SELL today; a future side must
+    # opt into this sum rather than silently counting as a sell).
     row = conn.execute(
-        "SELECT COALESCE(SUM(CASE WHEN side = 'BUY' THEN quantity * price "
-        "ELSE -quantity * price END), 0) AS cum "
+        "SELECT COALESCE(SUM(CASE "
+        "WHEN side = 'BUY' THEN quantity * price "
+        "WHEN side = 'SELL' THEN -quantity * price "
+        "ELSE 0 END), 0) AS cum "
         "FROM transactions WHERE portfolio_id = ?",
         (pf_id,),
     ).fetchone()
@@ -1426,8 +1430,12 @@ def cmd_isa_snapshot(args) -> int:
     """Record a NAV snapshot: book value, cumulative contributions, benchmarks.
 
     Pure Python (no LLM). Benchmark closes (S&P 500 ^GSPC, KOSPI ^KS11) come
-    from the US provider's yfinance path; a failed fetch stores null for that
-    index with a visible note (fail-open).
+    from the US provider's yfinance path and are stored as
+    ``{"close": float|null, "session": "YYYY-MM-DD"|null}`` — closes are
+    prior-session values and market calendars diverge, so the session date
+    disambiguates. A failed fetch stores nulls with a visible note
+    (fail-open). Same-day re-runs replace the day's row (see
+    ``save_nav_snapshot``).
 
     Args:
         args: (no arguments).
@@ -1448,9 +1456,18 @@ def cmd_isa_snapshot(args) -> int:
             us = _get_provider("US")
             benchmarks = {}
             for name, ticker in ISA_BENCHMARKS.items():
-                close = us.get_current_price(ticker)
-                benchmarks[name] = close
-                if close is None:
+                # Store the close WITH its actual session date — market
+                # calendars diverge (^KS11 can have a KST session ^GSPC
+                # doesn't yet), so closes are prior-session values and the
+                # session field says which one.
+                bars = us.get_price_history(ticker, days=7)
+                if bars:
+                    benchmarks[name] = {
+                        "close": bars[-1].close,
+                        "session": bars[-1].date,
+                    }
+                else:
+                    benchmarks[name] = {"close": None, "session": None}
                     notes.append(f"benchmark fetch failed: {name} ({ticker})")
             snapshot_id = save_nav_snapshot(conn, nav, contributions, benchmarks, notes)
             _print_json(
