@@ -132,7 +132,9 @@ from portfolio.isa_store import (
     get_active_target,
     init_isa_tables,
     list_decisions,
+    list_nav_snapshots,
     log_decision,
+    save_nav_snapshot,
     save_target,
 )
 from portfolio.evaluator import (
@@ -1335,8 +1337,38 @@ def _isa_context(conn):
     return target, pf
 
 
+def _isa_cum_contributions(conn, pf_id: str) -> int:
+    """Cumulative net contributions to the ISA book, in integer KRW.
+
+    Sum of BUY transaction cost minus SELL proceeds over the portfolio's
+    entire history (simple net-cost basis; a money-weighted return refinement
+    is future work).
+
+    Args:
+        conn: portfolio.db connection.
+        pf_id: portfolio id.
+
+    Returns:
+        Net contributed KRW (can be negative after large sells).
+    """
+    row = conn.execute(
+        "SELECT COALESCE(SUM(CASE WHEN side = 'BUY' THEN quantity * price "
+        "ELSE -quantity * price END), 0) AS cum "
+        "FROM transactions WHERE portfolio_id = ?",
+        (pf_id,),
+    ).fetchone()
+    return int(round(row["cum"]))
+
+
+# Benchmark index tickers for the NAV track record. Both are fetched via the
+# US provider's yfinance path — verified 2026-07-10: yfinance serves ^GSPC and
+# ^KS11 (KOSPI) directly, while the KR provider mangles index symbols
+# (its ticker normalization produces "0^KS11", which 404s on every source).
+ISA_BENCHMARKS = {"sp500": "^GSPC", "kospi": "^KS11"}
+
+
 def cmd_isa_status(args) -> int:
-    """Active target + current class weights, drift, and band check.
+    """Active target + current class weights, drift, band check, track record.
 
     Args:
         args: (no arguments).
@@ -1359,6 +1391,14 @@ def cmd_isa_status(args) -> int:
             }
             drift = compute_drift(value_by_class, target["allocation"])
             rb = check_rebalance(value_by_class, target["allocation"])
+            contributions = _isa_cum_contributions(conn, pf.id)
+            # Simple since-inception return on net contributions (not
+            # money-weighted — refinement is future work).
+            return_pct = (
+                round((total - contributions) / contributions * 100.0, 2)
+                if contributions > 0
+                else None
+            )
             _print_json(
                 {
                     "asof": datetime.now().date().isoformat(),
@@ -1368,7 +1408,59 @@ def cmd_isa_status(args) -> int:
                     "weights_pct": weights,
                     "drift_pp": {cls: round(d, 3) for cls, d in drift.items()},
                     "rebalance": rb,
+                    "contributions_cum_krw": contributions,
+                    "since_inception_return_pct": return_pct,
+                    "recent_snapshots": list_nav_snapshots(conn, limit=3),
                     "notes": notes + rb["notes"],
+                }
+            )
+            return 0
+        finally:
+            conn.close()
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+
+
+def cmd_isa_snapshot(args) -> int:
+    """Record a NAV snapshot: book value, cumulative contributions, benchmarks.
+
+    Pure Python (no LLM). Benchmark closes (S&P 500 ^GSPC, KOSPI ^KS11) come
+    from the US provider's yfinance path; a failed fetch stores null for that
+    index with a visible note (fail-open).
+
+    Args:
+        args: (no arguments).
+
+    Returns:
+        0 on success, 1 when the target or the ISA portfolio is missing.
+    """
+    try:
+        conn = pf_get_connection()
+        try:
+            ctx = _isa_context(conn)
+            if ctx is None:
+                return 1
+            target, pf = ctx
+            value_by_class, notes = _isa_class_values(conn, pf, target["etf_map"])
+            nav = int(round(sum(value_by_class.values())))
+            contributions = _isa_cum_contributions(conn, pf.id)
+            us = _get_provider("US")
+            benchmarks = {}
+            for name, ticker in ISA_BENCHMARKS.items():
+                close = us.get_current_price(ticker)
+                benchmarks[name] = close
+                if close is None:
+                    notes.append(f"benchmark fetch failed: {name} ({ticker})")
+            snapshot_id = save_nav_snapshot(conn, nav, contributions, benchmarks, notes)
+            _print_json(
+                {
+                    "id": snapshot_id,
+                    "snapped_at": datetime.now().isoformat(),
+                    "nav_krw": nav,
+                    "contributions_cum_krw": contributions,
+                    "benchmarks": benchmarks,
+                    "notes": notes,
                 }
             )
             return 0
@@ -3144,6 +3236,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Band breaches + minimum contribution-only remedy (no sells)",
     )
     ir.set_defaults(func=cmd_isa_rebalance)
+
+    isn = isa_sub.add_parser(
+        "snapshot",
+        help="Record a NAV snapshot (book value + contributions + benchmarks)",
+    )
+    isn.set_defaults(func=cmd_isa_snapshot)
 
     il = isa_sub.add_parser("log", help="ISA decision history (newest first)")
     il.add_argument(

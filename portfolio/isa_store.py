@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS isa_decisions (
     final TEXT NOT NULL,
     notes TEXT
 );
+
+CREATE TABLE IF NOT EXISTS isa_nav (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapped_at TEXT NOT NULL,
+    nav_krw INTEGER NOT NULL,
+    contributions_cum_krw INTEGER NOT NULL,
+    benchmarks TEXT NOT NULL,
+    notes TEXT
+);
 """
 
 # Weight-sum validation tolerance (float inputs like 33.3+33.3+33.4).
@@ -212,6 +221,64 @@ def list_decisions(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
                 json.loads(r["proposal"]) if r["proposal"] is not None else None
             ),
             "final": json.loads(r["final"]),
+            "notes": json.loads(r["notes"]) if r["notes"] is not None else [],
+        }
+        for r in rows
+    ]
+
+
+def save_nav_snapshot(
+    conn: sqlite3.Connection,
+    nav_krw: int,
+    contributions_cum_krw: int,
+    benchmarks: dict,
+    notes: list[str],
+) -> int:
+    """Append one NAV snapshot to the track record.
+
+    Args:
+        conn: portfolio.db connection (ISA tables must exist).
+        nav_krw: current book value in integer KRW.
+        contributions_cum_krw: cumulative net contributions (BUY − SELL cost).
+        benchmarks: index closes, e.g. {"sp500": 6123.4, "kospi": None} —
+            None per index when its fetch failed (fail-open, noted).
+        notes: visible notes (e.g. benchmark fetch failures).
+
+    Returns:
+        The new isa_nav row id.
+    """
+    now = datetime.now().isoformat()
+    cur = conn.execute(
+        "INSERT INTO isa_nav "
+        "(snapped_at, nav_krw, contributions_cum_krw, benchmarks, notes) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (now, nav_krw, contributions_cum_krw, json.dumps(benchmarks), json.dumps(notes)),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_nav_snapshots(conn: sqlite3.Connection, limit: int = 24) -> list[dict]:
+    """Return the newest NAV snapshots first, JSON fields decoded.
+
+    Args:
+        conn: portfolio.db connection (ISA tables must exist).
+        limit: max rows (default 24 — two years of monthly snapshots).
+
+    Returns:
+        List of ``{"id", "snapped_at", "nav_krw", "contributions_cum_krw",
+        "benchmarks", "notes"}`` dicts.
+    """
+    rows = conn.execute(
+        "SELECT * FROM isa_nav ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "snapped_at": r["snapped_at"],
+            "nav_krw": r["nav_krw"],
+            "contributions_cum_krw": r["contributions_cum_krw"],
+            "benchmarks": json.loads(r["benchmarks"]),
             "notes": json.loads(r["notes"]) if r["notes"] is not None else [],
         }
         for r in rows

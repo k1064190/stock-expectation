@@ -135,3 +135,34 @@ def test_save_target_rejects_duplicate_codes(conn):
             {"a": "360750", "b": "360750"},
             None,
         )
+
+
+def test_nav_snapshot_roundtrip_with_null_benchmark(conn):
+    from portfolio.isa_store import list_nav_snapshots, save_nav_snapshot
+
+    sid = save_nav_snapshot(
+        conn,
+        nav_krw=9_000_000,
+        contributions_cum_krw=8_500_000,
+        benchmarks={"sp500": 7543.6, "kospi": None},
+        notes=["benchmark fetch failed: kospi"],
+    )
+    assert isinstance(sid, int)
+    rows = list_nav_snapshots(conn)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["nav_krw"] == 9_000_000
+    assert r["contributions_cum_krw"] == 8_500_000
+    assert r["benchmarks"] == {"sp500": 7543.6, "kospi": None}
+    assert r["notes"] == ["benchmark fetch failed: kospi"]
+
+
+def test_nav_snapshots_newest_first_and_limit(conn):
+    from portfolio.isa_store import list_nav_snapshots, save_nav_snapshot
+
+    for i in range(4):
+        save_nav_snapshot(
+            conn, nav_krw=i, contributions_cum_krw=i, benchmarks={}, notes=[]
+        )
+    rows = list_nav_snapshots(conn, limit=2)
+    assert [r["nav_krw"] for r in rows] == [3, 2]
