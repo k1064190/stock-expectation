@@ -642,6 +642,69 @@
         </div>
 
         <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Round 1 (internal: fully clean LGTM, suggestions only;
+            Gemini/antigravity: real findings; Codex: pending — to be reconciled
+            if it replies), addressed in
+            <code
+              >fix(isa): guard zeroed-tilt renormalization, weight-range
+              validation, band float edge (review round 1)</code
+            >.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round">Fixed (Gemini)</span>
+              <ul>
+                <li>
+                  <strong>(BLOCKER)</strong> Tilts flooring EVERY class to 0
+                  (e.g. ten 10% classes each tilted -10pp) made renormalization
+                  impossible: <code>eff</code> stayed all-zero, the proportional
+                  path produced all-zero raws, and the remainder loop
+                  distributed at most one won per class — violating
+                  <code>sum(buys) == amount</code> (money destroyed). Fixed at
+                  the source: <code>effective_targets</code> falls back to the
+                  ORIGINAL targets with a visible "tilt zeroed all classes —
+                  tilt ignored" note when the post-floor total is 0.
+                  <code>allocate_contribution</code> additionally asserts the
+                  invariant and raises ValueError with context if ever violated
+                  — money code fails loud, not wrong.
+                </li>
+                <li>
+                  Band-edge float noise: drift 5.0000000001 (prints as 5.0) was
+                  a spurious breach → <code>check_rebalance</code> compares
+                  <code>abs(round(d, 3)) &gt; band_pp</code>. (The remedy search
+                  keeps the stricter exact predicate; exact-within-band implies
+                  rounded-within-band, so the remedy always satisfies the
+                  check.)
+                </li>
+                <li>
+                  <code>save_target</code> accepted negative weights that sum to
+                  100 (A=110/B=-10) → every weight validated within [0, 100],
+                  ValueError lists offending classes; mirrored in a CLI init
+                  error-path test.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round">Applied (internal suggestion)</span>
+              <ul>
+                <li>
+                  Worked rounding example (100 over 66.7/33.3 → 67/33, tie →
+                  name ascending) added to the
+                  <code>allocate_contribution</code> docstring.
+                </li>
+              </ul>
+            </li>
+          </ul>
+          <p style="margin-top: 0.75rem">
+            New tests: zeroed-tilt fallback (note + money conserved + eff ==
+            originals), band-edge non-breach, store negative-weight rejection,
+            CLI negative-weight rc 1.
+          </p>
+        </div>
+
+        <div class="card-section">
           <h4>Retrospective</h4>
           <p>
             <em
