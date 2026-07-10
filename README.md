@@ -346,7 +346,12 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 ./bin/stock-cli isa status
 ./bin/stock-cli isa allocate --amount 1000000 --tilt "overseas_equity=+5,bond=-5" --dry-run
 ./bin/stock-cli isa rebalance
+./bin/stock-cli isa snapshot        # NAV 스냅샷 (벤치마크 ^GSPC/^KS11 — 직전 세션 종가 + 세션 날짜 기록; 같은 날 재실행은 교체)
 ./bin/stock-cli isa log --limit 10
+
+# 월간 ISA 브리핑 (Stage 29: 스냅샷 → 브리핑 → 텔레그램; 적립금은 항상 명시)
+uv run python scheduler/isa_briefing.py --amount 1000000 --dry-run   # 프롬프트 미리보기
+uv run python scheduler/isa_briefing.py --amount 1000000             # 실제 실행
 
 # Stage 7-A 메모리 (mem0 + Qdrant, --extra memory 필요)
 ./bin/stock-cli memory stats

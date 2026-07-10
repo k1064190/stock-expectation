@@ -105,3 +105,6 @@ read this index first, then open only the linked stage files that match.
 
 ## Stage 28 — ISA targets, drift-DCA allocator, decision log
 - [isa-targets-allocator](stage-28/isa-targets-allocator.md) — Adds the ISA decision core: approved targets + class→ETF map, a deterministic sell-free contribution allocator with a ±10%p tilt clamp and ±5%p band, contribution-only rebalance remedies, and a full decision log via `stock-cli isa`.
+
+## Stage 29 — ISA monthly briefing + track record
+- [isa-briefing-track-record](stage-29/isa-briefing-track-record.md) — Closes the ISA loop: `isa snapshot` NAV track record vs S&P 500/KOSPI, a monthly `scheduler/isa_briefing.py` runner (Telegram, explicit --amount), and the `/isa-briefing` skill whose tilts stay inside the code-enforced clamp; RISK_OFF gates stocks, never the DCA.

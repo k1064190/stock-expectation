@@ -53,12 +53,29 @@ UNIVERSE = [
 ]
 
 # Prices chosen so the fixture book is exactly 5.4M/3.6M (60/40).
-PRICES = {"360750": 54_000.0, "114260": 72_000.0, "069500": 54_000.0}
+PRICES = {
+    "360750": 54_000.0,
+    "114260": 72_000.0,
+    "069500": 54_000.0,
+    # benchmark indexes (fetched via the US provider yfinance path)
+    "^GSPC": 7543.6,
+    "^KS11": 7475.9,
+}
+# Benchmark closes carry their actual session date (calendars diverge:
+# ^KS11 has a KST session ^GSPC doesn't yet).
+BENCH_SESSIONS = {"^GSPC": "2026-07-09", "^KS11": "2026-07-10"}
 
 
 class _StubProvider:
     def get_current_price(self, ticker):
         return PRICES.get(ticker)
+
+    def get_price_history(self, ticker, days=7):
+        price = PRICES.get(ticker)
+        if price is None:
+            return []
+        session = BENCH_SESSIONS.get(ticker, "2026-07-10")
+        return [types.SimpleNamespace(date=session, close=price)]
 
 
 @pytest.fixture
@@ -409,3 +426,106 @@ def test_status_normalizes_held_ticker_codes(env, capsys):
     assert rc == 0
     assert out["value_by_class"]["domestic_equity"] == 5_400_000.0
     assert not any("excluded" in n for n in out["notes"])
+
+
+# --- snapshot / track record (stage 29) ----------------------------------------
+
+
+def test_snapshot_happy_path(env, capsys):
+    _do_init(capsys, allocation="overseas_equity=50,bond=50")
+    _seed_positions(env)
+    rc, out = _run(capsys, stock_cli.cmd_isa_snapshot, types.SimpleNamespace())
+    assert rc == 0
+    assert out["nav_krw"] == 9_000_000  # 5.4M + 3.6M at stub prices
+    # cum contributions: 100*50,000 + 50*70,000 (BUY cost basis)
+    assert out["contributions_cum_krw"] == 8_500_000
+    # closes carry their actual session date (calendars diverge across markets)
+    assert out["benchmarks"] == {
+        "sp500": {"close": 7543.6, "session": "2026-07-09"},
+        "kospi": {"close": 7475.9, "session": "2026-07-10"},
+    }
+
+
+def test_snapshot_sells_reduce_cum_contributions(env, capsys):
+    _do_init(capsys, allocation="overseas_equity=50,bond=50")
+    _seed_positions(env)
+    conn = env()
+    pf_id = conn.execute("SELECT id FROM portfolios").fetchone()["id"]
+    add_transaction(
+        conn,
+        portfolio_id=pf_id,
+        ticker="114260",
+        side="SELL",
+        quantity=10,
+        price=71_000,
+        currency="KRW",
+        transacted_at="2026-02-02",
+    )
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_isa_snapshot, types.SimpleNamespace())
+    assert rc == 0
+    assert out["contributions_cum_krw"] == 8_500_000 - 710_000
+
+
+def test_snapshot_benchmark_failure_is_null_with_note(env, capsys, monkeypatch):
+    _do_init(capsys, allocation="overseas_equity=50,bond=50")
+    _seed_positions(env)
+
+    class NoBenchProvider(_StubProvider):
+        def get_price_history(self, ticker, days=7):
+            if ticker.startswith("^"):
+                return []
+            return super().get_price_history(ticker, days)
+
+    monkeypatch.setattr(stock_cli, "_get_provider", lambda market: NoBenchProvider())
+    rc, out = _run(capsys, stock_cli.cmd_isa_snapshot, types.SimpleNamespace())
+    assert rc == 0
+    assert out["benchmarks"] == {
+        "sp500": {"close": None, "session": None},
+        "kospi": {"close": None, "session": None},
+    }
+    assert any("benchmark" in n for n in out["notes"])
+
+
+def test_snapshot_requires_target_no_row_written(env, capsys):
+    """Missing target → rc 1 early exit and NO isa_nav row."""
+    rc, out = _run(capsys, stock_cli.cmd_isa_snapshot, types.SimpleNamespace())
+    assert rc == 1 and "isa init" in out["error"]
+    conn = env()
+    count = conn.execute("SELECT COUNT(*) AS n FROM isa_nav").fetchone()["n"]
+    conn.close()
+    assert count == 0
+
+
+def test_status_shows_recent_snapshots_and_return(env, capsys):
+    _do_init(capsys, allocation="overseas_equity=50,bond=50")
+    _seed_positions(env)
+    # 3 historical monthly rows (same-day saves replace, so seed distinct
+    # dates directly) + today's snapshot → recent_snapshots caps at 3.
+    conn = env()
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO isa_nav "
+            "(snapped_at, nav_krw, contributions_cum_krw, benchmarks, notes) "
+            f"VALUES ('2026-0{i + 1}-01T07:37:00', {i}, {i}, '{{}}', '[]')"
+        )
+    conn.commit()
+    conn.close()
+    rc, _out = _run(capsys, stock_cli.cmd_isa_snapshot, types.SimpleNamespace())
+    assert rc == 0
+    rc, out = _run(capsys, stock_cli.cmd_isa_status, types.SimpleNamespace())
+    assert rc == 0
+    assert len(out["recent_snapshots"]) == 3
+    assert out["recent_snapshots"][0]["nav_krw"] == 9_000_000  # newest first
+    # (9,000,000 - 8,500,000) / 8,500,000 * 100 = 5.88%
+    assert out["since_inception_return_pct"] == 5.88
+
+
+def test_status_empty_book_no_division_by_zero(env, capsys):
+    _do_init(capsys, allocation="overseas_equity=50,bond=50")
+    conn = env()
+    create_portfolio(conn, "KR", "ISA")
+    conn.close()
+    rc, out = _run(capsys, stock_cli.cmd_isa_status, types.SimpleNamespace())
+    assert rc == 0
+    assert out["since_inception_return_pct"] is None
