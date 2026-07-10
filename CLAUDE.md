@@ -132,6 +132,16 @@ Pure Python: fetches prices, scores predictions as HIT/MISS/EXPIRED.
 uv run python scheduler/outcome_tracker.py
 ```
 
+### Weekly gold trend (no LLM cost beyond one summary call)
+
+Pure-Python weekly job scoring KRX gold (`411060`) trend + a macro scorecard, emitting
+an ACCUMULATE/HOLD/PAUSE verdict. Slow macro inputs live in `data/gold_macro_factors.yaml`
+(refresh quarterly). Runs Sunday 21:00 KST.
+
+```bash
+uv run python scheduler/gold_trend.py --llm-mode none --no-telegram   # dry run
+```
+
 ### Monthly ISA briefing (Stage 29)
 
 Snapshots the ISA book's NAV (vs ^GSPC/^KS11 benchmarks), then dispatches the

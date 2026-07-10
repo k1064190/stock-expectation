@@ -92,6 +92,12 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # and rolls state/calibration-trend.json (last 12 weeks).
 0 22 * * 0 cd $PROJECT && uv run python scheduler/weekly_calibration.py >> $LOG_DIR/weekly_calibration.log 2>&1
 
+# Weekly gold trend analysis — Sunday 21:00 KST (before the 22:00 calibration).
+# Deterministic KRX-gold technical + macro scorecard + one LLM summary paragraph.
+# Emits ACCUMULATE/HOLD/PAUSE to Telegram + reports/gold-trend-YYYY-MM-DD.md and
+# rolls state/gold_trend.json (12 weeks). Refresh data/gold_macro_factors.yaml quarterly.
+0 21 * * 0 cd $PROJECT && uv run python scheduler/gold_trend.py >> $LOG_DIR/gold_trend.log 2>&1
+
 # Learned-blend capstone readiness monitor — Monday 08:13 KST
 # Pure read; counts CLOSED predictions carrying pillar components and sends a
 # one-shot Telegram ping (then writes state/capstone_ready.flag) once >=100
