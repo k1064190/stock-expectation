@@ -99,3 +99,6 @@ read this index first, then open only the linked stage files that match.
 
 ## Stage 26 — KR ETF data layer
 - [etf-data-layer](stage-26/etf-data-layer.md) — Adds the KR ETF universe + metadata layer (Naver source, cp949; pykrx broken) with tax/asset classification, CSV stale-fallback cache, and `stock-cli etf list/info`.
+
+## Stage 27 — ETF scoring and same-index comparison
+- [etf-scoring-compare](stage-27/etf-scoring-compare.md) — Adds deterministic set-relative cost+liquidity scoring and `stock-cli etf compare` (codes or --query) picking the best ticker among same-index ETFs; 추적오차 absent by documented degradation.
