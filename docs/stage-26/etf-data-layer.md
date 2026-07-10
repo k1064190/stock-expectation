@@ -13,10 +13,10 @@ stage-3 ticker-list incident), so a new source was needed.
 - `mcp-market-data/etf_kr.py` — universe fetch + classification, per-ETF detail
   enrichment, and a CSV cache with visible stale fallback.
 - `stock-cli etf list` — AUM-sorted universe with `--asset-class`, `--min-aum` (억원),
-  `--include-leverage` (leverage/inverse excluded by default), `--refresh`, `--limit`.
+  `--include-leverage` (leverage/inverse excluded by default), `--limit`.
 - `stock-cli etf info CODE` — universe row merged with 펀드보수(`fund_pay_pct`) and
-  기초지수(`base_index`).
-- 9 tests (8 offline + 1 network-marked live smoke) for the module, 6 in-process CLI tests.
+  기초지수(`base_index`); the code is zero-padded before lookup.
+- 16 module tests (15 offline + 1 network-marked live smoke), 7 in-process CLI tests.
 
 ## How
 
@@ -50,6 +50,49 @@ metadata with a visible flag.
   call time.
 - CLAUDE.md has no subcommand enumeration line; one `etf list` example was added to its
   CLI examples instead.
+
+## Review
+
+Round 1 (internal + Gemini/antigravity + Codex bot), addressed in
+`fix(etf): address review round 1 — parse fail-open, cache-write resilience,
+code normalization, token coverage`:
+
+**Fixed**
+- (Gemini blocker) `float(ret_3m)` crashed on `""` (recently listed ETFs) →
+  `not in (None, "")` guard, plus general per-row robustness below.
+- (Codex P2 + internal critical) `_parse_universe` ran outside the fail-open
+  choke point, so one malformed row crashed the CLI instead of falling back to
+  the stale cache → per-row try/except in `_parse_row` (skips malformed rows
+  with a visible "skipped N malformed universe rows" note that surfaces through
+  `get_etf_universe` into the CLI JSON) AND parsing moved inside the
+  `fetch_etf_universe` try block.
+- (Codex P2) `_save_cache` failure (read-only `data/`) killed a successful live
+  fetch → wrapped in try/except; live rows are returned with a
+  "cache write failed" note.
+- (Gemini + Codex P3) `etf info 69500` failed to find KODEX 200 →
+  `cmd_etf_info` zero-pads the code before both the universe lookup and the
+  detail fetch.
+- (Gemini) `(합성 H)` was not detected as hedged → suffix check relaxed to
+  `endswith("H)")`.
+- (internal warning) Leverage tokens extended with "곱버스" and "3배"; a live
+  probe over all 1,141 names then surfaced the long-short futures pairs
+  (`KODEX 200롱코스닥150숏선물`), adding "숏" as well — flagged total 107.
+- (internal warning) Cache round-trip test upgraded to full dataclass equality
+  (`got == rows`), future-proofing `_OPTIONAL_FLOAT_FIELDS` drift.
+- (internal suggestion) Unused `--refresh` flag / `refresh` param removed
+  (YAGNI — live-first is the only mode).
+
+**Fixed with correction (evidence over reviewer)**
+- The internal reviewer's "skip rows whose zfilled code isn't 6 **digits**" is
+  wrong against live data: the post-2024 KRX scheme issues **alphanumeric**
+  short codes (`0193T0`, `0167A0`, ...) — digits-only validation dropped 274 of
+  1,141 real ETFs in the live probe. Validation is 6 alphanumeric chars.
+
+**Dismissed**
+- (Gemini nit) `decode("cp949", errors="replace")`: silent name corruption is
+  worse than the designed hard-fail → visible stale-cache fallback.
+- (internal suggestion) typing-introspection for `_OPTIONAL_FLOAT_FIELDS`:
+  over-engineering; drift is now caught by the round-trip equality test.
 
 ## Retrospective
 

@@ -75,7 +75,7 @@ PAYLOAD = {
     }
 }
 
-ROWS = etf_kr._parse_universe(PAYLOAD)
+ROWS, _ = etf_kr._parse_universe(PAYLOAD)
 
 
 def _patch_universe(monkeypatch):
@@ -88,7 +88,6 @@ def _list_args(**overrides):
         "asset_class": None,
         "min_aum": None,
         "include_leverage": False,
-        "refresh": False,
         "limit": None,
     }
     defaults.update(overrides)
@@ -147,7 +146,7 @@ def test_info_merges_universe_and_detail(monkeypatch, capsys):
             "notes": [],
         },
     )
-    args = types.SimpleNamespace(code="360750", refresh=False)
+    args = types.SimpleNamespace(code="360750")
     rc, out = _run(capsys, stock_cli.cmd_etf_info, args)
     assert rc == 0
     assert out["name"] == "TIGER 미국S&P500"
@@ -155,9 +154,27 @@ def test_info_merges_universe_and_detail(monkeypatch, capsys):
     assert out["base_index"] == "S&P 500"
 
 
+def test_info_zero_pads_short_code(monkeypatch, capsys):
+    """``etf info 69500`` must find KODEX 200 (069500) — lookup AND detail
+    fetch use the zero-padded code."""
+    _patch_universe(monkeypatch)
+    seen = {}
+
+    def fake_detail(code, **kw):
+        seen["code"] = code
+        return {"fund_pay_pct": 0.15, "base_index": "KOSPI 200", "notes": []}
+
+    monkeypatch.setattr(etf_kr, "fetch_etf_detail", fake_detail)
+    args = types.SimpleNamespace(code="69500")
+    rc, out = _run(capsys, stock_cli.cmd_etf_info, args)
+    assert rc == 0
+    assert out["name"] == "KODEX 200"
+    assert seen["code"] == "069500"
+
+
 def test_info_unknown_code_errors(monkeypatch, capsys):
     _patch_universe(monkeypatch)
-    args = types.SimpleNamespace(code="999999", refresh=False)
+    args = types.SimpleNamespace(code="999999")
     rc, out = _run(capsys, stock_cli.cmd_etf_info, args)
     assert rc != 0
     assert "error" in out

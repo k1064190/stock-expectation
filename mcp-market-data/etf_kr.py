@@ -32,7 +32,10 @@ TAB_ASSET_CLASS = {
 # 국내주식형(매매차익 비과세)은 국내 주식 지수/업종 현물형만. 파생/해외/채권/
 # 원자재는 기타형(보유기간 과세) — ISA 절세 효과가 큰 쪽.
 _DOMESTIC_EQUITY_TABS = {1, 2}
-_LEVERAGE_TOKENS = ("레버리지", "인버스", "2X", "2x")
+# "숏" catches the long-short futures pairs (e.g. KODEX 200롱코스닥150숏선물)
+# found by the 2026-07-10 live name probe; the rest are the usual KR
+# leverage/inverse markers.
+_LEVERAGE_TOKENS = ("레버리지", "인버스", "2X", "2x", "곱버스", "3배", "숏")
 
 
 class EtfDataUnavailable(Exception):
@@ -56,64 +59,88 @@ class EtfInfo:
     leveraged_or_inverse: bool
 
 
-def _parse_universe(payload: dict) -> list[EtfInfo]:
+def _parse_row(it: dict) -> EtfInfo:
+    """Convert one etfItemList entry into a classified EtfInfo.
+
+    Args: it — one raw item dict from the universe payload.
+    Returns: the parsed EtfInfo. Raises ValueError on a malformed row
+    (missing/invalid itemcode, unparseable numerics). Codes are 6 alphanumeric
+    chars — the post-2024 KRX scheme issues alphanumeric short codes (e.g.
+    "0193T0"), so digits-only validation would drop hundreds of real ETFs.
+    """
+    raw_code = str(it.get("itemcode") or "").strip()
+    code = raw_code.zfill(6)
+    if not raw_code or len(code) != 6 or not code.isalnum():
+        raise ValueError(f"invalid itemcode: {raw_code!r}")
+    name = it.get("itemname", "")
+    price = float(it.get("nowVal") or 0)
+    nav = it.get("nav")
+    nav = float(nav) if nav not in (None, "", 0) else None
+    deviation = round((price - nav) / nav * 100, 3) if nav else None
+    tab = int(it.get("etfTabCode") or 7)
+    lev = any(tok in name for tok in _LEVERAGE_TOKENS) or tab == 3
+    tax = (
+        "domestic_equity_type"
+        if (tab in _DOMESTIC_EQUITY_TABS and not lev)
+        else "other_type"
+    )
+    ret_3m = it.get("threeMonthEarnRate")
+    return EtfInfo(
+        code=code,
+        name=name,
+        price=price,
+        nav=nav,
+        deviation_pct=deviation,
+        aum_100m_krw=int(it.get("marketSum") or 0),
+        value_million_krw=int(it.get("amonut") or 0),
+        ret_3m_pct=float(ret_3m) if ret_3m not in (None, "") else None,
+        tab_code=tab,
+        asset_class=TAB_ASSET_CLASS.get(tab, "other"),
+        tax_type=tax,
+        # covers both "...(H)" and synthetic "...(합성 H)" suffixes
+        hedged=name.rstrip().endswith("H)"),
+        leveraged_or_inverse=lev,
+    )
+
+
+def _parse_universe(payload: dict) -> tuple[list[EtfInfo], list[str]]:
     """Parse the etfItemList payload into classified EtfInfo rows.
 
+    Malformed rows (bad numerics, missing/invalid itemcode) are skipped, not
+    fatal — one bad row must never take down the whole universe.
+
     Args: payload — decoded JSON dict from UNIVERSE_URL.
-    Returns: one EtfInfo per listed ETF (unfiltered).
+    Returns: (rows, notes) — one EtfInfo per parseable ETF (unfiltered) and a
+    visible note when any rows were skipped.
     """
     out: list[EtfInfo] = []
+    skipped = 0
     for it in payload.get("result", {}).get("etfItemList", []):
-        code = str(it.get("itemcode", "")).zfill(6)
-        name = it.get("itemname", "")
-        price = float(it.get("nowVal") or 0)
-        nav = it.get("nav")
-        nav = float(nav) if nav not in (None, "", 0) else None
-        deviation = round((price - nav) / nav * 100, 3) if nav else None
-        tab = int(it.get("etfTabCode") or 7)
-        lev = any(tok in name for tok in _LEVERAGE_TOKENS) or tab == 3
-        tax = (
-            "domestic_equity_type"
-            if (tab in _DOMESTIC_EQUITY_TABS and not lev)
-            else "other_type"
-        )
-        ret_3m = it.get("threeMonthEarnRate")
-        out.append(
-            EtfInfo(
-                code=code,
-                name=name,
-                price=price,
-                nav=nav,
-                deviation_pct=deviation,
-                aum_100m_krw=int(it.get("marketSum") or 0),
-                value_million_krw=int(it.get("amonut") or 0),
-                ret_3m_pct=float(ret_3m) if ret_3m is not None else None,
-                tab_code=tab,
-                asset_class=TAB_ASSET_CLASS.get(tab, "other"),
-                tax_type=tax,
-                hedged=name.rstrip().endswith("(H)"),
-                leveraged_or_inverse=lev,
-            )
-        )
-    return out
+        try:
+            out.append(_parse_row(it))
+        except (ValueError, TypeError):
+            skipped += 1
+    notes = [f"skipped {skipped} malformed universe rows"] if skipped else []
+    return out, notes
 
 
-def fetch_etf_universe(timeout: float = 10.0) -> list[EtfInfo]:
+def fetch_etf_universe(timeout: float = 10.0) -> tuple[list[EtfInfo], list[str]]:
     """Fetch and parse the full KR ETF universe from Naver.
 
-    Returns: list[EtfInfo]. Raises EtfDataUnavailable on any fetch/parse error
-    (body is cp949 — decoded explicitly).
+    Returns: (rows, notes). Raises EtfDataUnavailable on any fetch/parse error
+    (body is cp949 — decoded explicitly; parsing sits inside the same fail-open
+    choke point so a residual parse error also falls back to the stale cache).
     """
     try:
         r = httpx.get(UNIVERSE_URL, headers=_HEADERS, timeout=timeout)
         r.raise_for_status()
         payload = json.loads(r.content.decode("cp949"))
+        rows, notes = _parse_universe(payload)
     except Exception as e:  # noqa: BLE001 — single fail-open choke point
         raise EtfDataUnavailable(f"etf universe fetch failed: {e}") from e
-    rows = _parse_universe(payload)
     if not rows:
         raise EtfDataUnavailable("etf universe fetch returned no rows")
-    return rows
+    return rows, notes
 
 
 DETAIL_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
@@ -161,7 +188,9 @@ def fetch_etf_detail(code: str, timeout: float = 10.0) -> dict:
 
 # Universe cache — rewritten on every successful live fetch; served stale (with
 # a visible note) when the live fetch fails.
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[1] / "data" / "etf_universe_kr.csv"
+DEFAULT_CACHE_PATH = (
+    Path(__file__).resolve().parents[1] / "data" / "etf_universe_kr.csv"
+)
 
 # Fields serialized as empty string when None and parsed back to None/float.
 _OPTIONAL_FLOAT_FIELDS = ("nav", "deviation_pct", "ret_3m_pct")
@@ -215,28 +244,36 @@ def _load_cache(path: Path) -> list[EtfInfo]:
 
 
 def get_etf_universe(
-    cache_path: Path | None = None, refresh: bool = False
+    cache_path: Path | None = None,
 ) -> tuple[list[EtfInfo], str, list[str]]:
     """Get the KR ETF universe, live-first with a stale-cache fallback.
 
     Args:
         cache_path: CSV cache location (default data/etf_universe_kr.csv).
-        refresh: unused hint kept for CLI symmetry — fetches are always
-            live-first; the cache only serves when the live fetch fails.
 
     Returns:
         (rows, source, notes) where source is "live" or "cache-stale". A live
-        fetch rewrites the cache. On EtfDataUnavailable the stale cache is
-        served with a visible note; if the cache also fails, re-raises.
+        fetch rewrites the cache (a failed write is noted, never fatal). On
+        EtfDataUnavailable the stale cache is served with a visible note; if
+        the cache also fails, re-raises.
     """
     path = cache_path or DEFAULT_CACHE_PATH
     try:
-        rows = fetch_etf_universe()
+        rows, notes = fetch_etf_universe()
     except EtfDataUnavailable as live_err:
         rows = _load_cache(path)  # re-raises EtfDataUnavailable if unusable
-        mtime = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
-        return rows, "cache-stale", [
-            f"etf universe: live fetch failed ({live_err}); serving stale cache from {mtime}"
-        ]
-    _save_cache(rows, path)
-    return rows, "live", []
+        mtime = datetime.fromtimestamp(path.stat().st_mtime).isoformat(
+            timespec="seconds"
+        )
+        return (
+            rows,
+            "cache-stale",
+            [
+                f"etf universe: live fetch failed ({live_err}); serving stale cache from {mtime}"
+            ],
+        )
+    try:
+        _save_cache(rows, path)
+    except OSError as e:
+        notes = notes + [f"etf universe cache write failed: {e}"]
+    return rows, "live", notes

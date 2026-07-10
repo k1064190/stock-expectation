@@ -970,14 +970,14 @@ def cmd_etf_list(args) -> int:
 
     Args:
         args: Parsed CLI arguments with asset_class, min_aum (억원),
-            include_leverage, refresh, limit.
+            include_leverage, limit.
 
     Returns:
         0 on success (including cache-stale). 1 when no universe source
         (live or cache) is available.
     """
     try:
-        rows, source, notes = etf_kr.get_etf_universe(refresh=args.refresh)
+        rows, source, notes = etf_kr.get_etf_universe()
     except etf_kr.EtfDataUnavailable as e:
         _print_json({"error": str(e)})
         return 1
@@ -1009,22 +1009,24 @@ def cmd_etf_info(args) -> int:
     are combined with the universe-source notes rather than failing the call.
 
     Args:
-        args: Parsed CLI arguments with code, refresh.
+        args: Parsed CLI arguments with code.
 
     Returns:
         0 on success. 1 when the universe is unavailable or the code is not a
         listed KR ETF.
     """
+    # Normalize user input: "69500" must find KODEX 200 ("069500").
+    code = args.code.strip().zfill(6)
     try:
-        rows, source, notes = etf_kr.get_etf_universe(refresh=args.refresh)
+        rows, source, notes = etf_kr.get_etf_universe()
     except etf_kr.EtfDataUnavailable as e:
         _print_json({"error": str(e)})
         return 1
-    match = next((r for r in rows if r.code == args.code), None)
+    match = next((r for r in rows if r.code == code), None)
     if match is None:
-        _print_json({"error": f"unknown KR ETF code: {args.code}"})
+        _print_json({"error": f"unknown KR ETF code: {code}"})
         return 1
-    detail = etf_kr.fetch_etf_detail(args.code)
+    detail = etf_kr.fetch_etf_detail(code)
     out = asdict(match)
     out["fund_pay_pct"] = detail["fund_pay_pct"]
     out["base_index"] = detail["base_index"]
@@ -2521,11 +2523,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include leverage/inverse ETFs (excluded by default)",
     )
-    el.add_argument(
-        "--refresh",
-        action="store_true",
-        help="Force a live fetch (cache only serves when live fails)",
-    )
     el.add_argument("--limit", type=_positive_int, help="Max rows to return")
     el.set_defaults(func=cmd_etf_list)
 
@@ -2534,11 +2531,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="One KR ETF: universe row + 펀드보수/기초지수 detail",
     )
     ei.add_argument("code", help="6-digit KR ETF code (e.g. 360750)")
-    ei.add_argument(
-        "--refresh",
-        action="store_true",
-        help="Force a live universe fetch (cache only serves when live fails)",
-    )
     ei.set_defaults(func=cmd_etf_info)
 
     # --- memory (Stage 7-A: mem0 semantic memory) ---
