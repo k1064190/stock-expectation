@@ -132,6 +132,17 @@ Pure Python: fetches prices, scores predictions as HIT/MISS/EXPIRED.
 uv run python scheduler/outcome_tracker.py
 ```
 
+### Monthly ISA briefing (Stage 29)
+
+Snapshots the ISA book's NAV (vs ^GSPC/^KS11 benchmarks), then dispatches the
+`/isa-briefing` skill via claude-code/codex-cli and delivers over Telegram.
+The contribution amount is always explicit — never defaulted.
+
+```bash
+uv run python scheduler/isa_briefing.py --amount 1000000 --dry-run  # prompt preview, no side effects
+uv run python scheduler/isa_briefing.py --amount 1000000
+```
+
 ### Cron setup
 
 ```bash
@@ -157,12 +168,12 @@ crontab scheduler/crontab.example
 
 ## Skills
 
-After the Stage 3 cleanup, the active set is **31 skills** under `.claude/skills/`. Specialized or rarely-used skills (edge-pipeline, kanchi-dividend, US 13F, etc.) live under `.claude/skills/_archived/` and are not loaded by Claude Code — see `.claude/skills/_archived/README.md` to revive one. Eleven skills (downtrend-duration, strategy-pivot-designer, scenario-analyzer, dual-axis-skill-reviewer, etc.) were deleted outright.
+After the Stage 3 cleanup (+ the Stage 29 `isa-briefing` addition), the active set is **32 skills** under `.claude/skills/`. Specialized or rarely-used skills (edge-pipeline, kanchi-dividend, US 13F, etc.) live under `.claude/skills/_archived/` and are not loaded by Claude Code — see `.claude/skills/_archived/README.md` to revive one. Eleven skills (downtrend-duration, strategy-pivot-designer, scenario-analyzer, dual-axis-skill-reviewer, etc.) were deleted outright.
 
 ### Active groups
 
 - **Core flow** (4): `expect` (multi-horizon BUY/SELL recommender — see Stage 4 redesign), `daily-briefing`, `prediction-review`, `stock-research`
-- **Portfolio** (5): `portfolio-eval`, `portfolio-manager`, `position-sizer`, `toss-sync`, `trader-memory-core`
+- **Portfolio** (6): `portfolio-eval`, `portfolio-manager`, `position-sizer`, `toss-sync`, `trader-memory-core`, `isa-briefing` (Stage 29: monthly ISA ETF contribution)
 - **Regime + breadth** (6): `macro-regime-detector`, `market-breadth-analyzer`, `uptrend-analyzer`, `market-top-detector`, `ftd-detector`, `sector-analyst`
 - **Screeners** (5): `vcp-screener`, `canslim-screener`, `finviz-screener`, `base-breakout-screener`, `earnings-trade-analyzer`
 - **Calendars + analysis** (5): `earnings-calendar`, `economic-calendar-fetcher`, `theme-detector`, `technical-analyst`, `stock-analysis`
