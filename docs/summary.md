@@ -96,3 +96,6 @@ read this index first, then open only the linked stage files that match.
 
 ## Stage 24 — Deterministic macro risk-off switch
 - [macro-risk-off-switch](stage-24/macro-risk-off-switch.md) — Adds a keyword tripwire over macro headlines emitting NORMAL/ELEVATED/RISK_OFF that caps new BULL and trims confidence in briefings.
+
+## Stage 26 — KR ETF data layer
+- [etf-data-layer](stage-26/etf-data-layer.md) — Adds the KR ETF universe + metadata layer (Naver source, cp949; pykrx broken) with tax/asset classification, CSV stale-fallback cache, and `stock-cli etf list/info`.

@@ -307,6 +307,9 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 # 글로벌 매크로/지정학 뉴스 (키 불필요: 와이어 RSS + GDELT 폴백)
 ./bin/stock-cli macro-news --limit 10
 
+# KR ETF 유니버스 (Stage 26, 네이버 소스)
+./bin/stock-cli etf list --asset-class overseas_equity --min-aum 5000 --limit 10
+
 # KR 공시 (Stage 2, Open DART)
 ./bin/stock-cli disclosure 005930 --since-days 14
 
