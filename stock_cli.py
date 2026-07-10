@@ -106,6 +106,7 @@ from events import (
 # Imported as a module (not from-imports) so tests can monkeypatch
 # etf_kr.get_etf_universe / etf_kr.fetch_etf_detail at call time.
 import etf_kr
+from etf_score import score_candidates
 from news_features import summarize_news
 from macro_news import DEFAULT_MACRO_QUERY, assess_macro_risk, get_macro_news
 from llm_context import validate_llm_context, score_from_debate
@@ -1002,6 +1003,19 @@ def cmd_etf_list(args) -> int:
     return 0
 
 
+def _normalize_etf_code(raw: str) -> str:
+    """Normalize user-supplied ETF code input.
+
+    Args:
+        raw: e.g. "69500" or "193t0".
+
+    Returns:
+        Zero-padded, uppercased 6-char code — "69500" → "069500", "193t0" →
+        "0193T0" (KRX codes are uppercase).
+    """
+    return raw.strip().zfill(6).upper()
+
+
 def cmd_etf_info(args) -> int:
     """Show one KR ETF: universe row merged with per-ETF detail.
 
@@ -1015,9 +1029,7 @@ def cmd_etf_info(args) -> int:
         0 on success. 1 when the universe is unavailable or the code is not a
         listed KR ETF.
     """
-    # Normalize user input: "69500" must find KODEX 200 ("069500") and
-    # "193t0" the alphanumeric "0193T0" (KRX codes are uppercase).
-    code = args.code.strip().zfill(6).upper()
+    code = _normalize_etf_code(args.code)
     try:
         rows, source, notes = etf_kr.get_etf_universe()
     except etf_kr.EtfDataUnavailable as e:
@@ -1035,6 +1047,95 @@ def cmd_etf_info(args) -> int:
     out["source"] = source
     out["notes"] = notes + detail["notes"]
     _print_json(out)
+    return 0
+
+
+# --query prefilter cap: bounds per-candidate detail fetches (fail-open but
+# each one is a live HTTP call).
+MAX_COMPARE_CANDIDATES = 15
+
+
+def cmd_etf_compare(args) -> int:
+    """Compare ETFs tracking the same index and pick the best ticker.
+
+    Candidates come from exactly one of an explicit comma code list or a
+    name-substring ``--query`` prefilter (matched case- and space-insensitively,
+    leverage/inverse excluded unless ``--include-leverage``, AUM-desc, capped
+    at MAX_COMPARE_CANDIDATES with a visible note). Per-candidate detail is
+    fail-open; scoring is set-relative via ``score_candidates``. Differing
+    base indexes are flagged (``base_index_mismatch``) but still scored — the
+    user may be comparing across indexes deliberately.
+
+    Args:
+        args: Parsed CLI arguments with codes, query, include_leverage.
+
+    Returns:
+        0 on success. 1 on selector misuse, unknown codes, no candidates, or
+        universe unavailability.
+    """
+    if bool(args.codes) == bool(args.query):
+        _print_json({"error": "exactly one of CODES or --query is required"})
+        return 1
+    try:
+        rows, source, notes = etf_kr.get_etf_universe()
+    except etf_kr.EtfDataUnavailable as e:
+        _print_json({"error": str(e)})
+        return 1
+
+    if args.codes:
+        wanted = [_normalize_etf_code(c) for c in args.codes.split(",") if c.strip()]
+        by_code = {r.code: r for r in rows}
+        unknown = [c for c in wanted if c not in by_code]
+        if unknown:
+            _print_json({"error": f"unknown KR ETF code(s): {', '.join(unknown)}"})
+            return 1
+        candidates = [by_code[c] for c in wanted]
+    else:
+        q = args.query.lower().replace(" ", "")
+        candidates = [r for r in rows if q in r.name.lower().replace(" ", "")]
+        if not args.include_leverage:
+            candidates = [r for r in candidates if not r.leveraged_or_inverse]
+        candidates.sort(key=lambda r: r.aum_100m_krw, reverse=True)
+        if len(candidates) > MAX_COMPARE_CANDIDATES:
+            notes = notes + [
+                f"query matched {len(candidates)} ETFs; comparing top "
+                f"{MAX_COMPARE_CANDIDATES} by AUM"
+            ]
+            candidates = candidates[:MAX_COMPARE_CANDIDATES]
+    if not candidates:
+        _print_json({"error": f"no ETFs matched query: {args.query!r}"})
+        return 1
+
+    details = {}
+    for c in candidates:
+        d = etf_kr.fetch_etf_detail(c.code)
+        details[c.code] = d
+        notes = notes + d["notes"]
+
+    # Base-index consistency: flag (not fail) when candidates track different
+    # indexes.
+    groups: dict[str, list[str]] = {}
+    for c in candidates:
+        idx = details[c.code].get("base_index")
+        if idx is not None:
+            groups.setdefault(idx, []).append(c.code)
+    mismatch = len(groups) > 1
+    if mismatch:
+        listing = "; ".join(f"{idx}: {codes}" for idx, codes in sorted(groups.items()))
+        notes = notes + [f"base_index mismatch — {listing}"]
+
+    result = score_candidates(candidates, details)
+    _print_json(
+        {
+            "asof": datetime.now().date().isoformat(),
+            "source": source,
+            "count": len(candidates),
+            "base_index_mismatch": mismatch,
+            "best": result["best"],
+            "scored": result["scored"],
+            "notes": notes + result["notes"],
+        }
+    )
     return 0
 
 
@@ -2533,6 +2634,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ei.add_argument("code", help="6-digit KR ETF code (e.g. 360750)")
     ei.set_defaults(func=cmd_etf_info)
+
+    ec = etf_sub.add_parser(
+        "compare",
+        help="Pick the best ticker among ETFs tracking the same index",
+    )
+    ec.add_argument(
+        "codes",
+        nargs="?",
+        default=None,
+        help="Comma-separated ETF codes (e.g. 360750,379800) — or use --query",
+    )
+    ec.add_argument(
+        "--query",
+        help="Name substring to prefilter the universe (space-insensitive, "
+        f"AUM-desc, capped at {MAX_COMPARE_CANDIDATES})",
+    )
+    ec.add_argument(
+        "--include-leverage",
+        action="store_true",
+        help="Include leverage/inverse ETFs in --query matches",
+    )
+    ec.set_defaults(func=cmd_etf_compare)
 
     # --- memory (Stage 7-A: mem0 semantic memory) ---
     memory = sub.add_parser(

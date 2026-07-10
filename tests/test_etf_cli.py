@@ -228,3 +228,107 @@ def test_list_universe_unavailable_is_error_json(monkeypatch, capsys):
     rc, out = _run(capsys, stock_cli.cmd_etf_list, _list_args())
     assert rc == 1
     assert "cache corrupt" in out["error"]
+
+
+# --- etf compare (stage 27) -------------------------------------------------
+
+import etf_score  # noqa: E402
+
+
+def _mk_row(code, name, aum, value, dev, lev=False):
+    return etf_kr.EtfInfo(
+        code=code, name=name, price=10000.0, nav=10000.0, deviation_pct=dev,
+        aum_100m_krw=aum, value_million_krw=value, ret_3m_pct=10.0, tab_code=4,
+        asset_class="overseas_equity", tax_type="other_type", hedged=False,
+        leveraged_or_inverse=lev,
+    )
+
+
+SNP_ROWS = [
+    _mk_row("AAAAA1", "TIGER 미국S&P500", aum=202101, value=2677236, dev=0.05),
+    _mk_row("BBBBB2", "KODEX 미국S&P500", aum=100000, value=900000, dev=0.10),
+    _mk_row("CCCCC3", "ACE 미국S&P500", aum=50000, value=400000, dev=0.30),
+    _mk_row("DDDDD4", "KODEX 미국S&P500레버리지", aum=30000, value=300000,
+            dev=0.10, lev=True),
+]
+SNP_DETAILS = {
+    "AAAAA1": {"fund_pay_pct": 0.07, "base_index": "S&P 500", "notes": []},
+    "BBBBB2": {"fund_pay_pct": 0.0099, "base_index": "S&P 500", "notes": []},
+    "CCCCC3": {"fund_pay_pct": None, "base_index": "S&P 500",
+               "notes": ["fund fee unavailable"]},
+    "DDDDD4": {"fund_pay_pct": 0.25, "base_index": "S&P 500 선물", "notes": []},
+}
+
+
+def _patch_compare(monkeypatch, details=SNP_DETAILS):
+    monkeypatch.setattr(
+        etf_kr, "get_etf_universe", lambda **kw: (SNP_ROWS, "live", [])
+    )
+    monkeypatch.setattr(
+        etf_kr,
+        "fetch_etf_detail",
+        lambda code, **kw: details.get(
+            code,
+            {"fund_pay_pct": None, "base_index": None, "notes": ["detail failed"]},
+        ),
+    )
+
+
+def _compare_args(**overrides):
+    defaults = {"codes": None, "query": None, "include_leverage": False}
+    defaults.update(overrides)
+    return types.SimpleNamespace(**defaults)
+
+
+def test_compare_codes_picks_best(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys, stock_cli.cmd_etf_compare, _compare_args(codes="AAAAA1,BBBBB2,CCCCC3")
+    )
+    assert rc == 0
+    assert out["best"] == "BBBBB2"
+    assert out["base_index_mismatch"] is False
+    assert out["count"] == 3
+
+
+def test_compare_query_space_insensitive_excludes_leverage(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys, stock_cli.cmd_etf_compare, _compare_args(query="s&p 500")
+    )
+    assert rc == 0
+    codes = {s["code"] for s in out["scored"]}
+    assert codes == {"AAAAA1", "BBBBB2", "CCCCC3"}  # DDDDD4 leveraged, excluded
+
+
+def test_compare_mixed_index_flagged(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys,
+        stock_cli.cmd_etf_compare,
+        _compare_args(codes="AAAAA1,DDDDD4", include_leverage=True),
+    )
+    assert rc == 0
+    assert out["base_index_mismatch"] is True
+    assert any("base_index" in n or "base index" in n for n in out["notes"])
+
+
+def test_compare_requires_exactly_one_selector(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(capsys, stock_cli.cmd_etf_compare, _compare_args())
+    assert rc == 1 and "error" in out
+    rc, out = _run(
+        capsys,
+        stock_cli.cmd_etf_compare,
+        _compare_args(codes="AAAAA1", query="s&p"),
+    )
+    assert rc == 1 and "error" in out
+
+
+def test_compare_unknown_code_errors_with_code(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys, stock_cli.cmd_etf_compare, _compare_args(codes="AAAAA1,ZZZZZ9")
+    )
+    assert rc == 1
+    assert "ZZZZZ9" in out["error"]
