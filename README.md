@@ -341,6 +341,13 @@ FMP 무료 티어 참고: 2025-08-31 이후 가입자는 레거시 엔드포인�
 ./bin/stock-cli portfolio vs-predictions --market KR
 ./bin/stock-cli portfolio advice --market KR
 
+# ISA 장기 적립 (Stage 28: 목표 배분 + 무매도 적립 배분기 + 의사결정 로그)
+./bin/stock-cli isa init --allocation "overseas_equity=50,bond=30,gold=20" --map "overseas_equity=360750,bond=114260,gold=411060"
+./bin/stock-cli isa status
+./bin/stock-cli isa allocate --amount 1000000 --tilt "overseas_equity=+5,bond=-5" --dry-run
+./bin/stock-cli isa rebalance
+./bin/stock-cli isa log --limit 10
+
 # Stage 7-A 메모리 (mem0 + Qdrant, --extra memory 필요)
 ./bin/stock-cli memory stats
 ./bin/stock-cli memory search "AI infrastructure" --category predictions --limit 5
