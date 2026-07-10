@@ -502,3 +502,55 @@ def test_main_same_day_rerun_replaces_state_entry(tmp_path, monkeypatch):
     saved = gt.load_state(state)
     same_day = [e for e in saved if e["date"] == "2026-07-05"]
     assert len(same_day) == 1
+
+
+class _FakeOhlcvDf:
+    """Minimal stand-in for the pykrx OHLCV DataFrame surface we touch."""
+
+    def __init__(self, closes):
+        self._closes = closes
+
+    @property
+    def empty(self):
+        return not self._closes
+
+    def __getitem__(self, key):
+        assert key == "종가"
+        closes = self._closes
+
+        class _Col:
+            def tolist(self):
+                return closes
+
+        return _Col()
+
+
+def test_fetch_krx_gold_falls_back_to_etf_endpoint(monkeypatch):
+    import pykrx.stock as krx_stock
+
+    monkeypatch.setattr(
+        krx_stock, "get_market_ohlcv_by_date", lambda *a, **k: _FakeOhlcvDf([])
+    )
+    monkeypatch.setattr(
+        krx_stock,
+        "get_etf_ohlcv_by_date",
+        lambda *a, **k: _FakeOhlcvDf([100.0, 101.0]),
+    )
+    assert gt.fetch_krx_gold_closes(days=30) == [100.0, 101.0]
+
+
+def test_script_mode_entrypoint_resolves_imports():
+    # Regression for the cron invocation path: `python scheduler/gold_trend.py`
+    # puts scheduler/ (not the project root) first on sys.path; the module's
+    # own PROJECT_ROOT insert must make `scheduler.telegram_sender` resolvable.
+    import subprocess as sp
+
+    proc = sp.run(
+        [sys.executable, "scheduler/gold_trend.py", "--help"],
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+        timeout=60,
+    )
+    assert proc.returncode == 0
+    assert "Weekly gold trend analysis" in proc.stdout

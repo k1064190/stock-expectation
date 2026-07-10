@@ -13,11 +13,28 @@ import json
 import math
 import pathlib
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from typing import Optional
 
 import httpx
 import yaml
+
+# When run as a script (`uv run python scheduler/gold_trend.py`), sys.path[0]
+# is scheduler/, not the project root — put the root first so the
+# `from scheduler.telegram_sender import ...` in main() resolves under cron.
+PROJECT_ROOT = pathlib.Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Auto-load .env for Telegram credentials, matching the other scheduler
+# entry points (daily_briefing, outcome_tracker, paper_trading_run).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    pass
 
 GRAMS_PER_OZ = 31.1035
 FRED_DFII10_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10"
@@ -363,9 +380,14 @@ def fetch_krx_gold_closes(days: int = 430) -> list[float]:
 
         end = datetime.now()
         start = end - timedelta(days=days)
-        df = krx_stock.get_market_ohlcv_by_date(
-            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "411060"
-        )
+        fd, td = start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
+        # Market endpoint first — empirically it returns rows for the 411060
+        # ETF on the current pykrx while get_etf_ohlcv_by_date comes back
+        # empty; keep the ETF endpoint as a fallback for versions where the
+        # surfaces are swapped.
+        df = krx_stock.get_market_ohlcv_by_date(fd, td, "411060")
+        if df is None or df.empty:
+            df = krx_stock.get_etf_ohlcv_by_date(fd, td, "411060")
         if df is None or df.empty:
             return []
         closes = [float(c) for c in df["종가"].tolist() if c and float(c) > 0]
