@@ -87,3 +87,29 @@ def test_missing_nav_gives_none_deviation():
     etfs = {e.code: e for e in _parse_universe(PAYLOAD)}
     assert etfs["122630"].nav is None
     assert etfs["122630"].deviation_pct is None
+
+
+DETAIL_PAYLOAD = {
+    "totalInfos": [
+        {"code": "nav", "key": "NAV", "value": "28,276.20"},
+        {"code": "fundPay", "key": "펀드보수", "value": "0.007%"},
+        {"code": "etfBaseIdx", "key": "기초지수", "value": "S&P 500"},
+    ]
+}
+
+
+def test_parse_detail_extracts_fee_and_index():
+    from etf_kr import _parse_detail
+
+    d = _parse_detail(DETAIL_PAYLOAD)
+    assert d["fund_pay_pct"] == 0.007
+    assert d["base_index"] == "S&P 500"
+    assert d["notes"] == []
+
+
+def test_parse_detail_missing_fields_noted():
+    from etf_kr import _parse_detail
+
+    d = _parse_detail({"totalInfos": []})
+    assert d["fund_pay_pct"] is None and d["base_index"] is None
+    assert any("unavailable" in n for n in d["notes"])

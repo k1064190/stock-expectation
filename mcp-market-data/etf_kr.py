@@ -111,3 +111,39 @@ def fetch_etf_universe(timeout: float = 10.0) -> list[EtfInfo]:
     if not rows:
         raise EtfDataUnavailable("etf universe fetch returned no rows")
     return rows
+
+
+DETAIL_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
+
+
+def _parse_detail(payload: dict) -> dict:
+    """Extract 펀드보수/기초지수 from the integration payload's totalInfos."""
+    infos = {i.get("code"): i.get("value") for i in payload.get("totalInfos", [])}
+    notes: list[str] = []
+    fee = infos.get("fundPay")
+    fee_pct = None
+    if fee:
+        try:
+            fee_pct = float(str(fee).replace("%", "").replace(",", ""))
+        except ValueError:
+            notes.append(f"fundPay unparseable: {fee!r}")
+    base_index = infos.get("etfBaseIdx") or None
+    if fee_pct is None:
+        notes.append("fund fee unavailable")
+    if base_index is None:
+        notes.append("base index unavailable")
+    return {"fund_pay_pct": fee_pct, "base_index": base_index, "notes": notes}
+
+
+def fetch_etf_detail(code: str, timeout: float = 10.0) -> dict:
+    """Fetch per-ETF detail (fee, base index). Fail-open: on error returns
+    Nones with an explanatory note instead of raising — detail is enrichment,
+    not a hard dependency."""
+    try:
+        r = httpx.get(DETAIL_URL.format(code=code), headers=_HEADERS,
+                      timeout=timeout, follow_redirects=True)
+        r.raise_for_status()
+        return _parse_detail(r.json())
+    except Exception as e:  # noqa: BLE001
+        return {"fund_pay_pct": None, "base_index": None,
+                "notes": [f"etf detail fetch failed for {code}: {e}"]}
