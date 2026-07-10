@@ -381,7 +381,10 @@ def _boom(*a, **k):
 
 
 def test_fetch_krx_gold_failopen_returns_empty(monkeypatch):
+    # Both endpoints must fail: with only the market endpoint raising, the
+    # ETF fallback would hit the live network (or even return rows).
     monkeypatch.setattr("pykrx.stock.get_market_ohlcv_by_date", _boom)
+    monkeypatch.setattr("pykrx.stock.get_etf_ohlcv_by_date", _boom)
     assert gt.fetch_krx_gold_closes() == []
 
 
@@ -586,11 +589,19 @@ def _offline_main_env(monkeypatch, tmp_path):
 
 def test_main_flags_missing_config_in_report(monkeypatch, tmp_path):
     reports, state = _offline_main_env(monkeypatch, tmp_path)
-    rc = gt.main([
-        "--config", str(tmp_path / "no_such_config.yaml"),
-        "--llm-mode", "none", "--no-telegram",
-        "--reports-dir", str(reports), "--state", str(state),
-    ])
+    rc = gt.main(
+        [
+            "--config",
+            str(tmp_path / "no_such_config.yaml"),
+            "--llm-mode",
+            "none",
+            "--no-telegram",
+            "--reports-dir",
+            str(reports),
+            "--state",
+            str(state),
+        ]
+    )
     assert rc == 0
     body = next(reports.glob("gold-trend-*.md")).read_text(encoding="utf-8")
     assert "매크로 설정 파일 없음" in body
@@ -600,11 +611,19 @@ def test_main_env_overrides_position(monkeypatch, tmp_path):
     reports, state = _offline_main_env(monkeypatch, tmp_path)
     monkeypatch.setenv("GOLD_AVG_COST_KRW_PER_G", "150000")
     monkeypatch.setenv("GOLD_POSITION_GRAMS", "2")
-    rc = gt.main([
-        "--config", "data/gold_macro_factors.yaml",
-        "--llm-mode", "none", "--no-telegram",
-        "--reports-dir", str(reports), "--state", str(state),
-    ])
+    rc = gt.main(
+        [
+            "--config",
+            "data/gold_macro_factors.yaml",
+            "--llm-mode",
+            "none",
+            "--no-telegram",
+            "--reports-dir",
+            str(reports),
+            "--state",
+            str(state),
+        ]
+    )
     assert rc == 0
     body = next(reports.glob("gold-trend-*.md")).read_text(encoding="utf-8")
     assert "내 포지션" in body and "근사" in body
