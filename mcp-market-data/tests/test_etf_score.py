@@ -102,3 +102,19 @@ def test_missing_deviation_redistributes_liquidity_weights():
     # DDDDD1: AUM 100, value 100, deviation missing → (0.5*100+0.3*100)/0.8
     assert top["DDDDD1"]["liquidity_score"] == 100.0
     assert any("DDDDD1" in n and "deviation" in n for n in out["notes"])
+
+
+def test_indistinguishable_candidates_note():
+    """Multi-candidate set with ALL stats equal must say the scores carry no
+    signal (promised by the scoring-rules doc)."""
+    twin_a = _mk("TWINA1", "X", aum=100, value=100, dev=0.1)
+    twin_b = _mk("TWINB2", "Y", aum=100, value=100, dev=0.1)
+    d = {
+        "TWINA1": {"fund_pay_pct": 0.1, "base_index": "I", "notes": []},
+        "TWINB2": {"fund_pay_pct": 0.1, "base_index": "I", "notes": []},
+    }
+    out = score_candidates([twin_a, twin_b], d)
+    assert any("indistinguishable" in n for n in out["notes"])
+    # A set with any differing dimension must NOT carry the note.
+    out2 = score_candidates(ROWS, DETAILS)
+    assert not any("indistinguishable" in n for n in out2["notes"])

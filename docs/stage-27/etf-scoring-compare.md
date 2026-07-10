@@ -52,3 +52,35 @@ Keeping scoring pure (data in `etf_kr`, math here) made the tests trivial and th
 run correct on the first try. The base-index mismatch note proved immediately useful —
 the S&P 500 query surfaces futures/covered-call variants that a naive fee sort would
 have crowned.
+
+## Review
+
+Round 1 (internal + Gemini/antigravity; Codex unresponsive — re-triggered, to be
+reconciled if it replies), addressed in `fix(etf): address review round 1 —
+degenerate-set note, input validation, dedup, error-path tests`:
+
+**Refuted (evidence)**
+- (Gemini "blocker") "sort tie-break `-s["aum_100m_krw"]` can TypeError on a
+  string value": false — every constructor path coerces to int
+  (`etf_kr._parse_row` → `int(it.get("marketSum") or 0)`; `etf_kr._load_cache`
+  → `_INT_FIELDS` `int(d[k])`), the scored dict copies that int verbatim, and
+  the `float()` at the `_minmax` call is normalization-math input, not a
+  defensive cast. No str path exists.
+- (internal warning) "missing try/except around `fetch_etf_detail` breaks
+  per-candidate fail-open": false — `fetch_etf_detail` catches ALL exceptions
+  internally and returns Nones + note (stage-26 contract, documented in its
+  docstring). Added a one-line contract comment at the call site instead of a
+  redundant try/except.
+
+**Fixed**
+- (Gemini) Multi-candidate sets equal in EVERY dimension now emit
+  "candidates indistinguishable on cost/liquidity — scores degenerate"
+  (the scoring-rules doc promised a degenerate-set note).
+- (Gemini) `etf compare " "` now errors with "no valid ETF codes given
+  (empty code list)" instead of the misleading "no ETFs matched query: None".
+- (Gemini nit) Positional code lists are deduplicated first-seen-order, so
+  `360750,360750` no longer scores against itself.
+- (Gemini) Test added: `--query` + `--include-leverage` includes leveraged rows.
+- (Gemini) Test added: query truncation at MAX_COMPARE_CANDIDATES=15 + the
+  visible truncation note (AUM-desc keeps the largest).
+- (internal) Test added: `--query "nonexistent"` → rc 1 with "no ETFs matched".

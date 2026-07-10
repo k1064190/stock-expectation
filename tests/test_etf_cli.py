@@ -332,3 +332,62 @@ def test_compare_unknown_code_errors_with_code(monkeypatch, capsys):
     )
     assert rc == 1
     assert "ZZZZZ9" in out["error"]
+
+
+def test_compare_whitespace_codes_errors(monkeypatch, capsys):
+    """`etf compare " "` must give a correct empty-code-list error, not the
+    misleading "no ETFs matched query: None"."""
+    _patch_compare(monkeypatch)
+    rc, out = _run(capsys, stock_cli.cmd_etf_compare, _compare_args(codes=" "))
+    assert rc == 1
+    assert "code" in out["error"] and "query: None" not in out["error"]
+
+
+def test_compare_duplicate_codes_deduplicated(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys, stock_cli.cmd_etf_compare, _compare_args(codes="AAAAA1,AAAAA1")
+    )
+    assert rc == 0
+    assert out["count"] == 1
+    assert [s["code"] for s in out["scored"]] == ["AAAAA1"]
+
+
+def test_compare_query_include_leverage(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys,
+        stock_cli.cmd_etf_compare,
+        _compare_args(query="s&p 500", include_leverage=True),
+    )
+    assert rc == 0
+    assert "DDDDD4" in {s["code"] for s in out["scored"]}
+    assert out["count"] == 4
+
+
+def test_compare_query_truncates_at_cap_with_note(monkeypatch, capsys):
+    many = [
+        _mk_row(f"MANY{i:02d}", f"KODEX 미국S&P500 {i}호", aum=1000 + i, value=100, dev=0.1)
+        for i in range(20)
+    ]
+    monkeypatch.setattr(etf_kr, "get_etf_universe", lambda **kw: (many, "live", []))
+    monkeypatch.setattr(
+        etf_kr,
+        "fetch_etf_detail",
+        lambda code, **kw: {"fund_pay_pct": 0.1, "base_index": "I", "notes": []},
+    )
+    rc, out = _run(capsys, stock_cli.cmd_etf_compare, _compare_args(query="s&p500"))
+    assert rc == 0
+    assert out["count"] == stock_cli.MAX_COMPARE_CANDIDATES == 15
+    assert any("comparing top 15 by AUM" in n for n in out["notes"])
+    # AUM-desc: the 5 smallest (MANY00..MANY04) fell off.
+    assert "MANY00" not in {s["code"] for s in out["scored"]}
+
+
+def test_compare_query_no_match_errors(monkeypatch, capsys):
+    _patch_compare(monkeypatch)
+    rc, out = _run(
+        capsys, stock_cli.cmd_etf_compare, _compare_args(query="nonexistent")
+    )
+    assert rc == 1
+    assert "no ETFs matched" in out["error"]

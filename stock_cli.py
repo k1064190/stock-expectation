@@ -1084,6 +1084,11 @@ def cmd_etf_compare(args) -> int:
 
     if args.codes:
         wanted = [_normalize_etf_code(c) for c in args.codes.split(",") if c.strip()]
+        # Dedup (first-seen order) so 360750,360750 doesn't score against itself.
+        wanted = list(dict.fromkeys(wanted))
+        if not wanted:
+            _print_json({"error": "no valid ETF codes given (empty code list)"})
+            return 1
         by_code = {r.code: r for r in rows}
         unknown = [c for c in wanted if c not in by_code]
         if unknown:
@@ -1108,6 +1113,8 @@ def cmd_etf_compare(args) -> int:
 
     details = {}
     for c in candidates:
+        # fetch_etf_detail is fail-open by contract — never raises (stage 26);
+        # a failed detail yields Nones + note, so no try/except is needed here.
         d = etf_kr.fetch_etf_detail(c.code)
         details[c.code] = d
         notes = notes + d["notes"]

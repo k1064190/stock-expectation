@@ -80,13 +80,23 @@ def score_candidates(rows: list[EtfInfo], details: dict[str, dict]) -> dict:
         notes.append("single candidate — scores degenerate")
 
     fees = [details.get(r.code, {}).get("fund_pay_pct") for r in rows]
+    aums = [float(r.aum_100m_krw) for r in rows]
+    values = [float(r.value_million_krw) for r in rows]
+    devs = [abs(r.deviation_pct) if r.deviation_pct is not None else None for r in rows]
     cost_scores = _minmax(fees, invert=True)
-    aum_scores = _minmax([float(r.aum_100m_krw) for r in rows])
-    value_scores = _minmax([float(r.value_million_krw) for r in rows])
-    dev_scores = _minmax(
-        [abs(r.deviation_pct) if r.deviation_pct is not None else None for r in rows],
-        invert=True,
-    )
+    aum_scores = _minmax(aums)
+    value_scores = _minmax(values)
+    dev_scores = _minmax(devs, invert=True)
+
+    # Multi-candidate set where every dimension is degenerate (all known
+    # values equal): scores carry no signal — say so visibly.
+    if len(rows) > 1 and all(
+        len({v for v in dim if v is not None}) <= 1
+        for dim in (fees, aums, values, devs)
+    ):
+        notes.append(
+            "candidates indistinguishable on cost/liquidity — scores degenerate"
+        )
 
     scored = []
     for i, r in enumerate(rows):
