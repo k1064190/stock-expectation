@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 29 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --body-bg: #f7f7f5;
+        --text: #1a1a1a;
+        --text-soft: #333;
+        --heading: #0f1e26;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --header-bg: #fff;
+        --callout-bg: #fff6e0;
+        --callout-border: #d9a441;
+        --callout-heading: #7a5200;
+        --isa-tint-bg: rgba(44, 143, 95, 0.08);
+        --isa-tint-border: rgba(44, 143, 95, 0.35);
+        --isa-tint-ring: #2c8f5f;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #8a9aaa;
+          --border: #33404a;
+          --card-bg: #1c232a;
+          --body-bg: #12171b;
+          --text: #e6e9ec;
+          --text-soft: #c9cfd4;
+          --heading: #f2f4f6;
+          --code-bg: #232b32;
+          --code-border: #3a4650;
+          --header-bg: #171d22;
+          --callout-bg: #2a2110;
+          --callout-border: #a97a1f;
+          --callout-heading: #e8c374;
+          --isa-tint-bg: rgba(90, 209, 156, 0.08);
+          --isa-tint-border: rgba(90, 209, 156, 0.3);
+          --isa-tint-ring: #5ad19c;
+        }
+      }
+
+      body {
+        background: var(--body-bg);
+        color: var(--text);
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node.dashed .circle {
+        background: transparent;
+        border-style: dashed;
+        border-color: var(--muted);
+        color: var(--muted);
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-node.dashed .label {
+        font-style: italic;
+        max-width: 96px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+      .tl-node .label {
+        max-width: 108px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+      .tl-connector.dashed {
+        height: 0;
+        background: none;
+        border-top: 2px dashed var(--border);
+      }
+
+      /* ── ISA arc grouping (stages 26-29) ── */
+      .isa-arc-group {
+        display: flex;
+        align-items: center;
+        background: var(--isa-tint-bg);
+        border: 1px solid var(--isa-tint-border);
+        border-radius: 999px;
+        padding: 0.5rem 1rem 0.5rem 0.65rem;
+        margin: 0 0.15rem;
+      }
+      .isa-arc-group .tl-node .circle {
+        box-shadow: 0 0 0 2px var(--isa-tint-ring);
+      }
+      .isa-arc-group::before {
+        content: "ISA arc";
+        font-size: 0.55rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--isa-tint-ring);
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        margin-right: 0.5rem;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      /* ── Callout ── */
+      .callout {
+        margin-top: 0.9rem;
+        background: var(--callout-bg);
+        border: 1px solid var(--callout-border);
+        border-radius: 6px;
+        padding: 0.9rem 1.1rem;
+      }
+      .callout .callout-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--callout-heading);
+        margin-bottom: 0.4rem;
+      }
+      .callout p {
+        font-size: 0.88rem;
+        color: var(--text-soft);
+      }
+      .callout p + p {
+        margin-top: 0.5rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="R3 event-gate restore">
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="LIVE 1Y gate">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="Macro risk-off switch">
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node dashed"
+          title="Unmerged branch, developed in parallel with stages 26-27"
+        >
+          <div class="circle">25</div>
+          <span class="label">Weekly gold trend (unmerged branch)</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div
+          class="isa-arc-group"
+          title="ISA book: data → selection → decision core → briefing, stages 26-29"
+        >
+          <div class="tl-node past" title="KR ETF data layer">
+            <div class="circle">26</div>
+            <span class="label">KR ETF data layer</span>
+          </div>
+          <div class="tl-connector"></div>
+
+          <div class="tl-node past" title="ETF scoring + compare">
+            <div class="circle">27</div>
+            <span class="label">ETF scoring + compare</span>
+          </div>
+          <div class="tl-connector"></div>
+
+          <div class="tl-node past" title="ISA targets + drift-DCA allocator">
+            <div class="circle">28</div>
+            <span class="label">ISA targets + allocator</span>
+          </div>
+          <div class="tl-connector"></div>
+
+          <div class="tl-node current" title="This stage">
+            <div class="circle">29</div>
+            <span class="label">ISA briefing + track record</span>
+          </div>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 29 (final)</h2>
+        <p>
+          Stages 26-28 built the data, the selection, and the decision core for
+          the ISA book. What remained to close the loop: a monthly record of how
+          the book actually performs (NAV vs benchmarks), and an automated
+          monthly briefing that turns the CLI data into an actionable Korean
+          contribution plan — with the LLM confined to proposing tilts that the
+          stage-28 CLI clamps and logs.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>ISA Monthly Briefing, Scheduler, NAV Track Record</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            Stages 26-28 built the data, the selection, and the decision core.
+            What remained to close the ISA loop: a monthly record of how the
+            book actually performs (NAV vs benchmarks), and an automated monthly
+            briefing that turns the CLI data into an actionable Korean
+            contribution plan — with the LLM confined to proposing tilts that
+            the stage-28 CLI clamps and logs.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>isa snapshot</code> — pure-Python NAV track record: book
+              value, cumulative net contributions (BUY − SELL cost), and
+              benchmark closes into a new <code>isa_nav</code> table.
+              <code>isa status</code> now surfaces
+              <code>recent_snapshots</code> (last 3),
+              <code>contributions_cum_krw</code>, and
+              <code>since_inception_return_pct</code>.
+            </li>
+            <li>
+              <code>scheduler/isa_briefing.py</code> — monthly runner: snapshot
+              → status/rebalance JSON → prompt (macro block included) →
+              claude-code/codex-cli → Telegram. <code>--amount</code> is always
+              explicit; <code>--dry-run</code> prints the prompt with zero side
+              effects.
+            </li>
+            <li>
+              <code>.claude/skills/isa-briefing/SKILL.md</code> — the monthly
+              contribution skill (Korean output; hard rules on tilt and risk-off
+              below).
+            </li>
+            <li>
+              Crontab entry: <code>37 7 1 * *</code> (1st of month 07:37 KST;
+              comment says adjust day and amount to the user's schedule).
+            </li>
+            <li>12 new tests (2 store, 5 CLI, 5 scheduler), all offline.</li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            <strong>Monthly flow:</strong> snapshot → status/rebalance → macro →
+            tilt (≤±10pp, default 0) → allocate → Korean briefing via Telegram.
+          </p>
+          <p style="margin-top: 0.75rem">
+            <strong>Benchmarks:</strong> both fetched via the
+            <strong>US provider's yfinance path</strong> — verified 2026-07-10:
+            <code>^GSPC</code> and <code>^KS11</code> (KOSPI) work there, while
+            the KR provider's ticker normalization mangles index symbols into
+            <code>0^KS11</code> (404 on pykrx and FDR). A failed fetch stores
+            <code>null</code> for that index with a visible note (fail-open).
+          </p>
+          <p style="margin-top: 0.75rem">
+            <strong>Reuse, not copy:</strong> the scheduler imports
+            <code>call_claude_code</code> / <code>call_codex_cli</code> /
+            <code>_macro_block</code> from
+            <code>scheduler/daily_briefing.py</code> and
+            <code>send_briefing</code> from
+            <code>scheduler/telegram_sender.py</code>. Data steps go through
+            <code>bin/stock-cli isa ...</code> subprocesses so the tilt clamp
+            and decision logging stay in one place.
+          </p>
+          <p style="margin-top: 0.75rem">
+            <strong>Dry-run semantics:</strong> <code>--dry-run</code> skips the
+            snapshot AND the decision-logging <code>isa rebalance</code>
+            (the status payload's band check stands in, with a note) — zero
+            writes, no LLM, no Telegram.
+          </p>
+
+          <div class="callout">
+            <div class="callout-title">
+              RISK_OFF gates stocks, never the contribution
+            </div>
+            <p>
+              Stage-24's RISK_OFF switch gates new stock BULL predictions,
+              <strong>not</strong> the ISA monthly contribution. Long-term DCA
+              continues through risk-off by design; risk-off is a reason to keep
+              tilts at 0, never to skip the month. This is explicitly resolved
+              in the <code>isa-briefing</code> skill.
+            </p>
+          </div>
+
+          <p style="margin-top: 0.75rem">
+            <strong>Return metric:</strong>
+            <code>since_inception_return_pct</code> is simple net-contribution
+            return ((nav − contributions)/contributions); a money-weighted
+            refinement is future work (documented in the helper docstring). The
+            annual tilt-decision evaluation from the spec is DATA-READY via
+            <code>isa_decisions</code> + <code>isa_nav</code> but not built — no
+            data exists to evaluate yet.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>portfolio/isa_store.py</code> — <code>isa_nav</code> table,
+              <code>save_nav_snapshot</code>,
+              <code>list_nav_snapshots</code>
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_isa_snapshot</code>,
+              <code>_isa_cum_contributions</code>, <code>ISA_BENCHMARKS</code>,
+              status track-record keys, <code>snapshot</code> subparser
+            </li>
+            <li>
+              <code>scheduler/isa_briefing.py</code> —
+              <code>build_prompt</code>, <code>_stock_cli_json</code>,
+              <code>main</code>
+            </li>
+            <li><code>scheduler/crontab.example</code> — monthly entry</li>
+            <li><code>.claude/skills/isa-briefing/SKILL.md</code></li>
+            <li>
+              <code>portfolio/tests/test_isa_store.py</code>,
+              <code>tests/test_isa_cli.py</code>,
+              <code>scheduler/tests/test_isa_briefing.py</code>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Probing the benchmark tickers against the real providers before
+              writing tests avoided baking in a KR-provider path that 404s.
+              Confining dry-run to a truly write-free path (status only) keeps
+              the flag honest — anything that logs is skipped, visibly.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
