@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 26 — Stock Expectation</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        background: #f7f7f5;
+        color: #1a1a1a;
+        line-height: 1.6;
+      }
+
+      /* ── Accent ── */
+      :root {
+        --accent: #2c5f7a;
+        --muted: #8a9aaa;
+        --border: #dde2e6;
+        --card-bg: #fefefe;
+        --body-bg: #f7f7f5;
+        --text: #1a1a1a;
+        --text-soft: #333;
+        --heading: #0f1e26;
+        --code-bg: #f0f3f6;
+        --code-border: #dde2e6;
+        --header-bg: #fff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #6fb3d8;
+          --muted: #8a9aaa;
+          --border: #33404a;
+          --card-bg: #1c232a;
+          --body-bg: #12171b;
+          --text: #e6e9ec;
+          --text-soft: #c9cfd4;
+          --heading: #f2f4f6;
+          --code-bg: #232b32;
+          --code-border: #3a4650;
+          --header-bg: #171d22;
+        }
+      }
+
+      body {
+        background: var(--body-bg);
+        color: var(--text);
+      }
+
+      /* ── Header ── */
+      header {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      header .brand h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--heading);
+        letter-spacing: -0.01em;
+      }
+      header .brand p {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.1rem;
+      }
+
+      /* ── Timeline ── */
+      .timeline-wrapper {
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        overflow-x: auto;
+      }
+      nav[aria-label="Stage timeline"] {
+        display: flex;
+        align-items: center;
+        min-width: max-content;
+      }
+      .tl-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+      .tl-node .circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        font-weight: 700;
+        transition: background 0.15s;
+      }
+      .tl-node.past .circle {
+        background: var(--muted);
+        border-color: var(--muted);
+        color: #fff;
+      }
+      .tl-node.current .circle {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .tl-node.dashed .circle {
+        background: transparent;
+        border-style: dashed;
+        border-color: var(--muted);
+        color: var(--muted);
+      }
+      .tl-node .label {
+        margin-top: 0.35rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        white-space: nowrap;
+        text-align: center;
+      }
+      .tl-node.current .label {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .tl-node.dashed .label {
+        font-style: italic;
+        max-width: 96px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+      .tl-connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        min-width: 14px;
+        max-width: 32px;
+        margin-bottom: 1.4rem;
+      }
+      .tl-connector.dashed {
+        height: 0;
+        background: none;
+        border-top: 2px dashed var(--border);
+      }
+
+      /* ── Main content ── */
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      .stage-heading {
+        margin-bottom: 1.75rem;
+      }
+      .stage-heading h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .stage-heading p {
+        margin-top: 0.4rem;
+        color: var(--text-soft);
+        font-size: 0.95rem;
+        max-width: 680px;
+      }
+
+      /* ── Card ── */
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.75rem 2rem;
+      }
+      article.card h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.6rem;
+        border-bottom: 2px solid var(--accent);
+        display: inline-block;
+      }
+
+      .card-section {
+        margin-top: 1.25rem;
+      }
+      .card-section:first-of-type {
+        margin-top: 0;
+      }
+
+      .card-section h4 {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.45rem;
+      }
+      .card-section p {
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul {
+        padding-left: 1.2rem;
+        font-size: 0.9rem;
+        color: var(--text-soft);
+      }
+      .card-section ul li {
+        margin-top: 0.3rem;
+      }
+      .card-section ul ul {
+        margin-top: 0.3rem;
+      }
+
+      .card-section code {
+        font-family:
+          "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+        font-size: 0.82rem;
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 3px;
+        padding: 0.05em 0.35em;
+      }
+
+      .card-section .code-list {
+        list-style: none;
+        padding-left: 0;
+      }
+      .card-section .code-list li {
+        margin-top: 0.3rem;
+      }
+
+      .card-section em {
+        font-style: italic;
+        color: var(--text-soft);
+      }
+
+      .review-round {
+        font-weight: 700;
+        color: var(--heading);
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 720px) {
+        header {
+          padding: 1rem;
+        }
+        .timeline-wrapper {
+          padding: 1.25rem 1rem;
+        }
+        main {
+          padding: 1.5rem 1rem 3rem;
+        }
+        article.card {
+          padding: 1.25rem 1.1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Stock Expectation</h1>
+        <p>Staged plan progress</p>
+      </div>
+    </header>
+
+    <div class="timeline-wrapper">
+      <nav aria-label="Stage timeline">
+        <div class="tl-node past">
+          <div class="circle">0</div>
+          <span class="label">Stage 0</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">1</div>
+          <span class="label">Stage 1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">2</div>
+          <span class="label">Stage 2</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">3</div>
+          <span class="label">Stage 3</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4</div>
+          <span class="label">Stage 4</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">4.1</div>
+          <span class="label">Stage 4.1</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">5</div>
+          <span class="label">Stage 5</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">6</div>
+          <span class="label">Stage 6</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">7</div>
+          <span class="label">Stage 7</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">8</div>
+          <span class="label">Stage 8</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">9</div>
+          <span class="label">Stage 9</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">11</div>
+          <span class="label">Stage 11</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">12</div>
+          <span class="label">Stage 12</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">13</div>
+          <span class="label">Stage 13</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">14</div>
+          <span class="label">Stage 14</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">15</div>
+          <span class="label">Stage 15</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">16</div>
+          <span class="label">Stage 16</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">17</div>
+          <span class="label">Stage 17</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">19</div>
+          <span class="label">Stage 19</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">20</div>
+          <span class="label">Stage 20</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past">
+          <div class="circle">21</div>
+          <span class="label">Stage 21</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="R3 event-gate restore">
+          <div class="circle">22</div>
+          <span class="label">Stage 22</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="LIVE 1Y gate">
+          <div class="circle">23</div>
+          <span class="label">Stage 23</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node past" title="Macro risk-off switch">
+          <div class="circle">24</div>
+          <span class="label">Stage 24</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div
+          class="tl-node dashed"
+          title="Unmerged branch, developed in parallel with Stage 26"
+        >
+          <div class="circle">25</div>
+          <span class="label">Weekly gold trend (unmerged branch)</span>
+        </div>
+        <div class="tl-connector"></div>
+
+        <div class="tl-node current" title="This stage">
+          <div class="circle">26</div>
+          <span class="label">KR ETF data layer</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">27</div>
+          <span class="label">ETF scoring/compare</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">28</div>
+          <span class="label">ISA targets + allocator</span>
+        </div>
+        <div class="tl-connector dashed"></div>
+
+        <div class="tl-node dashed">
+          <div class="circle">29</div>
+          <span class="label">ISA briefing + track record</span>
+        </div>
+      </nav>
+    </div>
+
+    <main>
+      <div class="stage-heading">
+        <h2>Stage 26</h2>
+        <p>
+          A reliable KR-listed ETF universe with the metadata (asset class, tax
+          type, hedge/leverage, AUM, fee, base index) that the ISA ETF
+          initiative (stages 26–29,
+          <code>docs/superpowers/specs/2026-07-10-isa-etf-design.md</code>)
+          needs for screening and allocation.
+        </p>
+      </div>
+
+      <article class="card">
+        <h3>KR ETF Data Layer</h3>
+
+        <div class="card-section">
+          <h4>Why</h4>
+          <p>
+            The ISA ETF initiative needs a KR-listed ETF universe with the
+            metadata that drives ISA screening: asset class, tax type
+            (국내주식형 매매차익 비과세 vs 기타형 보유기간 과세), hedge/leverage
+            flags, AUM, NAV deviation, fee, and base index. pykrx's ETF
+            endpoints are currently broken (<code>KeyError '시장'</code>
+            — same breakage class as the stage-3 ticker-list incident), so a new
+            source was needed.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>What</h4>
+          <ul>
+            <li>
+              <code>mcp-market-data/etf_kr.py</code> — universe fetch and
+              classification, per-ETF detail enrichment, and a CSV cache with
+              visible stale fallback.
+            </li>
+            <li>
+              <code>stock-cli etf list</code> — AUM-sorted universe with
+              <code>--asset-class</code>, <code>--min-aum</code> (억원),
+              <code>--include-leverage</code> (leverage/inverse excluded by
+              default), <code>--limit</code>.
+            </li>
+            <li>
+              <code>stock-cli etf info CODE</code> — universe row merged with
+              펀드보수 (<code>fund_pay_pct</code>) and 기초지수
+              (<code>base_index</code>); the code is zero-padded before lookup.
+            </li>
+            <li>
+              16 module tests (15 offline + 1 network-marked live smoke), 7
+              in-process CLI tests.
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>How</h4>
+          <p>
+            Naver Finance is the verified source (probed 2026-07-10):
+            <code>finance.naver.com/api/sise/etfItemList.nhn</code> returns all
+            ~1,141 KR ETFs as <strong>cp949</strong> JSON (decoded explicitly —
+            <code>r.json()</code> raises <code>UnicodeDecodeError</code>),
+            including <code>etfTabCode</code> which maps to asset class; tabs
+            1–2 without leverage tokens classify as
+            <code>domestic_equity_type</code> for tax.
+            <code>m.stock.naver.com/api/stock/{code}/integration</code>
+            supplies <code>fundPay</code>/<code>etfBaseIdx</code> via
+            <code>totalInfos</code>. Universe fetches rewrite
+            <code>data/etf_universe_kr.csv</code>; on fetch failure the stale
+            cache is served with a visible note (macro-news fail-open
+            philosophy); only when both fail does
+            <code>EtfDataUnavailable</code> propagate. Detail fetch is pure
+            enrichment and never raises. 추적오차 is deliberately absent (no
+            source); stage-27 scoring downgrades on missing metadata with a
+            visible flag.
+          </p>
+        </div>
+
+        <div class="card-section">
+          <h4>Code Locations</h4>
+          <ul class="code-list">
+            <li>
+              <code>mcp-market-data/etf_kr.py</code> — <code>EtfInfo</code>,
+              <code>_parse_universe</code>, <code>fetch_etf_universe</code>,
+              <code>_parse_detail</code>, <code>fetch_etf_detail</code>,
+              <code>_save_cache</code>/<code>_load_cache</code>,
+              <code>get_etf_universe</code>
+            </li>
+            <li>
+              <code>stock_cli.py</code> — <code>cmd_etf_list</code> /
+              <code>cmd_etf_info</code> + <code>etf</code> subparser group (next
+              to <code>catalyst</code>)
+            </li>
+            <li>
+              <code>mcp-market-data/tests/test_etf_kr.py</code>,
+              <code>tests/test_etf_cli.py</code>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Review</h4>
+          <p>
+            Round 1 (internal + Gemini/antigravity + Codex bot), addressed in
+            <code
+              >fix(etf): address review round 1 — parse fail-open, cache-write
+              resilience, code normalization, token coverage</code
+            >.
+          </p>
+          <ul style="margin-top: 0.75rem">
+            <li>
+              <span class="review-round">Fixed</span>
+              <ul>
+                <li>
+                  <strong>(Gemini blocker)</strong>
+                  <code>float(ret_3m)</code> crashed on
+                  <code>""</code> (recently listed ETFs) →
+                  <code>not in (None, "")</code>
+                  guard, plus general per-row robustness below.
+                </li>
+                <li>
+                  <strong>(Codex P2 + internal critical)</strong>
+                  <code>_parse_universe</code> ran outside the fail-open choke
+                  point, so one malformed row crashed the CLI instead of falling
+                  back to the stale cache → per-row try/except in
+                  <code>_parse_row</code> (skips malformed rows with a visible
+                  "skipped N malformed universe rows" note that surfaces through
+                  <code>get_etf_universe</code> into the CLI JSON) and parsing
+                  moved inside the <code>fetch_etf_universe</code> try block.
+                </li>
+                <li>
+                  <strong>(Codex P2)</strong> <code>_save_cache</code> failure
+                  (read-only <code>data/</code>) killed a successful live fetch
+                  → wrapped in try/except; live rows are returned with a "cache
+                  write failed" note.
+                </li>
+                <li>
+                  <strong>(Gemini + Codex P3)</strong>
+                  <code>etf info 69500</code> failed to find KODEX 200 →
+                  <code>cmd_etf_info</code> zero-pads the code before both the
+                  universe lookup and the detail fetch.
+                </li>
+                <li>
+                  <strong>(Gemini)</strong> <code>(합성 H)</code> was not
+                  detected as hedged → suffix check relaxed to
+                  <code>endswith("H)")</code>.
+                </li>
+                <li>
+                  <strong>(internal warning)</strong> Leverage tokens extended
+                  with "곱버스" and "3배"; a live probe over all 1,141 names
+                  then surfaced the long-short futures pairs (<code
+                    >KODEX 200롱코스닥150숏선물</code
+                  >), adding "숏" as well — flagged total 107.
+                </li>
+                <li>
+                  <strong>(internal warning)</strong> Cache round-trip test
+                  upgraded to full dataclass equality (<code>got == rows</code
+                  >), future-proofing <code>_OPTIONAL_FLOAT_FIELDS</code>
+                  drift.
+                </li>
+                <li>
+                  <strong>(internal suggestion)</strong> Unused
+                  <code>--refresh</code> flag / <code>refresh</code> param
+                  removed (YAGNI — live-first is the only mode).
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round"
+                >Fixed with correction (evidence over reviewer)</span
+              >
+              <ul>
+                <li>
+                  The internal reviewer's "skip rows whose zfilled code isn't 6
+                  <strong>digits</strong>" is wrong against live data: the
+                  post-2024 KRX scheme issues
+                  <strong>alphanumeric</strong> short codes
+                  (<code>0193T0</code>, <code>0167A0</code>, ...) — digits-only
+                  validation dropped 274 of 1,141 real ETFs in the live probe.
+                  Validation corrected to 6 alphanumeric chars.
+                </li>
+              </ul>
+            </li>
+            <li style="margin-top: 0.75rem">
+              <span class="review-round">Dismissed</span>
+              <ul>
+                <li>
+                  <strong>(Gemini nit)</strong>
+                  <code>decode("cp949", errors="replace")</code>: silent name
+                  corruption is worse than the designed hard-fail → visible
+                  stale-cache fallback. No code change.
+                </li>
+                <li>
+                  <strong>(internal suggestion)</strong> typing-introspection
+                  for <code>_OPTIONAL_FLOAT_FIELDS</code>: over-engineering;
+                  drift is now caught by the round-trip equality test. No code
+                  change.
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+
+        <div class="card-section">
+          <h4>Retrospective</h4>
+          <p>
+            <em
+              >Probing the data source before writing the plan paid off — the
+              cp949 quirk and pykrx breakage were known up front, so every task
+              went red→green on the first implementation pass. Carry forward:
+              keep fail-open caches CSV-simple and keep detail enrichment
+              non-fatal.</em
+            >
+          </p>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
