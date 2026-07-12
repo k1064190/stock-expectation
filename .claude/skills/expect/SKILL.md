@@ -520,7 +520,7 @@ Before printing the final markdown, sanity-check each pick. If any check fails, 
 3. **Transmission chain hygiene:** each slot quotes a specific number or named fact. No bare adjectives.
 4. **Fresh-data check:** every `news` and `horizon-metrics-batch` `generated_at` is within 1 hour of now. If older, re-fetch.
 5. **LLM_CONTEXT_SCORE justification:** if `|llm_context_score| >= 2.0`, `llm_context_reasoning` must cite at least one specific macro/sector/narrative signal (named detector output, FX number, sector lifecycle phase, etc.) — no vague "market feels risky" justifications. If reasoning is weak, dampen score toward 0.
-6. **Double-counting guard:** if `algo_score >= 7.0` and `llm_context_score >= +2.0`, recheck — you may be double-counting bullish momentum already captured by trend/momentum/cycle algo components. Most algorithmic BUY candidates should get `llm_context_score` in `[-2.0, +1.0]`.
+6. **Double-counting guard:** if `algo_score >= 6.0` and `llm_context_score >= +2.0`, recheck — you may be double-counting bullish momentum already captured by trend/momentum/cycle algo components. Most algorithmic BUY candidates should get `llm_context_score` in `[-2.0, +1.0]`.
 
 ### Step 12 — Bias checklist (informs LLM_CONTEXT_SCORE; final audit)
 
