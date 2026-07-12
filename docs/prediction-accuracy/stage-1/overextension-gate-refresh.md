@@ -53,6 +53,7 @@ components parsing and DB insert. TDD: 10 tests written first, then the implemen
   BEAR integration test (already added via the code-reviewer finding) and a
   CLI-level "complete components skips fetch" test (added). Confirmed the
   `{"overextension": null}` edge honors caller values.
+- **Codex PR bot (PR #61)**: "Didn't find any major issues" — clean in one round.
 
 ## Retrospective
 
