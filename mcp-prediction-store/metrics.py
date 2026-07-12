@@ -807,6 +807,10 @@ def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> 
         n_valid += 1
         win = 1 if r["status"] == "HIT" else 0
         for k, v in comp.items():
+            if isinstance(v, (dict, list)):
+                # Nested payloads (e.g. news_signal) have their own readout
+                # (get_news_tag_performance) and would bucket as garbage here.
+                continue
             if isinstance(v, bool):
                 label = str(v)
             elif isinstance(v, (int, float)):
@@ -828,6 +832,72 @@ def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> 
         if reported:
             pillars[pillar] = reported
     return {"n_with_components": n_valid, "pillars": pillars}
+
+
+def get_news_tag_performance(conn: sqlite3.Connection, min_count: int = 8) -> dict:
+    """Win-rate of closed predictions split by persisted news-signal fields.
+
+    Reads ``components.news_signal`` (stored by the Stage 3 persistence path)
+    on closed (HIT/MISS) rows and aggregates per event tag plus the
+    hard-catalyst flags. This answers "which catalyst tags actually predict?"
+    — the collapsed news score is graded dead (~21-33% win), but individual
+    tags may not be.
+
+    Args:
+        conn: SQLite connection.
+        min_count: Minimum closed rows in a bucket for it to be reported
+            (mirrors ``get_component_contribution``; smaller buckets are noise).
+
+    Returns:
+        ``{"n_with_news_signal": int,
+           "tags": {tag: {"n", "wins", "win_rate"}},
+           "catalysts": {"positive"/"negative": {"n", "wins", "win_rate"}}}``.
+    """
+    import json
+
+    rows = conn.execute(
+        "SELECT components, status FROM predictions "
+        "WHERE status IN ('HIT', 'MISS') AND components IS NOT NULL"
+    ).fetchall()
+
+    tag_buckets: dict[str, list[int]] = {}
+    catalyst_buckets: dict[str, list[int]] = {}
+    n_with = 0
+    for r in rows:
+        try:
+            comp = json.loads(r["components"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        sig = comp.get("news_signal") if isinstance(comp, dict) else None
+        if not isinstance(sig, dict):
+            continue
+        n_with += 1
+        win = 1 if r["status"] == "HIT" else 0
+        for tag in sig.get("event_tags") or []:
+            slot = tag_buckets.setdefault(str(tag), [0, 0])
+            slot[0] += win
+            slot[1] += 1
+        if sig.get("has_positive_catalyst"):
+            slot = catalyst_buckets.setdefault("positive", [0, 0])
+            slot[0] += win
+            slot[1] += 1
+        if sig.get("has_negative_catalyst"):
+            slot = catalyst_buckets.setdefault("negative", [0, 0])
+            slot[0] += win
+            slot[1] += 1
+
+    def _report(buckets: dict[str, list[int]]) -> dict:
+        return {
+            k: {"n": t, "wins": w, "win_rate": round(w / t, 3)}
+            for k, (w, t) in buckets.items()
+            if t >= min_count
+        }
+
+    return {
+        "n_with_news_signal": n_with,
+        "tags": _report(tag_buckets),
+        "catalysts": _report(catalyst_buckets),
+    }
 
 
 def _isotonic_nondecreasing(

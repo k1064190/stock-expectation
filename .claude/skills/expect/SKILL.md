@@ -416,7 +416,7 @@ bin/stock-cli predict create \
   --entry-price 130.50 --target-price 138 --stop-price 125 \
   --reasoning "RSI 62, MA20+7.3%, Finnhub sentiment +0.21, no earnings risk" \
   --signals technical,news,momentum \
-  --components '{"algo":7.0,"news":1.0,"llm_context":-1.5,"overextension":"NONE","regime":"RISK_ON"}' \
+  --components '{"algo":7.0,"news":1.0,"llm_context":-1.5,"overextension":"NONE","regime":"RISK_ON","news_signal":{"unique_count":4,"mean_sentiment":0.15,"recency_weighted_sentiment":0.21,"event_tags":["earnings"],"has_positive_catalyst":false,"has_negative_catalyst":false}}' \
   --recalibrate \
   --analysis-group-id "$GROUP_ID"
 ```
@@ -426,6 +426,13 @@ Always pass `--components` with the per-pillar contributions for this call
 `overextension` = the R2 level, `regime` = the R1 label). It is stored for
 capability-contribution analysis (`bin/stock-cli component-contribution`) and a
 future blended confidence — so the three capabilities can be measured separately.
+
+**Also include `news_signal`** — copy the `signal` block from the Step 4 `news`
+output verbatim into `--components` as `news_signal` with the keys
+`unique_count`, `mean_sentiment`, `recency_weighted_sentiment`, `event_tags`,
+`has_positive_catalyst`, `has_negative_catalyst` (drop `raw_count`). The
+collapsed NEWS_SCORE is graded near-dead; persisting the raw fields lets
+`bin/stock-cli news-tag-performance` learn which catalyst tags actually predict.
 
 The JSON output echoes `raw_confidence` and `recalibration_applied` so you can confirm the transform. `--signals` should be a comma-separated subset of: `technical`, `news`, `fundamental`, `momentum`, `volume`, `disclosure`, `llm_context`. **Do not record `cycle`, `valuation`, or `mean_reversion`** — these are graded statistically dead (0% hit rate) and only pollute per-signal calibration; route any such qualitative read through `LLM_CONTEXT_SCORE` instead. Include `llm_context` whenever `LLM_CONTEXT_SCORE` is non-zero so the weekly calibration aggregator can isolate its contribution to forecast accuracy. The weekly calibration aggregator (Stage 6) decomposes these to find which signals over- or under-perform.
 

@@ -513,3 +513,55 @@ def test_log_predictions_tags_low_edge_band_api_mode(tmp_path, monkeypatch):
 
     comps = _json.loads(row["components"])
     assert comps["low_edge_band"] is True
+
+
+def test_augment_news_signal_injects_components():
+    """LIVE predictions get components.news_signal from provider news."""
+    import daily_briefing as db_mod
+
+    class _P:
+        def get_news(self, ticker, limit=10, since_days=7):
+            return [
+                {"headline": "Acme beats earnings estimates", "date": "2026-07-10"},
+                {"headline": "Acme announces buyback", "date": "2026-07-09"},
+            ]
+
+    pred = db_mod.Prediction(
+        ticker="ACME",
+        market="US",
+        direction="BULL",
+        confidence=0.62,
+        timeframe="1W",
+        reasoning="r",
+        entry_price=10.0,
+        source="LIVE",
+        components={"algo": 6.0},
+    )
+    db_mod._augment_news_signal(pred, {"US": _P()})
+
+    sig = pred.components["news_signal"]
+    assert sig["unique_count"] == 2
+    assert "earnings" in sig["event_tags"]
+    assert pred.components["algo"] == 6.0
+
+
+def test_augment_news_signal_fail_open():
+    import daily_briefing as db_mod
+
+    class _Boom:
+        def get_news(self, *a, **k):
+            raise RuntimeError("api down")
+
+    pred = db_mod.Prediction(
+        ticker="ACME",
+        market="US",
+        direction="BULL",
+        confidence=0.62,
+        timeframe="1W",
+        reasoning="r",
+        entry_price=10.0,
+        source="LIVE",
+        components=None,
+    )
+    db_mod._augment_news_signal(pred, {"US": _Boom()})
+    assert pred.components is None or "news_signal" not in (pred.components or {})

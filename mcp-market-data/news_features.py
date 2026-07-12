@@ -213,6 +213,26 @@ class NewsSignal:
     has_positive_catalyst: bool = False
     has_negative_catalyst: bool = False
 
+    def to_components_dict(self) -> dict:
+        """Compact JSON-safe dict for ``predictions.components["news_signal"]``.
+
+        Persists the raw signal fields (not just the collapsed news score) so
+        per-tag hit rates can be learned later. ``raw_count`` is omitted —
+        ``unique_count`` is the deduped, decision-relevant figure.
+
+        Returns:
+            Dict with unique_count, mean_sentiment, recency_weighted_sentiment,
+            event_tags, has_positive_catalyst, has_negative_catalyst.
+        """
+        return {
+            "unique_count": self.unique_count,
+            "mean_sentiment": self.mean_sentiment,
+            "recency_weighted_sentiment": self.recency_weighted_sentiment,
+            "event_tags": list(self.event_tags),
+            "has_positive_catalyst": self.has_positive_catalyst,
+            "has_negative_catalyst": self.has_negative_catalyst,
+        }
+
 
 def _normalize(headline: str) -> str:
     """Lowercase, strip non-alphanumerics, collapse whitespace (for dedup)."""

@@ -84,6 +84,7 @@ from metrics import (
     apply_recalibration,
     recalibrate_confidence,
     get_component_contribution,
+    get_news_tag_performance,
 )
 from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
@@ -2256,6 +2257,19 @@ def cmd_component_contribution(args) -> int:
         conn.close()
 
 
+def cmd_news_tag_performance(args) -> int:
+    """Show win-rate by persisted news_signal event tags / hard catalysts."""
+    conn = get_connection()
+    try:
+        _print_json(get_news_tag_performance(conn, min_count=args.min_count))
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+    finally:
+        conn.close()
+
+
 def cmd_calibration(args) -> int:
     """Show calibration report (predicted vs actual accuracy)."""
     conn = get_connection()
@@ -3548,6 +3562,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum closed rows in a bucket to report it (default 8)",
     )
     cc.set_defaults(func=cmd_component_contribution)
+
+    # --- news-tag-performance ---
+    ntp = sub.add_parser(
+        "news-tag-performance",
+        help="Win-rate split by persisted news_signal event tags / hard catalysts",
+    )
+    ntp.add_argument(
+        "--min-count",
+        type=int,
+        default=8,
+        help="Minimum closed rows in a bucket to report it (default 8)",
+    )
+    ntp.set_defaults(func=cmd_news_tag_performance)
 
     # --- lint-llm-context ---
     lc = sub.add_parser(
