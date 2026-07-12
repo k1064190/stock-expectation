@@ -30,7 +30,9 @@ called at the top of `run_range` with an info log of the skipped count.
 
 ## Code locations
 
-- `stock_cli.py` — `LOW_EDGE_BAND` constant + tag block in `cmd_predict_create`
+- `mcp-prediction-store/models.py` — shared `LOW_EDGE_BAND` constant
+- `stock_cli.py` — tag block in `cmd_predict_create` (CLI path)
+- `scheduler/daily_briefing.py` — mirrored tag in `log_predictions` (API path)
 - `scheduler/paper_trading_run.py` — `filter_low_edge_band`, SELECT + `run_range` wiring
 - `.claude/skills/expect/SKILL.md` — point table, rationale note, Step 5b guidance,
   worked examples

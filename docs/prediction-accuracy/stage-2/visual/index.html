@@ -278,6 +278,13 @@
             <div class="dot"></div>
             <div class="label">Stage 2</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 3</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -395,12 +402,25 @@
                 <li>
                   <strong>Codex (gpt-5.6-sol, high)</strong>: 2 P2 findings,
                   both fixed — the overview line still claimed a composite max
-                  of +14 (corrected to +13, and the stale -4.5 ALGO floor header
-                  corrected to -4.0/-5.0-with-earnings); a worked example
-                  claimed a counterfactual BUY that is actually WATCH 7.5 under
-                  the new weights (reworded as pre-2026-07 behavior). Codex's
-                  "-11 floor" sub-claim was wrong (the earnings penalty makes
-                  -12 correct) and was kept as-is.
+                  of +14 (corrected to +13); a worked example claimed a
+                  counterfactual BUY that is actually WATCH 7.5 under the new
+                  weights (reworded as pre-2026-07 behavior). Its "-11 composite
+                  floor" sub-claim was initially dismissed but turned out
+                  correct — the old doc double-counted the earnings penalty, so
+                  the true drag is -3.0, the floor is -4.0 with earnings, and
+                  the composite floor is -11.0 — fixed in the PR-review round
+                  below.
+                </li>
+                <li>
+                  <strong>PR #62 bots (round 1)</strong>: Codex bot — a P2 where
+                  the <code>low_edge_band</code> tag was missing from the
+                  API-mode <code>log_predictions</code> path (fixed by moving
+                  the constant to <code>models.LOW_EDGE_BAND</code> and
+                  mirroring the tag there, with a regression test added). Gemini
+                  Code Assist — a <code>filter_low_edge_band</code>
+                  TypeError when components is already a dict (fixed
+                  defensively), the ALGO-floor arithmetic above (fixed), and a
+                  temp-DB cleanup gap in the test fixture (fixed).
                 </li>
                 <li>
                   <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no

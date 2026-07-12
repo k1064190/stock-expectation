@@ -278,6 +278,13 @@
             <div class="dot"></div>
             <div class="label">2단계</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">3단계</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -391,12 +398,24 @@
                 <li>
                   <strong>Codex (gpt-5.6-sol, high)</strong>: P2 2건 발견, 모두
                   수정됨 — 개요 문구가 여전히 합성 점수 최댓값을 +14라고
-                  주장하고 있어 +13으로 정정했고(오래된 -4.5 ALGO 하한 헤더도
-                  -4.0/실적 반영 시 -5.0으로 정정), 예시 계산 하나가 새 가중치
+                  주장하고 있어 +13으로 정정했고, 예시 계산 하나가 새 가중치
                   하에서는 실제로 WATCH 7.5인데도 반사실적 BUY를 주장하고 있어
-                  "2026-07 이전 동작"으로 문구를 수정함. Codex의 "-11 하한" 하위
-                  주장은 틀렸으며(실적 페널티를 반영하면 -12가 맞음) 그대로
-                  유지함.
+                  "2026-07 이전 동작"으로 문구를 수정함. 처음엔 기각됐던 Codex의
+                  "-11 컴포지트 하한" 하위 주장은 실제로 맞는 것으로 확인됨 —
+                  기존 문서가 실적 발표 페널티를 이중 계산하고 있었고, 실제
+                  드래그는 -3.0, 실적 발표 포함 하한은 -4.0, 컴포지트 하한은
+                  -11.0이며, 이는 아래 PR 리뷰 라운드에서 수정됨.
+                </li>
+                <li>
+                  <strong>PR #62 봇 (1라운드)</strong>: Codex 봇 — API 모드
+                  <code>log_predictions</code> 경로에
+                  <code>low_edge_band</code> 태그가 누락된 P2를 발견(상수를
+                  <code>models.LOW_EDGE_BAND</code>
+                  로 옮기고 태그를 그대로 반영, 회귀 테스트 추가로 해결). Gemini
+                  Code Assist — components가 이미 dict일 때 발생하는
+                  <code>filter_low_edge_band</code>의 TypeError(방어적으로
+                  수정), 위의 ALGO 하한 산술 오류(수정), 테스트 픽스처의 임시 DB
+                  정리 누락(수정).
                 </li>
                 <li>
                   <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 발견 사항
