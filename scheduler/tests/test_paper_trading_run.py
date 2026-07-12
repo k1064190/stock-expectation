@@ -146,3 +146,15 @@ def test_benchmark_nav_tracks_index_buy_and_hold():
     assert ptr.benchmark_nav(100_000.0, bmap, "2026-05-02", 100.0) == pytest.approx(
         110_000.0
     )
+
+
+def test_filter_low_edge_band_drops_tagged_rows():
+    rows = [
+        {"ticker": "AAA", "components": '{"low_edge_band": true}'},
+        {"ticker": "BBB", "components": '{"algo": 7.0}'},
+        {"ticker": "CCC", "components": None},
+        {"ticker": "DDD", "components": "not-json"},
+    ]
+    kept, skipped = ptr.filter_low_edge_band(rows)
+    assert [r["ticker"] for r in kept] == ["BBB", "CCC", "DDD"]
+    assert skipped == 1

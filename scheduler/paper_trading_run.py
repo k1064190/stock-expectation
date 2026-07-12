@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import json
 import logging
 import sys
 from datetime import date, datetime, timedelta
@@ -169,6 +170,37 @@ def _provider(market: str):
     return KoreanMarketProvider()
 
 
+def filter_low_edge_band(rows: list[dict]) -> tuple[list[dict], int]:
+    """Drop rows whose components JSON carries a truthy ``low_edge_band``.
+
+    The tag marks the 0.60-0.70 raw-confidence band with negative realized
+    edge — those predictions still log (training data), but the paper book
+    does not commit capital to them. Unparseable/absent components keep the
+    row (fail-open).
+
+    Args:
+        rows: Prediction row dicts with an optional ``components`` JSON string.
+
+    Returns:
+        (kept_rows, skipped_count).
+    """
+    kept: list[dict] = []
+    skipped = 0
+    for r in rows:
+        raw = r.get("components")
+        tagged = False
+        if raw:
+            try:
+                tagged = bool(json.loads(raw).get("low_edge_band"))
+            except (json.JSONDecodeError, AttributeError):
+                tagged = False
+        if tagged:
+            skipped += 1
+        else:
+            kept.append(r)
+    return kept, skipped
+
+
 def _fetch_bull_predictions(market: str, frm: str, to: str) -> list[dict]:
     """LIVE BULL predictions created in [frm, to] for a market (read-only)."""
     import models as pred_models
@@ -182,7 +214,7 @@ def _fetch_bull_predictions(market: str, frm: str, to: str) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT ticker, COALESCE(raw_confidence, confidence) AS conf, timeframe, "
-            "created_at, entry_price, target_price, stop_price, id "
+            "created_at, entry_price, target_price, stop_price, id, components "
             "FROM predictions "
             "WHERE source='LIVE' AND direction='BULL' AND market=? "
             "AND status != 'CANCELLED' "  # retracted signals never reach the paper book
@@ -206,6 +238,14 @@ def run_range(market: str, frm: str, to: str, params: StrategyParams) -> dict:
     Returns a small summary dict.
     """
     rows = _fetch_bull_predictions(market, frm, to)
+    rows, skipped_low_edge = filter_low_edge_band(rows)
+    if skipped_low_edge:
+        logger.info(
+            "%s: skipped %d low_edge_band prediction(s) (0.60-0.70 raw-conf "
+            "band, negative realized edge)",
+            market,
+            skipped_low_edge,
+        )
     for r in rows:
         r["cdate"] = signal_local_date(
             r["created_at"], market

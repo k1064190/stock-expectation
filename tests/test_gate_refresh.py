@@ -269,7 +269,8 @@ def test_create_complete_components_skips_fetch(monkeypatch, use_temp_db, capsys
 def test_create_fail_open_still_inserts(monkeypatch, use_temp_db, capsys):
     _patch_provider(monkeypatch, _FakeProvider(exc=RuntimeError("network down")))
 
-    rc, out = _run_create(_make_args(ticker="AMD"), capsys)
+    # confidence outside the low-edge band so the tag doesn't add components
+    rc, out = _run_create(_make_args(ticker="AMD", confidence=0.75), capsys)
 
     assert rc == 0
     assert out.get("components") is None

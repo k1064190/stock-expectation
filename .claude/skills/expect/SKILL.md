@@ -111,7 +111,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 
 ### Step 5 — Compute the algorithmic score (deterministic point table)
 
-**ALGO_SCORE — sums to a max of +8.0, can go as low as -4.5.** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
+**ALGO_SCORE — sums to a max of +7.0, can go as low as -4.5.** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
 
 | Component | Bucket (evaluate in order) | Points | Notes |
 |---|---|---|---|
@@ -119,7 +119,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | | MA20 > MA50 *and* MA50 ≤ MA200 | +1.0 | |
 | | MA50 < MA200 *and* MA20 ≤ MA50 (full bear stack) | -1.0 | |
 | | otherwise (mixed) | 0 | |
-| **Momentum** | RSI14 ∈ [50, 70] | +1.5 | |
+| **Momentum** | RSI14 ∈ [50, 70] | +1.0 | down-weighted 2026-07: momentum signal 24.6% 30d win |
 | | RSI14 ∈ [30, 50) | +0.5 | |
 | | RSI14 > 70 | +0.5 | overbought, half credit |
 | | RSI14 < 30 | -0.5 | |
@@ -127,7 +127,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | | 0 < `return_1m` < +0.05 | +0.5 | |
 | | -0.10 < `return_1m` ≤ 0 | 0 | |
 | | `return_1m` ≤ -0.10 | -0.5 | |
-| **Volume** | `vol_ratio` > 1.3 (from horizon-metrics-batch; 5d avg / 50d avg) | +1.0 | |
+| **Volume** | `vol_ratio` > 1.3 (from horizon-metrics-batch; 5d avg / 50d avg) | +0.5 | down-weighted 2026-07: volume signal 23.3% 30d win |
 | | `vol_ratio` is None or ≤ 1.3 | 0 | None happens on listings with < 50 bars or all-zero windows |
 | **Cycle** | `pct_from_52w_high` ≥ -0.10 | +1.0 | within 10% of 52-week high |
 | | `max_drawdown_1y` ≤ -0.25 | -1.0 | |
@@ -135,13 +135,19 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | **Earnings event** *(penalty only)* | next earnings within 7 days | -1.0 | fed by RULE R3 — apply -1.0 when `catalyst gate` reports the ticker's `trading_days_until ≤ 5` (cap or trim band). R3 then also caps/trims per Step 7. |
 | | else | 0 | |
 
-Max positive sum: 3 + 1.5 + 1.5 + 1 + 1 + 0 = **8.0**. Max negative drag: -1 + -0.5 + -0.5 + -1 + -1 = **-4.0**. Effective floor with earnings event also: **-5.0**.
+Max positive sum: 3 + 1.0 + 1.5 + 0.5 + 1 + 0 = **7.0**. Max negative drag: -1 + -0.5 + -0.5 + -1 + -1 = **-4.0**. Effective floor with earnings event also: **-5.0**.
+
+> **2026-07 down-weight rationale**: 30-day weekly calibration (2026-07-05) grades
+> momentum (24.6%) and volume (23.3%) statistically dead, while sector (52.6%) and
+> fundamental (67.5%) are the only signals beating coin-flip. The ALGO ceiling drops
+> 8.0 → 7.0, so BUY (COMPOSITE ≥ 8.0) now always requires at least +1.0 of combined
+> news/LLM-context confirmation — mechanics alone can no longer print a BUY.
 
 When a `horizon-metrics` field is `null` (insufficient bars on a young listing), assign 0 to that component and append `(N/A: <field>)` to the transmission chain's RISK slot.
 
 ### Step 5b — LLM macro/narrative context score (mitigates momentum bias)
 
-The deterministic ALGO_SCORE rewards stocks that are already trending (full bull MA stack, RSI 50-70, return_1m ≥ +5%, near 52W high). This is intentional (momentum factor) but creates a structural bias: **a parabolic blow-off top scores identically to a healthy mid-stage uptrend**. The 5/15/2026 KOSPI key reversal day exposed this — 000660 SK하이닉스 would have scored ALGO 7.0 + NEWS 1.0 = BUY threshold despite +925% YoY and a confirmed macro top signal.
+The deterministic ALGO_SCORE rewards stocks that are already trending (full bull MA stack, RSI 50-70, return_1m ≥ +5%, near 52W high). This is intentional (momentum factor) but creates a structural bias: **a parabolic blow-off top scores identically to a healthy mid-stage uptrend**. The 5/15/2026 KOSPI key reversal day exposed this — 000660 SK하이닉스 would have scored ALGO 7.0 + NEWS 1.0 = BUY threshold under the pre-2026-07 weights despite +925% YoY and a confirmed macro top signal.
 
 `LLM_CONTEXT_SCORE` is your explicit channel to encode macro/narrative context the table can't see. **Range -5.0 to +3.0** (asymmetric — bigger negative range mitigates the algorithmic momentum bias which dominates upside).
 
@@ -221,7 +227,8 @@ Interpolate between anchors (e.g., -2.5 is allowed and common).
 
 **Calibration honesty**:
 - Track record shows valuation/cycle/mean_reversion signals at 0% win rate. LLM_CONTEXT_SCORE is your channel to encode these qualitative signals more carefully. Weekly calibration will measure this signal separately under `--signals llm_context` — be conservative until 6-8 weeks of data confirms it adds alpha.
-- When ALGO_SCORE is high (+7 or +8), be wary of confirming with a positive LLM_CONTEXT_SCORE (avoid double-counting bullish momentum). Most algorithmic BUY candidates should get LLM_CONTEXT in [-2.0, +1.0] range.
+- When ALGO_SCORE is high (+6 or +7), be wary of confirming with a positive LLM_CONTEXT_SCORE (avoid double-counting bullish momentum). Most algorithmic BUY candidates should get LLM_CONTEXT in [-2.0, +1.0] range.
+- **Signal re-weighting (2026-07)**: 30-day calibration shows sector (52.6%) and fundamental (67.5%) are the only signals beating coin-flip; technical/momentum/news/volume/cross_market grade dead. Ground positive LLM_CONTEXT scores in **sector-RS confirmation or a concrete fundamental catalyst** — never award positive context on technical/momentum grounds alone (those are already in ALGO and empirically dead).
 
 **Recursion guard**: this skill can call `market-top-detector`, `ftd-detector`, `macro-regime-detector`, `theme-detector`. None of those currently call `/expect`. If that changes, add a `--no-gate-recursion` flag to suppress the macro context call.
 
@@ -258,7 +265,7 @@ Max positive sum: 2 + 1 = **3.0**. Floor without hard caps: -2 + 0 = -2.0. With 
 
 ```
 COMPOSITE = ALGO_SCORE + NEWS_SCORE + LLM_CONTEXT_SCORE
-  range:  -12.0 (worst case)  ..  +14.0 (perfect)
+  range:  -12.0 (worst case)  ..  +13.0 (perfect)
   (algo floor -5.0 with earnings penalty + news floor -2.0 + llm_context floor -5.0)
 
 Label mapping (contiguous half-open ranges — every score lands in exactly one bucket):
@@ -350,13 +357,13 @@ the thesis — exactly the entries R3 caps or trims.
   earnings trim (−0.05) and the R3 macro trim (−0.05) that apply to the pick
   (a pick can eat both R3 trims at once).
 
-Threshold rationale (unchanged from pre-LLM_CONTEXT design): BUY at 8.0 means an algorithmically-strong setup (ALGO ≥ 7) needs **either** news confirmation (NEWS ≥ +1) **or** LLM context confirmation (LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
+Threshold rationale: BUY at 8.0 with the ALGO ceiling at 7.0 (2026-07 down-weight) means even a **perfect** algorithmic setup needs at least **+1.0 of combined** news/LLM-context confirmation (e.g. NEWS ≥ +1 or LLM_CONTEXT ≥ +1) — and a strongly bearish LLM_CONTEXT (-3) is sufficient on its own to downgrade an otherwise-BUY signal to HOLD. This is the explicit anti-momentum-bias circuit.
 
 **Worked example — 000660 SK하이닉스 on 2026-05-14 (pre-crash)**:
-- ALGO = 7.0 (trend +3, momentum +0.5, return_1m +1.5, volume +1.0, cycle +1.0)
+- ALGO = 6.5 (trend +3, momentum +0.5, return_1m +1.5, volume +0.5, cycle +1.0; 2026-07 weights)
 - NEWS = 1.0 (5 headlines/7d, no AV sentiment, no hard cap)
 - LLM_CONTEXT = -3.0 (KOSPI parabolic +25% / 22d, magazine cover "1만피" target, FX 1500 stress, sector late-stage)
-- COMPOSITE = **5.0 → HOLD** (downgrade from raw 8.0 BUY because macro context overrides)
+- COMPOSITE = **4.5 → HOLD** (macro context overrides an otherwise WATCH-adjacent setup)
 
 Without LLM_CONTEXT the system would have labelled this BUY at the very top of a blow-off — exactly the failure mode this score is designed to prevent.
 
@@ -444,9 +451,9 @@ After the run completes (all stocks scored, all predictions saved), write `state
       "ticker": "NVDA",
       "market": "US",
       "label": "BUY",
-      "composite": 11.0,
-      "algo_score": 8.0,
-      "algo_components": {"trend": 3.0, "momentum": 1.5, "return_1m": 1.5, "volume": 1.0, "cycle": 1.0, "earnings": 0},
+      "composite": 10.0,
+      "algo_score": 7.0,
+      "algo_components": {"trend": 3.0, "momentum": 1.0, "return_1m": 1.5, "volume": 0.5, "cycle": 1.0, "earnings": 0},
       "news_score": 3.0,
       "news_components": {"sentiment": 2.0, "headline_volume": 1.0, "neg_keyword_cap": false, "disclosure_cap": false},
       "llm_context_score": 0.0,
@@ -529,8 +536,8 @@ Note in the per-stock detail if any of these fired and what was adjusted in the 
 
 | # | Ticker | Price | Label | Composite | Algo / News / Context | Horizons logged |
 |---|--------|-------|-------|-----------|------------------------|-----------------|
-| 1 | NVDA   | $130  | **BUY**   | 11.0 | 8.0 / 3.0 / 0.0 | 1W, 1M |
-| 2 | 000660 | ₩1.82M| HOLD  | 5.0 | 7.0 / 1.0 / **-3.0** | — (LLM context downgraded from raw 8.0 BUY) |
+| 1 | NVDA   | $130  | **BUY**   | 10.0 | 7.0 / 3.0 / 0.0 | 1W, 1M |
+| 2 | 000660 | ₩1.82M| HOLD  | 4.5 | 6.5 / 1.0 / **-3.0** | — (LLM context downgraded a WATCH-adjacent setup) |
 | 3 | XYZ    | $42   | SELL  | -1.5 | -0.5 / -1.0 / 0.0 | — |
 
 Track record: 58% win rate over last 30 days, Brier 0.21.
@@ -538,14 +545,14 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 
 ### Per-stock detail
 
-#### 1. NVDA ($130) — BUY (composite 11.0)
+#### 1. NVDA ($130) — BUY (composite 10.0)
 
 **Transmission chain:**
 - TECH: RSI14=62 above midline; MA20>MA50>MA200 stack
 - NEWS: Finnhub avg sentiment +0.21 across 5 articles in last 7d
 - RISK: earnings 18d out — no event risk; cycle_risk_flag=False
 
-**Algo (8.0/8):** Trend +3.0, Momentum +1.5, Return_1M +1.5, Volume +1.0, Cycle +1.0
+**Algo (7.0/7):** Trend +3.0, Momentum +1.0, Return_1M +1.5, Volume +0.5, Cycle +1.0
 **News (3.0/3):** Sentiment +2.0, Headline_volume +1.0, no hard caps fired
 **LLM Context (0.0):** Neutral macro — FTD post-confirmation health intact, AI sector mid-stage. No specific event risk.
 
@@ -557,14 +564,14 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 
 **Bias check:** none triggered.
 
-#### 2. 000660 SK하이닉스 (₩1,819,000) — HOLD (composite 5.0, LLM_CONTEXT downgrade)
+#### 2. 000660 SK하이닉스 (₩1,819,000) — HOLD (composite 4.5, LLM_CONTEXT downgrade)
 
 **Transmission chain:**
 - TECH: MA20>MA50>MA200 stack; RSI14=71.9 OVERBOUGHT; return_1m=+64.9%
 - NEWS: 5 headlines/7d including "검은 월요일" macro panic; treasury share disposal 5/13
 - RISK: cycle_risk_flag=True; parabolic blow-off context; US semis -4% Fri
 
-**Algo (7.0/8):** Trend +3.0, Momentum +0.5, Return_1M +1.5, Volume +1.0, Cycle +1.0
+**Algo (6.5/7):** Trend +3.0, Momentum +0.5, Return_1M +1.5, Volume +0.5, Cycle +1.0
 **News (1.0/3):** Headline_volume +1.0
 **LLM Context (-3.0):** KOSPI 5/15 key reversal day -6.12% off ATH 8047 + 외인 -5.56조 매도 + USD/KRW 1500 돌파 = market-top-detector defensive. Sector late-stage parabolic (+25% / 22d). Samsung 노조 파업 5/21 imminent. Fundamentals intact (NVDA Blackwell demand, HBM cycle), so -3.0 (not -5.0).
 

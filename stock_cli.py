@@ -1952,6 +1952,10 @@ def _recalibrated_confidence(
 # MA20/RSI14.
 GATE_REFRESH_DAYS = 120
 
+# Raw-confidence band with negative realized edge (paper-trading reviews
+# 2026-06-28 / 2026-07-05). Inclusive on both ends.
+LOW_EDGE_BAND = (0.60, 0.70)
+
 
 def _refresh_overextension_components(
     components: Optional[dict], ticker: str, market: str
@@ -2052,6 +2056,18 @@ def cmd_predict_create(args) -> int:
             components, _ = _refresh_overextension_components(
                 components, args.ticker, args.market
             )
+
+        # Tag (never block) the raw-confidence band with negative realized
+        # edge in both paper books (US +1.0%, KR -0.1% avg round-trip):
+        # predictions still log so the learned blend keeps training rows, but
+        # capital-touching consumers (paper trading) skip tagged picks.
+        if (
+            args.source.upper() == "LIVE"
+            and args.direction.upper() == "BULL"
+            and LOW_EDGE_BAND[0] <= args.confidence <= LOW_EDGE_BAND[1]
+        ):
+            components = dict(components or {})
+            components["low_edge_band"] = True
 
         conn = get_connection()
         try:
