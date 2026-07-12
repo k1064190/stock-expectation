@@ -53,21 +53,25 @@
         font-size: 0.95rem;
       }
 
-      nav[aria-label="Language"] {
+      nav[aria-label="Language"],
+      nav[aria-label="언어"] {
         font-size: 0.9rem;
       }
 
-      nav[aria-label="Language"] span {
+      nav[aria-label="Language"] span,
+      nav[aria-label="언어"] span {
         color: var(--muted);
       }
 
-      nav[aria-label="Language"] a {
+      nav[aria-label="Language"] a,
+      nav[aria-label="언어"] a {
         color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
 
-      nav[aria-label="Language"] a:hover {
+      nav[aria-label="Language"] a:hover,
+      nav[aria-label="언어"] a:hover {
         text-decoration: underline;
       }
 
@@ -285,6 +289,27 @@
             <div class="dot"></div>
             <div class="label">Stage 3</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 4a</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 5</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 6</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -293,9 +318,7 @@
       <section>
         <h2>Stage 3</h2>
         <p class="stage-summary">
-          Stops discarding the rich per-article news signal at prediction time
-          and starts persisting it, so which catalysts actually predict can
-          eventually be measured.
+          Stops discarding the rich per-article news signal at prediction time and starts persisting it, so which catalysts actually predict can eventually be measured.
         </p>
 
         <div class="card-grid">
@@ -305,48 +328,21 @@
             <div class="card-section">
               <h4>Why</h4>
               <p>
-                The scalar news score is graded near-dead (21-33% win), but the
-                richer <code>NewsSignal</code> fields it collapses from — event
-                tags such as earnings, M&amp;A, and analyst actions,
-                recency-weighted sentiment, and hard positive or negative
-                catalysts — were computed at prediction time and then discarded.
-                Without persisting them, nothing can ever learn which news
-                catalysts actually predict, and every day of delay loses labeled
-                training rows for the stage-4 learned blend and beyond.
+                The scalar news score is graded near-dead (21-33% win), but the richer <code>NewsSignal</code> fields it collapses from — event tags such as earnings, M&amp;A, and analyst actions, recency-weighted sentiment, and hard positive or negative catalysts — were computed at prediction time and then discarded. Without persisting them, nothing can ever learn which news catalysts actually predict, and every day of delay loses labeled training rows for the stage-4 learned blend and beyond.
               </p>
             </div>
 
             <div class="card-section">
               <h4>What</h4>
               <p>
-                <code>NewsSignal.to_components_dict()</code> produces a compact
-                JSON payload now persisted under
-                <code>components.news_signal</code> on every prediction. In API
-                mode, <code>_augment_news_signal</code> inside
-                <code>log_predictions</code> fetches per-ticker news and stores
-                the signal for LIVE predictions only, failing open and never
-                overwriting a model-supplied value. For CLI-driven modes
-                (claude-code/codex), the <code>/expect</code> skill and both
-                briefing prompts now mandate <code>news_signal</code> in
-                <code>--components</code>. A new
-                <code>get_news_tag_performance</code> function and
-                <code>stock-cli news-tag-performance</code> command report
-                per-event-tag and per-catalyst hit rates over closed
-                predictions, guarded by a minimum sample size (default 8).
-                <code>get_component_contribution</code> now skips nested dict or
-                list values so the new payload cannot pollute pillar buckets.
+                <code>NewsSignal.to_components_dict()</code> produces a compact JSON payload now persisted under <code>components.news_signal</code> on every prediction. In API mode, <code>_augment_news_signal</code> inside <code>log_predictions</code> fetches per-ticker news and stores the signal for LIVE predictions only, failing open and never overwriting a model-supplied value. For CLI-driven modes (claude-code/codex), the <code>/expect</code> skill and both briefing prompts now mandate <code>news_signal</code> in <code>--components</code>. A new <code>get_news_tag_performance</code> function and <code>stock-cli news-tag-performance</code> command report per-event-tag and per-catalyst hit rates over closed predictions, guarded by a minimum sample size (default 8). <code>get_component_contribution</code> now skips nested dict or list values so the new payload cannot pollute pillar buckets.
               </p>
             </div>
 
             <div class="card-section">
               <h4>How</h4>
               <p>
-                Development followed TDD: 6 new tests were written before the
-                implementation. The augment helper mirrors the existing
-                <code>_augment_gate_components</code> pattern, and
-                <code>_news_item_obj</code> bridges dict fixtures to the
-                attribute-access shape that <code>summarize_news</code>
-                expects.
+                Development followed TDD: 6 new tests were written before the implementation. The augment helper mirrors the existing <code>_augment_gate_components</code> pattern, and <code>_news_item_obj</code> bridges dict fixtures to the attribute-access shape that <code>summarize_news</code> expects.
               </p>
             </div>
 
@@ -354,29 +350,22 @@
               <h4>Code locations</h4>
               <ul class="code-locations">
                 <li>
-                  <code>mcp-market-data/news_features.py</code> —
-                  <code>NewsSignal.to_components_dict</code>
+                  <code>mcp-market-data/news_features.py</code> — <code>NewsSignal.to_components_dict</code>
                 </li>
                 <li>
-                  <code>scheduler/daily_briefing.py</code> —
-                  <code>_augment_news_signal</code>,
-                  <code>_news_item_obj</code>, prompt contract lines (US/KR)
+                  <code>scheduler/daily_briefing.py</code> — <code>_augment_news_signal</code>, <code>_news_item_obj</code>, prompt contract lines (US/KR)
                 </li>
                 <li>
-                  <code>mcp-prediction-store/metrics.py</code> —
-                  <code>get_news_tag_performance</code>, nested-value skip
+                  <code>mcp-prediction-store/metrics.py</code> — <code>get_news_tag_performance</code>, nested-value skip
                 </li>
                 <li>
-                  <code>stock_cli.py</code> —
-                  <code>news-tag-performance</code> subcommand
+                  <code>stock_cli.py</code> — <code>news-tag-performance</code> subcommand
                 </li>
                 <li>
-                  <code>.claude/skills/expect/SKILL.md</code> — components
-                  contract
+                  <code>.claude/skills/expect/SKILL.md</code> — components contract
                 </li>
                 <li>
-                  <code>tests/test_news_signal_persistence.py</code>,
-                  <code>scheduler/tests/test_daily_briefing.py</code>
+                  <code>tests/test_news_signal_persistence.py</code>, <code>scheduler/tests/test_daily_briefing.py</code>
                 </li>
               </ul>
             </div>
@@ -385,12 +374,10 @@
               <h4>Verification</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 904 passed (6
-                  new)
+                  <code>uv run pytest -m "not network"</code> — 904 passed (6 new)
                 </li>
                 <li>
-                  CLI smoke test: <code>stock-cli news-tag-performance</code>
-                  on an empty database returns the zero-state JSON shape.
+                  CLI smoke test: <code>stock-cli news-tag-performance</code> on an empty database returns the zero-state JSON shape.
                 </li>
               </ul>
             </div>
@@ -399,30 +386,13 @@
               <h4>Review loop</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer subagent</strong>: ready to ship — 1
-                  warning (missing <code>--min-count</code> validation,
-                  dismissed as matching the existing
-                  <code>component-contribution</code> convention) and 2
-                  test-coverage suggestions (guard tests and multi-tag /
-                  both-catalyst tests, both added).
+                  <strong>code-reviewer subagent</strong>: ready to ship — 1 warning (missing <code>--min-count</code> validation, dismissed as matching the existing <code>component-contribution</code> convention) and 2 test-coverage suggestions (guard tests and multi-tag / both-catalyst tests, both added).
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: 2 medium and 1 low
-                  finding, all fixed — the contract wording ("verbatim" versus
-                  dropping <code>raw_count</code>) was rewritten as an explicit
-                  six-key copy and the <code>daily-briefing</code> skill example
-                  was updated to include <code>news_signal</code>; tag
-                  aggregation now type-checks as <code>list[str]</code>, dedups
-                  per row, and requires catalyst flags to be exactly
-                  <code>True</code>; <code>to_components_dict</code> now
-                  nullifies non-finite floats, tested with
-                  <code>allow_nan=False</code>.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: 2 medium and 1 low finding, all fixed — the contract wording ("verbatim" versus dropping <code>raw_count</code>) was rewritten as an explicit six-key copy and the <code>daily-briefing</code> skill example was updated to include <code>news_signal</code>; tag aggregation now type-checks as <code>list[str]</code>, dedups per row, and requires catalyst flags to be exactly <code>True</code>; <code>to_components_dict</code> now nullifies non-finite floats, tested with <code>allow_nan=False</code>.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 2 low
-                  findings, both fixed — a string <code>event_tags</code> guard
-                  (superseded by the stricter Codex fix) and a UTC-anchored
-                  <code>asof_date</code> in <code>_augment_news_signal</code>.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 2 low findings, both fixed — a string <code>event_tags</code> guard (superseded by the stricter Codex fix) and a UTC-anchored <code>asof_date</code> in <code>_augment_news_signal</code>.
                 </li>
               </ul>
             </div>
@@ -430,9 +400,7 @@
             <div class="card-section">
               <h4>Retrospective</h4>
               <p class="retrospective">
-                The measurement side (tag performance) will stay underpowered
-                for weeks — the readout deliberately refuses verdicts below the
-                minimum sample size rather than reporting noise.
+                The measurement side (tag performance) will stay underpowered for weeks — the readout deliberately refuses verdicts below the minimum sample size rather than reporting noise.
               </p>
             </div>
           </article>

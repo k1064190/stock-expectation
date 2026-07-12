@@ -53,20 +53,24 @@
         font-size: 0.95rem;
       }
 
+      nav[aria-label="Language"],
       nav[aria-label="언어"] {
         font-size: 0.9rem;
       }
 
+      nav[aria-label="Language"] span,
       nav[aria-label="언어"] span {
         color: var(--muted);
       }
 
+      nav[aria-label="Language"] a,
       nav[aria-label="언어"] a {
         color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
 
+      nav[aria-label="Language"] a:hover,
       nav[aria-label="언어"] a:hover {
         text-decoration: underline;
       }
@@ -285,6 +289,27 @@
             <div class="dot"></div>
             <div class="label">3단계</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">4a단계</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">5단계</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">6단계</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -293,9 +318,7 @@
       <section>
         <h2>2단계</h2>
         <p class="stage-summary">
-          통계적으로 죽은 시그널에 대한 자본 노출을 줄이기 위해 ALGO 테이블
-          가중치를 재조정하고, low-edge-band 예측을 완전히 차단하는 대신 태깅한
-          뒤 필터링합니다.
+          통계적으로 죽은 시그널에 대한 자본 노출을 줄이기 위해 ALGO 테이블 가중치를 재조정하고, low-edge-band 예측을 완전히 차단하는 대신 태깅한 뒤 필터링합니다.
         </p>
 
         <div class="card-grid">
@@ -305,46 +328,21 @@
             <div class="card-section">
               <h4>왜</h4>
               <p>
-                30일 주간 캘리브레이션(2026-07-05)에서 모멘텀(24.6%), 거래량
-                (23.3%), 기술적(26.5%), 뉴스(21.1%) 시그널이 통계적으로 죽은
-                시그널로 판정되었고, 섹터(52.6%)와 펀더멘털(67.5%)만 동전
-                던지기보다 나은 성과를 보였습니다. 별도로, 두 페이퍼 계좌
-                모두에서 0.60~0.70 raw-confidence 구간이 음(-)의 실현 엣지(US
-                +1.0%, KR -0.1% 평균 왕복 수익률)를 보이는데도 예측 대부분이 이
-                구간에 몰려 로그되고 있었습니다.
+                30일 주간 캘리브레이션(2026-07-05)은 모멘텀(24.6%), 거래량(23.3%), 기술적(26.5%), 뉴스(21.1%) 시그널을 통계적으로 죽은 것으로 평가하며, 섹터(52.6%)와 펀더멘털(67.5%)만 동전 던지기보다 낫습니다. 별도로 두 페이퍼 북 모두 0.60~0.70 raw-confidence 구간이 음의 실현 엣지(미국 평균 왕복 +1.0%, 한국 -0.1%)를 보이는데도, 대부분의 예측이 이 구간에 기록되고 있습니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>무엇을</h4>
               <p>
-                <code>/expect</code> ALGO 테이블에서 모멘텀 가중치를 +1.5 →
-                +1.0으로, 거래량을 +1.0 → +0.5로 낮춰 ALGO 상한을 8.0 → 7.0으로
-                낮췄습니다. 이에 따라 BUY(≥8.0) 판정은 항상 뉴스/ LLM-context의
-                결합 확신도가 +1.0 이상이어야 합니다. 긍정적 LLM_CONTEXT는
-                반드시 섹터 상대강도(sector-RS)나 펀더멘털 촉매를 근거로 들어야
-                하며, 기술적/모멘텀 근거만으로는 인정되지 않습니다. 파생되는
-                모든 수치(합성 점수 범위, 임계값 근거, 예시 계산, 샘플 JSON)를
-                함께 갱신했습니다. <code>predict create</code>는 이제 raw
-                confidence가 [0.60, 0.70]인 LIVE BULL 예측에
-                <code>components.low_edge_band = true</code>를 태깅합니다 —
-                차단이 아니라 태그입니다. 재보정 확신도(recal-confidence) 하한은
-                isotonic 보정이 모든 값을 ~0.25 근처로 수렴시켜 버려 실효성이
-                없고, 차단할 경우 4단계 학습형 블렌드에 필요한 학습 데이터 행이
-                고갈되기 때문입니다. <code>paper_trading_run</code>의 새
-                <code>filter_low_edge_band</code>는 페이퍼 자본을 투입하기 전에
-                태그된 예측을 건너뜁니다.
+                <code>/expect</code> ALGO 테이블은 모멘텀 가중치를 +1.5에서 +1.0으로, 거래량을 +1.0에서 +0.5로 낮추어 ALGO 상한을 8.0에서 7.0으로 떨어뜨립니다 — 이제 BUY(≥8.0)는 항상 뉴스/LLM-컨텍스트 확인이 합산 +1.0 이상 필요하며, 양(positive)의 LLM_CONTEXT는 기술적/모멘텀 근거만이 아니라 섹터 상대강도(RS)나 펀더멘털 촉매를 인용해야 합니다. 파생된 모든 수치(합성 점수 범위, 임계값 근거, 예시, 샘플 JSON)가 이에 맞춰 갱신되었습니다. 별도로 <code>predict create</code>는 이제 raw confidence가 [0.60, 0.70] 구간인 LIVE BULL 예측에 <code>components.low_edge_band = true</code>를 태깅합니다 — 차단이 아니라 태깅인 이유는, 재보정(recal) 신뢰도 하한은 실행 불가능하고(등장형이 모든 값을 ~0.25로 수렴시킴) 차단하면 4단계 학습형 블렌드를 위한 학습 데이터가 고갈되기 때문입니다. <code>paper_trading_run</code>의 <code>filter_low_edge_band</code>는 페이퍼 자본을 투입하기 전에 태깅된 예측을 건너뛰며, components가 없거나 파싱 불가능할 때는 fail-open으로 동작합니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>어떻게</h4>
               <p>
-                개발은 TDD 방식으로 진행되어, 태깅 테스트 7개와 필터 테스트
-                1개를 먼저 작성했습니다. 태그는 1단계 게이트 리프레시 직후
-                <code>cmd_predict_create</code> 안에 위치하며, 필터는
-                <code>run_range</code> 최상단에서 호출되는 순수 헬퍼로, 건너뛴
-                예측 개수를 info 로그로 남깁니다.
+                TDD로 태깅 테스트 7개와 필터 테스트 1개를 먼저 작성했습니다. 태그는 1단계 게이트 리프레시 이후 <code>cmd_predict_create</code>에 있고, 필터는 <code>run_range</code> 최상단에서 호출되는 순수 헬퍼로 건너뛴 개수를 info 로그로 남깁니다.
               </p>
             </div>
 
@@ -352,21 +350,22 @@
               <h4>코드 위치</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> — <code>LOW_EDGE_BAND</code> 상수 +
-                  <code>cmd_predict_create</code> 내 태그 블록
+                  <code>mcp-prediction-store/models.py</code> — 공유 <code>LOW_EDGE_BAND</code> 상수
                 </li>
                 <li>
-                  <code>scheduler/paper_trading_run.py</code> —
-                  <code>filter_low_edge_band</code>, SELECT +
-                  <code>run_range</code> 연결
+                  <code>stock_cli.py</code> — <code>cmd_predict_create</code> 내 태그 블록(CLI 경로)
                 </li>
                 <li>
-                  <code>.claude/skills/expect/SKILL.md</code> — 점수 테이블,
-                  근거 설명, Step 5b 가이드, 예시 계산
+                  <code>scheduler/daily_briefing.py</code> — <code>log_predictions</code>에 미러링된 태그(API 경로)
                 </li>
                 <li>
-                  <code>tests/test_low_edge_band.py</code>,
-                  <code>scheduler/tests/test_paper_trading_run.py</code>
+                  <code>scheduler/paper_trading_run.py</code> — <code>filter_low_edge_band</code>, SELECT 및 <code>run_range</code> 연결
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — 점수표, 근거 설명, Step 5b 가이드, 예시
+                </li>
+                <li>
+                  <code>tests/test_low_edge_band.py</code>, <code>scheduler/tests/test_paper_trading_run.py</code>
                 </li>
               </ul>
             </div>
@@ -375,13 +374,10 @@
               <h4>검증</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 895개 통과 (신규
-                  8개)
+                  <code>uv run pytest -m "not network"</code> — 895개 통과 (신규 8개)
                 </li>
                 <li>
-                  <code>SKILL.md</code>에서 예전 8.0 상한 값에 대한 잔존 참조를
-                  훑어본 결과, 의도적으로 유지된 BUY 임계값(8.0)만 남아 있음을
-                  확인함.
+                  SKILL.md에서 오래된 8.0 상한 참조를 찾는 스테일-레퍼런스 스윕 — 의도적으로 남겨둔 BUY 임계값(8.0)만 남아 있음
                 </li>
               </ul>
             </div>
@@ -390,36 +386,16 @@
               <h4>리뷰 루프</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer 서브에이전트</strong>: 병합 가능 —
-                  치명적/경고 발견 0건, 비차단 코멘트 제안 2건은 기각됨(기존
-                  코멘트가 이미 근거를 명시하고 있고, 페이퍼 로그도 이미 스킵
-                  사유를 남기고 있음).
+                  <strong>code-reviewer 서브에이전트</strong>: 병합 가능 상태 — 치명/경고 0건, 차단은 아닌 주석 제안 2건은 기각(기존 주석이 이미 근거를 인용하고 페이퍼 로그가 이미 스킵 사유를 명시하기 때문).
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: P2 2건 발견, 모두
-                  수정됨 — 개요 문구가 여전히 합성 점수 최댓값을 +14라고
-                  주장하고 있어 +13으로 정정했고, 예시 계산 하나가 새 가중치
-                  하에서는 실제로 WATCH 7.5인데도 반사실적 BUY를 주장하고 있어
-                  "2026-07 이전 동작"으로 문구를 수정함. 처음엔 기각됐던 Codex의
-                  "-11 컴포지트 하한" 하위 주장은 실제로 맞는 것으로 확인됨 —
-                  기존 문서가 실적 발표 페널티를 이중 계산하고 있었고, 실제
-                  드래그는 -3.0, 실적 발표 포함 하한은 -4.0, 컴포지트 하한은
-                  -11.0이며, 이는 아래 PR 리뷰 라운드에서 수정됨.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: P2 2건, 모두 수정 — 개요 문구가 여전히 합성 점수 최대값을 +14로 기재하고 있어 +13으로 정정했고, 새 가중치에서는 실제로 WATCH 7.5인 사례를 BUY로 잘못 설명한 예시를 2026-07 이전 동작으로 재작성함. "-11 합성 점수 하한" 관련 부차 주장은 처음엔 기각했으나 실제로는 맞는 것으로 드러남 — 기존 문서가 실적 페널티를 이중 계산하고 있었고, 실제 드래그는 -3.0, 실적 포함 하한은 -4.0, 합성 점수 하한은 -11.0임 — PR 리뷰 라운드에서 수정.
                 </li>
                 <li>
-                  <strong>PR #62 봇 (1라운드)</strong>: Codex 봇 — API 모드
-                  <code>log_predictions</code> 경로에
-                  <code>low_edge_band</code> 태그가 누락된 P2를 발견(상수를
-                  <code>models.LOW_EDGE_BAND</code>
-                  로 옮기고 태그를 그대로 반영, 회귀 테스트 추가로 해결). Gemini
-                  Code Assist — components가 이미 dict일 때 발생하는
-                  <code>filter_low_edge_band</code>의 TypeError(방어적으로
-                  수정), 위의 ALGO 하한 산술 오류(수정), 테스트 픽스처의 임시 DB
-                  정리 누락(수정).
+                  <strong>PR #62 봇 (1라운드)</strong>: Codex 봇이 P2를 발견 — <code>low_edge_band</code> 태그가 API 모드 <code>log_predictions</code> 경로에서 누락되어, 상수를 <code>models.LOW_EDGE_BAND</code>로 옮기고 그곳에도 태그를 미러링했으며 회귀 테스트를 추가함. Gemini Code Assist는 components가 이미 dict일 때 <code>filter_low_edge_band</code>에서 발생하는 TypeError(방어적으로 수정), 위의 ALGO 하한 산술 오류(수정), 테스트 픽스처의 임시 DB 정리 누락(수정)을 발견함.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 발견 사항
-                  없음. 두 예시 계산을 포함한 모든 산술을 검증함.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 발견 사항 없음; 두 예시를 포함한 모든 산술을 검증함.
                 </li>
               </ul>
             </div>
@@ -427,9 +403,7 @@
             <div class="card-section">
               <h4>회고</h4>
               <p class="retrospective">
-                LLM이 실행하는 프롬프트 스펙을 바꾸면 예시 계산과 파생 합계
-                전체로 영향이 퍼진다 — 일관성 점검이 테이블 수정 자체만큼이나
-                중요했다.
+                LLM이 실행하는 프로즈 스펙을 바꾸면 예시와 파생된 합계 전체로 파급된다 — 표 하나를 고치는 것 못지않게 일관성 점검이 중요했다.
               </p>
             </div>
           </article>

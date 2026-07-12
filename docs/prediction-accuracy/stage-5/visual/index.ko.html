@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — 1단계</title>
+    <title>stock-expectation / prediction-accuracy — 5단계</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -271,35 +271,35 @@
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
-          <div class="node active">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">1단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">2단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">3단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">4a단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node active">
             <div class="dot"></div>
             <div class="label">5단계</div>
           </div>
@@ -316,33 +316,33 @@
 
     <main>
       <section>
-        <h2>1단계</h2>
+        <h2>5단계</h2>
         <p class="stage-summary">
-          스토어 단계의 과열도(overextension) 게이트에 있던 fail-open 허점을 메워, LIVE BULL 진입이 항상 실제 과열도 데이터를 근거로 판정되도록 합니다.
+          스캐너가 고른 각 종목에 전체 헤드라인 컨텍스트를 갖춘 독립적인 Bull/Bear/Judge 딥다이브를 부여하되, 기본적으로 꺼져 있는 플래그 뒤에 두고 그 자체로는 예측을 절대 기록하지 않습니다.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Deep Dive Fanout</h3>
 
             <div class="card-section">
               <h4>왜</h4>
               <p>
-                스토어 단계의 과열도(overextension) 게이트(규칙 R2, <code>_check_overextension_gate</code>)는 급등 후 폭락(parabolic blow-off) 상황에서 LIVE BULL 진입을 강하게 거부하지만, <code>overextension</code>과 <code>return_1m</code> 값을 호출자가 제공하는 <code>--components</code> JSON에서 읽어오며 값이 없으면 fail-open으로 통과시킵니다. components를 생략한 브리핑이나 <code>/expect</code> 실행은 cron에서 살아남는 유일한 강제 검증을 조용히 우회할 수 있었습니다. 진입 시점 증거: EXTREME 과열 상태의 BULL 진입은 승률 29.1%로, NONE 상태의 53.5%에 크게 못 미쳤습니다.
+                일일 브리핑은 한 번의 LLM 호출로 후보 5~6개를 분석하기 때문에 모든 종목이 얕고 공유된 컨텍스트만 받고, 대부분의 종목에서 <code>/expect</code>의 LLM_CONTEXT 노력도가 0으로 수렴합니다. 전체 헤드라인 세트와 자체 <code>bin/stock-cli</code> 접근 권한을 가진 독립적인 종목별 딥다이브(Bull/Bear/Judge)는 원샷 프롬프트가 가장 얕아지는 바로 그 지점에서 컨텍스트의 엄밀함을 끌어올립니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>무엇을</h4>
               <p>
-                이제 LIVE BULL에 대한 <code>stock-cli predict create</code>는 삽입 전에 최신 가격 바(bar)로부터 누락된 <code>overextension</code>과 <code>return_1m</code>을 components에 채워 넣어, R2 게이트가 항상 실제 데이터를 근거로 판정하도록 합니다. 호출자가 제공한 값은 절대 덮어쓰지 않고, 조회나 계산 중 오류가 나면 stderr 경고와 함께 fail-open으로 동작하며, 오프라인 사용을 위한 새 <code>--no-gate-refresh</code> 탈출구가 추가되었습니다. INTERACTIVE와 BEAR 생성 경로는 그대로 유지됩니다.
+                <code>scheduler/deep_dive.py</code>는 엄격한 JSON 계약(<code>ticker</code> / <code>context_score(-5~+3)</code> / <code>conviction</code> / <code>risks</code> / <code>catalysts</code> / <code>summary</code>, 예측 기록은 명시적으로 금지)을 따르는 단일 티커 딥다이브 프롬프트를 실행하며, 제한된 팬아웃(<code>ThreadPoolExecutor</code>, 병렬도 2, 딥다이브당 420초, 최대 6개), 강화된 파싱(마지막 ```json 블록, ticker 일치 필수, 점수 클램프, conviction 화이트리스트, 리스트 정제), 종목별 fail-open을 갖추고 있습니다. <code>daily_briefing.py</code>에는 <code>--deep-dive</code>(기본값 off)와 <code>--deep-dive-cap</code>이 추가되었고, 결과는 각 딥다이브의 <code>context_score</code>를 해당 종목의 LLM_CONTEXT 필러로 채택하고 딥다이브를 그대로 <code>components.deep_dive</code>에 저장하라는 지시와 함께 브리핑 프롬프트에 주입됩니다. API 모드는 이 플래그를 무시합니다. 딥다이브는 그 자체로는 절대 예측을 기록하지 않습니다 — 단일 로깅 경로가 R1/R2/R3 규칙과 스토어 게이트의 권위를 유지합니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>어떻게</h4>
               <p>
-                새 <code>_refresh_overextension_components()</code>는 기존 프로바이더 (<code>_get_provider().get_price_history</code>)를 통해 약 120 캘린더일치 바를 가져오고, 이미 <code>overextension_level</code>과 <code>return_1m</code>을 계산하는 <code>compute_horizon_metrics</code>를 재사용하여 누락된 키만 주입합니다. components 파싱과 DB 삽입 사이의 <code>cmd_predict_create</code>에 연결되었습니다. 개발은 TDD로 진행되어 구현 전에 테스트 10개를 먼저 작성했습니다.
+                TDD로 모듈 테스트 11개와 연결 테스트 2개를 먼저 작성했습니다. 서브프로세스 래퍼는 <code>call_claude_code</code>를 모방하지만 순환 임포트를 피하기 위해 <code>deep_dive.py</code> 안에 자체적으로 구현되어 있습니다. 기본 설정에서 최악의 실행 시간은 딥다이브 약 6개 × 워커당 최대 7분 ÷ 워커 2개로 마켓당 약 21분입니다 — 그래서 일주일간 수동 실행 결과가 괜찮아 보일 때까지는 기본값을 off로 둡니다.
               </p>
             </div>
 
@@ -350,10 +350,13 @@
               <h4>코드 위치</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> — <code>_refresh_overextension_components</code> (+ <code>GATE_REFRESH_DAYS</code>), <code>cmd_predict_create</code> 내 호출 지점, <code>--no-gate-refresh</code> argparse 플래그
+                  <code>scheduler/deep_dive.py</code> — 전체 모듈
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — 헬퍼 단위 테스트 + <code>cmd_predict_create</code> 통합 테스트(parabolic 거부, 주입된 components로 정상 삽입, escape hatch, INTERACTIVE 스킵, fail-open 삽입)
+                  <code>scheduler/daily_briefing.py</code> — <code>_deep_dive_block</code>, <code>build_claude_code_prompt</code> 매개변수, <code>run_briefing</code> + argparse 연결
+                </li>
+                <li>
+                  <code>scheduler/tests/test_deep_dive.py</code>, <code>scheduler/tests/test_daily_briefing.py</code>
                 </li>
               </ul>
             </div>
@@ -362,10 +365,13 @@
               <h4>검증</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883개 통과 (신규 10개)
+                  <code>uv run pytest -m "not network"</code> — 937개 통과 (신규 13개)
                 </li>
                 <li>
-                  실환경 E2E: components 없이 scratch DB에 대해 <code>predict create NVDA LIVE BULL</code> 실행 — 실제 바를 가져와 <code>{"overextension": "NONE", "return_1m": 0.0133}</code>을 주입하고 저장함
+                  실환경 E2E: NVDA에 대한 실제 <code>claude -p</code> 딥다이브 1건 성공 — 딥다이브가 자체적으로 stock-cli 데이터를 가져와 <code>context_score +0.5 (MEDIUM)</code>과 함께 구체적인 리스크 5개(방어적 1개월 섹터 로테이션, 변동성 비율 0.82에서의 주간 +8.3% 반등, ASIC 대체, 쏠림, 8/27 실적 발표 바)와 인용된 촉매 4개를 반환함 — 얕은 원샷 경로보다 훨씬 풍부함
+                </li>
+                <li>
+                  <code>--help</code> 스모크 테스트에서 두 플래그 모두 표시됨
                 </li>
               </ul>
             </div>
@@ -374,16 +380,13 @@
               <h4>리뷰 루프</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer 서브에이전트</strong>: 치명적 1건(BEAR 경로 테스트 누락), 경고 2건(희소 바에서 <code>return_1m=None</code> 미검증, KR 티커 경로 미검증), 제안 1건(fail-open 경고에 예외 타입 포함). 네 건 모두 반영 — 테스트 3개 추가(총 13개), 경고 메시지에 <code>type(exc).__name__</code> 포함. 구현 버그는 없었음.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: HIGH 1건 — 헤드라인이 딥다이브 프롬프트에 가공 없이 그대로 삽입되어 인젝션 표면이 됨; <code>&lt;headlines&gt;</code> 펜싱과 신뢰할 수 없는 데이터라는 지시, 회귀 테스트로 수정. MEDIUM 1건 — 대화체 서두가 붙은 순수 JSON이 폴백 파서를 실패시킴; 가장 바깥쪽 중괄호 구간으로 수정. LOW 3건 — null summary가 문자열 "None"으로 렌더링됨(수정), ARG_MAX와 고아 자식 프로세스 우려는 기존 <code>call_claude_code</code>와 동일한 패턴이라는 주석으로 문서화.
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: 발견 사항 없음 — 네 가지 요구사항(fail-open, 호출자 값 미덮어쓰기, escape hatch, INTERACTIVE/BEAR 무영향) 모두 충족으로 판정.
+                  <strong>code-reviewer 서브에이전트</strong>: 모든 수정 확인; 경고 1건(다중 블록 파싱 미검증 — 테스트 3개 추가) + 제안 2건(문자열 내 중괄호 테스트 추가, 파싱 성공 시 디버그 로그 추가). "병합."
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 정확성 버그 없음; 낮은 수준의 테스트 공백 2건 — BEAR 통합 테스트와 CLI 수준의 "완전한 components는 조회를 건너뜀" 테스트, 둘 다 추가됨. <code>{"overextension": null}</code> 엣지 케이스가 호출자 값을 존중함을 확인.
-                </li>
-                <li>
-                  <strong>Codex PR 봇 (PR #61)</strong>: "주요 이슈를 발견하지 못함" — 한 라운드 만에 클린.
+                  <strong>Codex</strong>: CLI와 GitHub 봇 모두 쿼터 소진 — PR-봇 라운드로 연기.
                 </li>
               </ul>
             </div>
@@ -391,7 +394,7 @@
             <div class="card-section">
               <h4>회고</h4>
               <p class="retrospective">
-                게이트의 허점은 기존 유틸리티(프로바이더 + 지표)만으로 완전히 메울 수 있었다. 새로 추가된 로직은 병합 정책(누락된 키만 주입)과 fail-open 동작뿐이다.
+                딥다이브 자체의 데이터 접근 권한이 가치를 만든다 — 실제 NVDA 실행은 요청하지 않아도 섹터 상대강도, 거래량, 실적 캘린더를 끌어왔다. 일주일간의 수동 실행으로 비용 대비 품질 트레이드오프가 확립될 때까지는 기본값을 off로 유지한다.
               </p>
             </div>
           </article>

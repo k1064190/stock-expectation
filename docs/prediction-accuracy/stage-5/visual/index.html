@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — 1단계</title>
+    <title>stock-expectation / prediction-accuracy — Stage 5</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -261,54 +261,54 @@
     <header>
       <div>
         <h1>stock-expectation / prediction-accuracy</h1>
-        <p>단계별 진행 상황</p>
+        <p>Staged plan progress</p>
       </div>
-      <nav aria-label="언어">
-        <a href="index.html">EN</a> | <span>한국어</span>
+      <nav aria-label="Language">
+        <span>EN</span> | <a href="index.ko.html">한국어</a>
       </nav>
     </header>
 
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 1</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 2</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 3</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 4a</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
           <div class="node active">
             <div class="dot"></div>
-            <div class="label">1단계</div>
+            <div class="label">Stage 5</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
           <div class="node upcoming">
             <div class="dot"></div>
-            <div class="label">2단계</div>
-          </div>
-          <span class="connector"></span>
-        </li>
-        <li>
-          <div class="node upcoming">
-            <div class="dot"></div>
-            <div class="label">3단계</div>
-          </div>
-          <span class="connector"></span>
-        </li>
-        <li>
-          <div class="node upcoming">
-            <div class="dot"></div>
-            <div class="label">4a단계</div>
-          </div>
-          <span class="connector"></span>
-        </li>
-        <li>
-          <div class="node upcoming">
-            <div class="dot"></div>
-            <div class="label">5단계</div>
-          </div>
-          <span class="connector"></span>
-        </li>
-        <li>
-          <div class="node upcoming">
-            <div class="dot"></div>
-            <div class="label">6단계</div>
+            <div class="label">Stage 6</div>
           </div>
         </li>
       </ol>
@@ -316,82 +316,85 @@
 
     <main>
       <section>
-        <h2>1단계</h2>
+        <h2>Stage 5</h2>
         <p class="stage-summary">
-          스토어 단계의 과열도(overextension) 게이트에 있던 fail-open 허점을 메워, LIVE BULL 진입이 항상 실제 과열도 데이터를 근거로 판정되도록 합니다.
+          Gives each scanner pick its own independent Bull/Bear/Judge deep dive with full headline context, behind a default-off flag, without ever logging a prediction itself.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Deep Dive Fanout</h3>
 
             <div class="card-section">
-              <h4>왜</h4>
+              <h4>Why</h4>
               <p>
-                스토어 단계의 과열도(overextension) 게이트(규칙 R2, <code>_check_overextension_gate</code>)는 급등 후 폭락(parabolic blow-off) 상황에서 LIVE BULL 진입을 강하게 거부하지만, <code>overextension</code>과 <code>return_1m</code> 값을 호출자가 제공하는 <code>--components</code> JSON에서 읽어오며 값이 없으면 fail-open으로 통과시킵니다. components를 생략한 브리핑이나 <code>/expect</code> 실행은 cron에서 살아남는 유일한 강제 검증을 조용히 우회할 수 있었습니다. 진입 시점 증거: EXTREME 과열 상태의 BULL 진입은 승률 29.1%로, NONE 상태의 53.5%에 크게 못 미쳤습니다.
+                The daily briefing analyzes five or six candidates in one LLM call, so every stock gets shallow, shared context, and <code>/expect</code>'s LLM_CONTEXT effort collapses to 0 for most names. An independent per-stock deep dive — Bull/Bear/Judge with the full headline set and its own <code>bin/stock-cli</code> access — raises context rigor exactly where the one-shot prompt is thinnest.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>무엇을</h4>
+              <h4>What</h4>
               <p>
-                이제 LIVE BULL에 대한 <code>stock-cli predict create</code>는 삽입 전에 최신 가격 바(bar)로부터 누락된 <code>overextension</code>과 <code>return_1m</code>을 components에 채워 넣어, R2 게이트가 항상 실제 데이터를 근거로 판정하도록 합니다. 호출자가 제공한 값은 절대 덮어쓰지 않고, 조회나 계산 중 오류가 나면 stderr 경고와 함께 fail-open으로 동작하며, 오프라인 사용을 위한 새 <code>--no-gate-refresh</code> 탈출구가 추가되었습니다. INTERACTIVE와 BEAR 생성 경로는 그대로 유지됩니다.
+                <code>scheduler/deep_dive.py</code> runs a single-ticker dive prompt under a strict-JSON contract (<code>ticker</code> / <code>context_score(-5..+3)</code> / <code>conviction</code> / <code>risks</code> / <code>catalysts</code> / <code>summary</code>, with prediction logging explicitly forbidden), with bounded fan-out (a <code>ThreadPoolExecutor</code> at parallelism 2, 420 seconds per dive, capped at 6), hardened parsing (last ```json block, required ticker match, score clamp, conviction whitelist, list sanitization), and per-ticker fail-open. <code>daily_briefing.py</code> gains <code>--deep-dive</code> (default off) and <code>--deep-dive-cap</code>; results are injected into the briefing prompt with the instruction to adopt each dive's <code>context_score</code> as that stock's LLM_CONTEXT pillar and store the dive verbatim in <code>components.deep_dive</code>. API mode ignores the flag. Dives never log predictions themselves — the single logging path keeps rules R1/R2/R3 and the store gates authoritative.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>어떻게</h4>
+              <h4>How</h4>
               <p>
-                새 <code>_refresh_overextension_components()</code>는 기존 프로바이더 (<code>_get_provider().get_price_history</code>)를 통해 약 120 캘린더일치 바를 가져오고, 이미 <code>overextension_level</code>과 <code>return_1m</code>을 계산하는 <code>compute_horizon_metrics</code>를 재사용하여 누락된 키만 주입합니다. components 파싱과 DB 삽입 사이의 <code>cmd_predict_create</code>에 연결되었습니다. 개발은 TDD로 진행되어 구현 전에 테스트 10개를 먼저 작성했습니다.
+                TDD: 11 module tests and 2 wiring tests were written first. The subprocess wrapper mirrors <code>call_claude_code</code> but is self-contained in <code>deep_dive.py</code> to avoid a circular import. Worst-case wall clock at defaults is about 6 dives times up to 7 minutes over 2 workers, roughly 21 minutes per market — hence default-off until a week of manual runs looks sane.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>코드 위치</h4>
+              <h4>Code locations</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> — <code>_refresh_overextension_components</code> (+ <code>GATE_REFRESH_DAYS</code>), <code>cmd_predict_create</code> 내 호출 지점, <code>--no-gate-refresh</code> argparse 플래그
+                  <code>scheduler/deep_dive.py</code> — full module
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — 헬퍼 단위 테스트 + <code>cmd_predict_create</code> 통합 테스트(parabolic 거부, 주입된 components로 정상 삽입, escape hatch, INTERACTIVE 스킵, fail-open 삽입)
+                  <code>scheduler/daily_briefing.py</code> — <code>_deep_dive_block</code>, <code>build_claude_code_prompt</code> params, <code>run_briefing</code> + argparse plumbing
+                </li>
+                <li>
+                  <code>scheduler/tests/test_deep_dive.py</code>, <code>scheduler/tests/test_daily_briefing.py</code>
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>검증</h4>
+              <h4>Verification</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883개 통과 (신규 10개)
+                  <code>uv run pytest -m "not network"</code> — 937 passed (13 new)
                 </li>
                 <li>
-                  실환경 E2E: components 없이 scratch DB에 대해 <code>predict create NVDA LIVE BULL</code> 실행 — 실제 바를 가져와 <code>{"overextension": "NONE", "return_1m": 0.0133}</code>을 주입하고 저장함
+                  Live E2E: one real <code>claude -p</code> dive for NVDA succeeded — the dive fetched its own <code>stock-cli</code> data and returned <code>context_score +0.5 (MEDIUM)</code> with five specific risks (defensive 1M sector rotation, +8.3% weekly bounce on 0.82 vol-ratio, ASIC substitution, crowding, an 8/27 earnings bar) and four cited catalysts, markedly richer than the shallow one-shot path
+                </li>
+                <li>
+                  <code>--help</code> smoke shows both flags
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>리뷰 루프</h4>
+              <h4>Review loop</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer 서브에이전트</strong>: 치명적 1건(BEAR 경로 테스트 누락), 경고 2건(희소 바에서 <code>return_1m=None</code> 미검증, KR 티커 경로 미검증), 제안 1건(fail-open 경고에 예외 타입 포함). 네 건 모두 반영 — 테스트 3개 추가(총 13개), 경고 메시지에 <code>type(exc).__name__</code> 포함. 구현 버그는 없었음.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 1 HIGH — headlines were interpolated raw into the dive prompt, an injection surface; fixed with <code>&lt;headlines&gt;</code> fencing plus an untrusted-data instruction and a regression test. 1 MEDIUM — bare JSON with conversational preamble failed the fallback parser; fixed with an outermost-brace span. 3 LOW — a null summary rendered as the string "None" (fixed), plus ARG_MAX and orphaned-child concerns documented as comments, matching the existing <code>call_claude_code</code> pattern.
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: 발견 사항 없음 — 네 가지 요구사항(fail-open, 호출자 값 미덮어쓰기, escape hatch, INTERACTIVE/BEAR 무영향) 모두 충족으로 판정.
+                  <strong>code-reviewer subagent</strong>: verified all fixes; 1 warning (multi-block parsing untested — 3 tests added) plus 2 suggestions (a brace-in-string test added, a debug log at parse-accept added). "Merge."
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 정확성 버그 없음; 낮은 수준의 테스트 공백 2건 — BEAR 통합 테스트와 CLI 수준의 "완전한 components는 조회를 건너뜀" 테스트, 둘 다 추가됨. <code>{"overextension": null}</code> 엣지 케이스가 호출자 값을 존중함을 확인.
-                </li>
-                <li>
-                  <strong>Codex PR 봇 (PR #61)</strong>: "주요 이슈를 발견하지 못함" — 한 라운드 만에 클린.
+                  <strong>Codex</strong>: both the CLI and GitHub bot were quota-exhausted — deferred to the PR-bot round.
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>회고</h4>
+              <h4>Retrospective</h4>
               <p class="retrospective">
-                게이트의 허점은 기존 유틸리티(프로바이더 + 지표)만으로 완전히 메울 수 있었다. 새로 추가된 로직은 병합 정책(누락된 키만 주입)과 fail-open 동작뿐이다.
+                The dive's own data access is what makes it valuable: the live NVDA run pulled sector-RS, volume, and the earnings calendar unprompted. Keep it default-off until a week of manual runs establishes the cost/quality trade.
               </p>
             </div>
           </article>
