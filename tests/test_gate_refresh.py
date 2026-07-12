@@ -254,6 +254,18 @@ def test_create_bear_skips_refresh(monkeypatch, use_temp_db, capsys):
     assert provider.calls == 0
 
 
+def test_create_complete_components_skips_fetch(monkeypatch, use_temp_db, capsys):
+    provider = _FakeProvider(exc=AssertionError("must not fetch"))
+    _patch_provider(monkeypatch, provider)
+
+    comps = json.dumps({"overextension": "NONE", "return_1m": 0.03, "algo": 7.0})
+    rc, out = _run_create(_make_args(ticker="GOOG", components=comps), capsys)
+
+    assert rc == 0
+    assert provider.calls == 0
+    assert out["components"]["algo"] == 7.0
+
+
 def test_create_fail_open_still_inserts(monkeypatch, use_temp_db, capsys):
     _patch_provider(monkeypatch, _FakeProvider(exc=RuntimeError("network down")))
 
