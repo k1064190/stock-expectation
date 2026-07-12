@@ -218,7 +218,38 @@ def _render_bucket_table(lines: list[str], title: str, buckets: list[dict]) -> N
     lines.append("")
 
 
-def render_markdown(report_date: str, windows: list[dict]) -> str:
+def _render_blend_eval(lines: list[str], blend_eval) -> None:
+    """Append the offline learned-blend CV comparison (stage 4a) if available."""
+    if not blend_eval:
+        return
+    lines.append("## Learned blend (offline walk-forward CV)")
+    lines.append("")
+    if blend_eval.get("status") != "ok":
+        lines.append(f"- Status: {blend_eval.get('status')}")
+        lines.append("")
+        return
+    lines.append(
+        f"- Rows: **{blend_eval['n_rows']}** components-tagged closed, "
+        f"{blend_eval['folds']} expanding folds"
+    )
+    lines.append("")
+    lines.append("| Model | Brier ↓ | AUC ↑ |")
+    lines.append("|---|---|---|")
+    for name in ("blend", "isotonic", "raw"):
+        m = blend_eval.get(name) or {}
+        auc_txt = f"{m['auc']:.3f}" if m.get("auc") is not None else "n/a"
+        lines.append(f"| {name} | {m.get('brier', 'n/a')} | {auc_txt} |")
+    lines.append("")
+    verdict = (
+        "**blend WINS** — candidate for live wiring (stage 4b, reviewed PR)"
+        if blend_eval.get("blend_wins")
+        else "blend does not beat the isotonic baseline — keep isotonic"
+    )
+    lines.append(f"- Verdict: {verdict}")
+    lines.append("")
+
+
+def render_markdown(report_date: str, windows: list[dict], blend_eval=None) -> str:
     """Render the report as markdown for human review."""
     lines = [f"# Weekly calibration — {report_date}", ""]
 
@@ -314,6 +345,8 @@ def render_markdown(report_date: str, windows: list[dict]) -> str:
                 lines.append(f"| {s['signal']} | {s['total']} | {s['win_rate']:.1%} |")
             lines.append("")
 
+    _render_blend_eval(lines, blend_eval)
+
     lines.append("---")
     lines.append("")
     lines.append(
@@ -382,11 +415,19 @@ def main() -> int:
     conn = get_connection()
     try:
         windows = [compute_window(conn, d) for d in windows_days]
+        # Offline learned-blend CV (stage 4a) — report-only, fail-open.
+        try:
+            import blend
+
+            blend_eval = blend.evaluate(conn)
+        except Exception as exc:  # noqa: BLE001 — never block the report
+            logger.warning("blend eval failed (report continues): %s", exc)
+            blend_eval = None
     finally:
         conn.close()
 
     report_date = datetime.now(KR_TZ).strftime("%Y-%m-%d")
-    markdown = render_markdown(report_date, windows)
+    markdown = render_markdown(report_date, windows, blend_eval=blend_eval)
 
     if args.dry_run:
         print(markdown)

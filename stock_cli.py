@@ -2257,6 +2257,44 @@ def cmd_component_contribution(args) -> int:
         conn.close()
 
 
+def cmd_blend_eval(args) -> int:
+    """Walk-forward CV of the learned-blend confidence vs baselines (offline).
+
+    With ``--write``, additionally trains on all rows and saves the model +
+    its CV metrics to ``state/blend_model.json``. Nothing reads that file yet
+    (stage 4b wires it in behind a kill switch), so writing is always safe.
+    """
+    import blend
+
+    conn = get_connection()
+    try:
+        result = blend.evaluate(conn, min_rows=args.min_rows, n_folds=args.folds)
+        if args.write and result.get("status") == "ok":
+            model = blend.train_full(conn, min_rows=args.min_rows)
+            if model is not None:
+                model["cv"] = {
+                    k: result[k]
+                    for k in (
+                        "n_rows",
+                        "folds",
+                        "blend",
+                        "raw",
+                        "isotonic",
+                        "blend_wins",
+                    )
+                }
+                path = PROJECT_ROOT / "state" / "blend_model.json"
+                blend.save_model(model, path)
+                result["model_written"] = str(path)
+        _print_json(result)
+        return 0
+    except Exception as e:
+        _print_json({"error": str(e)})
+        return 1
+    finally:
+        conn.close()
+
+
 def cmd_news_tag_performance(args) -> int:
     """Show win-rate by persisted news_signal event tags / hard catalysts."""
     conn = get_connection()
@@ -3575,6 +3613,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum closed rows in a bucket to report it (default 8)",
     )
     ntp.set_defaults(func=cmd_news_tag_performance)
+
+    # --- blend-eval ---
+    be = sub.add_parser(
+        "blend-eval",
+        help="Walk-forward CV of the learned-blend confidence vs raw/isotonic baselines",
+    )
+    be.add_argument(
+        "--min-rows",
+        type=int,
+        default=100,
+        help="Minimum components-tagged closed rows to attempt CV (default 100)",
+    )
+    be.add_argument(
+        "--folds",
+        type=int,
+        default=3,
+        help="Expanding-window walk-forward folds (default 3)",
+    )
+    be.add_argument(
+        "--write",
+        action="store_true",
+        help=(
+            "Also train on all rows and save model + CV metrics to "
+            "state/blend_model.json (inert until stage 4b wires it in)"
+        ),
+    )
+    be.set_defaults(func=cmd_blend_eval)
 
     # --- lint-llm-context ---
     lc = sub.add_parser(
