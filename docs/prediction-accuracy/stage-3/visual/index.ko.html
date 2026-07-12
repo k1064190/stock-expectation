@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation / prediction-accuracy — 3단계</title>
+    <style>
+      :root {
+        --accent: #2f5d62;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0dfda;
+        --text: #2a2a28;
+        --muted: #74736c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Helvetica,
+          Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.9rem;
+      }
+
+      nav[aria-label="언어"] span {
+        color: var(--muted);
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      .timeline-wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 2rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+
+      .timeline li:last-child {
+        flex: 0 0 auto;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+      }
+
+      .dot {
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 2px solid var(--border);
+        background: var(--card-bg);
+      }
+
+      .node.active .dot {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+
+      .node.done .dot {
+        border-color: var(--muted);
+        background: var(--muted);
+      }
+
+      .node.upcoming .dot {
+        border-color: var(--accent);
+        background: var(--card-bg);
+      }
+
+      .node .label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.active .label {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .node.done .label {
+        color: var(--muted);
+      }
+
+      .node.upcoming .label {
+        color: var(--muted);
+      }
+
+      .connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin: 0 0.5rem;
+        margin-bottom: 1.3rem;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+
+      section > p.stage-summary {
+        color: var(--muted);
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      article.card h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        font-size: 1.15rem;
+      }
+
+      .card-section {
+        margin-bottom: 1.1rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        margin: 0 0 0.35rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      .card-section p {
+        margin: 0;
+      }
+
+      .card-section ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .card-section li {
+        margin-bottom: 0.3rem;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.88em;
+        background: #f0efe9;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+
+      .code-locations {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .code-locations li {
+        margin-bottom: 0.4rem;
+      }
+
+      .retrospective {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline .label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>stock-expectation / prediction-accuracy</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a> | <span>한국어</span>
+      </nav>
+    </header>
+
+    <div class="timeline-wrap">
+      <ol class="timeline">
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">1단계</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">2단계</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node active">
+            <div class="dot"></div>
+            <div class="label">3단계</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <main>
+      <section>
+        <h2>3단계</h2>
+        <p class="stage-summary">
+          예측 시점에 계산한 뒤 버려지던 기사 단위 뉴스 시그널을 저장하기
+          시작하여, 어떤 촉매가 실제로 예측력을 갖는지 나중에 측정할 수 있도록
+          합니다.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>News Signal Persistence</h3>
+
+            <div class="card-section">
+              <h4>왜</h4>
+              <p>
+                스칼라 뉴스 점수는 거의 죽은 시그널(승률 21~33%)로 평가되지만,
+                여기서 축약되어 사라지는 더 풍부한 <code>NewsSignal</code>
+                필드들 — 실적 발표, M&amp;A, 애널리스트 등급 같은 이벤트 태그,
+                최근성 가중 감성, 확실한 긍정/부정 촉매 — 은 예측 시점에 계산된
+                뒤 그대로 버려지고 있었습니다. 이를 저장하지 않으면 어떤 뉴스
+                촉매가 실제로 예측력이 있는지 영원히 학습할 수 없고, 하루하루
+                미룰수록 4단계 학습형 블렌드 등을 위한 라벨링된 훈련 데이터를
+                잃게 됩니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>무엇을</h4>
+              <p>
+                <code>NewsSignal.to_components_dict()</code>는 이제 모든 예측의
+                <code>components.news_signal</code>에 저장되는 압축 JSON
+                페이로드를 생성합니다. API 모드에서는
+                <code>log_predictions</code> 내부의
+                <code>_augment_news_signal</code>이 티커별 뉴스를 가져와 LIVE
+                예측에 한해서만 시그널을 저장하며, fail-open으로 동작하고 모델이
+                제공한 값은 절대 덮어쓰지 않습니다. claude-code/codex 같은 CLI
+                기반 모드에서는 <code>/expect</code> 스킬과 두 브리핑 프롬프트
+                모두 <code>--components</code>에 <code>news_signal</code>을
+                필수로 요구합니다. 새로운
+                <code>get_news_tag_performance</code> 함수와
+                <code>stock-cli news-tag-performance</code> 명령은 종료된
+                예측들에 대해 이벤트 태그별·촉매별 적중률을 보고하며, 최소 표본
+                수(기본값 8)로 가드됩니다.
+                <code>get_component_contribution</code>은 이제 중첩된 dict/list
+                값을 건너뛰어 새 페이로드가 필러 버킷을 오염시키지 않도록
+                합니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>어떻게</h4>
+              <p>
+                개발은 TDD 방식으로 진행되어, 구현 전에 새 테스트 6개를 먼저
+                작성했습니다. augment 헬퍼는 기존
+                <code>_augment_gate_components</code> 패턴을 그대로 따르며,
+                <code>_news_item_obj</code>는 dict 형태의 픽스처를
+                <code>summarize_news</code>가 기대하는 속성 접근 형태로 연결해
+                줍니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>코드 위치</h4>
+              <ul class="code-locations">
+                <li>
+                  <code>mcp-market-data/news_features.py</code> —
+                  <code>NewsSignal.to_components_dict</code>
+                </li>
+                <li>
+                  <code>scheduler/daily_briefing.py</code> —
+                  <code>_augment_news_signal</code>,
+                  <code>_news_item_obj</code>, 프롬프트 계약 문구(US/KR)
+                </li>
+                <li>
+                  <code>mcp-prediction-store/metrics.py</code> —
+                  <code>get_news_tag_performance</code>, 중첩 값 스킵
+                </li>
+                <li>
+                  <code>stock_cli.py</code> —
+                  <code>news-tag-performance</code> 서브커맨드
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — components 계약
+                </li>
+                <li>
+                  <code>tests/test_news_signal_persistence.py</code>,
+                  <code>scheduler/tests/test_daily_briefing.py</code>
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>검증</h4>
+              <ul>
+                <li>
+                  <code>uv run pytest -m "not network"</code> — 904개 통과 (신규
+                  6개)
+                </li>
+                <li>
+                  CLI 스모크 테스트: 빈 데이터베이스에서
+                  <code>stock-cli news-tag-performance</code>를 실행하면
+                  zero-state JSON 형태를 반환함.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>리뷰 루프</h4>
+              <ul>
+                <li>
+                  <strong>code-reviewer 서브에이전트</strong>: 배포 가능 — 경고
+                  1건(<code>--min-count</code> 검증 부재, 기존
+                  <code>component-contribution</code> 관례와 일치해 기각)과
+                  테스트 커버리지 제안 2건(가드 테스트, 다중 태그/양쪽 촉매
+                  테스트 — 모두 추가됨).
+                </li>
+                <li>
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: medium 2건과 low
+                  1건 발견, 모두 수정됨 — 계약 문구를 "verbatim"(그대로 복사)
+                  대신 <code>raw_count</code>를 제외한 명시적인 6개 키 목록으로
+                  재작성하고 <code>daily-briefing</code> 스킬 예시에
+                  <code>news_signal</code>을 추가했으며, 태그 집계가
+                  <code>list[str]</code> 타입을 검사하고 행별로 중복을 제거하며
+                  촉매 플래그가 정확히 <code>True</code>일 것을 요구하도록 했고,
+                  <code>to_components_dict</code>는 비유한 (non-finite) float
+                  값을 null 처리하도록 하여 <code>allow_nan=False</code>로
+                  테스트함.
+                </li>
+                <li>
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: low 2건
+                  발견, 모두 수정됨 — 문자열 <code>event_tags</code>
+                  가드(더 엄격한 Codex 수정으로 대체됨)와
+                  <code>_augment_news_signal</code>의 UTC 기준
+                  <code>asof_date</code>.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>회고</h4>
+              <p class="retrospective">
+                측정 측면(태그 성과)은 몇 주간 표본 부족 상태로 남을 것이다 — 이
+                리포트는 최소 표본 수 미만에서는 노이즈를 결과로 보고하는 대신
+                판정 자체를 의도적으로 거부한다.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
