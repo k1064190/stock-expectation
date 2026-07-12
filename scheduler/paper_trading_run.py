@@ -191,8 +191,9 @@ def filter_low_edge_band(rows: list[dict]) -> tuple[list[dict], int]:
         tagged = False
         if raw:
             try:
-                tagged = bool(json.loads(raw).get("low_edge_band"))
-            except (json.JSONDecodeError, AttributeError):
+                comp = raw if isinstance(raw, dict) else json.loads(raw)
+                tagged = bool(comp.get("low_edge_band"))
+            except (json.JSONDecodeError, AttributeError, TypeError):
                 tagged = False
         if tagged:
             skipped += 1

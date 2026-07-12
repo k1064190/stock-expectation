@@ -31,7 +31,11 @@ def use_temp_db(monkeypatch):
         db_path = Path(f.name)
     orig = stock_cli.get_connection
     monkeypatch.setattr(stock_cli, "get_connection", lambda: orig(db_path))
-    return db_path
+    yield db_path
+    try:
+        db_path.unlink()
+    except OSError:
+        pass
 
 
 def _make_args(**overrides):

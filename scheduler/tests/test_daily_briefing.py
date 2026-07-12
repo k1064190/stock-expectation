@@ -466,3 +466,50 @@ def test_build_api_prompt_returns_prompt_and_risk_level(monkeypatch):
     assert risk_level == "RISK_OFF"
     assert "MACRO_BLOCK" in prompt
     assert "MARKET_DATA" in prompt
+
+
+def _real_get_connection(path):
+    import models as pred_models
+
+    return pred_models.get_connection(path)
+
+
+def test_log_predictions_tags_low_edge_band_api_mode(tmp_path, monkeypatch):
+    """API-mode LIVE BULL in [0.60, 0.70] must carry low_edge_band (PR #62 P2)."""
+    import daily_briefing as db_mod
+
+    db_file = tmp_path / "p.db"
+    monkeypatch.setattr(db_mod, "get_connection", lambda: _real_get_connection(db_file))
+
+    class _NoNet:
+        def get_price_history(self, *a, **k):
+            return []
+
+        def get_news(self, *a, **k):
+            return []
+
+    monkeypatch.setattr(db_mod, "USMarketProvider", _NoNet)
+    monkeypatch.setattr(db_mod, "KoreanMarketProvider", _NoNet)
+
+    n = db_mod.log_predictions(
+        [
+            {
+                "ticker": "ACME",
+                "market": "US",
+                "direction": "BULL",
+                "confidence": 0.62,
+                "timeframe": "1W",
+                "reasoning": "r",
+                "entry_price": 10.0,
+                "components": {"algo": 5.0, "overextension": "NONE", "return_1m": 0.02},
+            }
+        ]
+    )
+    assert n == 1
+    conn = _real_get_connection(db_file)
+    row = conn.execute("SELECT components FROM predictions").fetchone()
+    conn.close()
+    import json as _json
+
+    comps = _json.loads(row["components"])
+    assert comps["low_edge_band"] is True

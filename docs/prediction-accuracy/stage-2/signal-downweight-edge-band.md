@@ -48,10 +48,16 @@ called at the top of `run_range` with an info log of the skipped count.
   non-blocking comment suggestions (dismissed — existing comments already cite
   the rationale and the paper log already states the skip reason).
 - **Codex (gpt-5.6-sol, high)**: 2 P2s, both fixed — overview line still said
-  composite max +14 (→ +13, plus the stale -4.5 ALGO floor header corrected to
-  -4.0/-5.0-with-earnings); worked example claimed a counterfactual BUY that is
-  WATCH 7.5 under new weights (re-worded as pre-2026-07 behavior). Codex's
-  "-11 floor" sub-claim was wrong (earnings penalty makes -12 correct) — kept.
+  composite max +14 (→ +13); worked example claimed a counterfactual BUY that is
+  WATCH 7.5 under new weights (re-worded as pre-2026-07 behavior). Its "-11
+  composite floor" sub-claim was initially dismissed but is CORRECT (the old
+  doc double-counted the earnings penalty): true drag is -3.0, floor -4.0 with
+  earnings, composite floor -11.0 — fixed in the PR-review round below.
+- **PR #62 bots (round 1)**: Codex bot P2 — low_edge_band tag missed the API-mode
+  `log_predictions` path → constant moved to `models.LOW_EDGE_BAND`, tag mirrored
+  there, regression test added. Gemini Code Assist — `filter_low_edge_band`
+  TypeError when components is already a dict (fixed defensively), the ALGO-floor
+  arithmetic above (fixed), temp-DB cleanup in test fixture (fixed).
 - **Antigravity (Gemini 3.1 Pro High)**: no findings; verified all arithmetic
   including both worked examples.
 

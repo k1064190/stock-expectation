@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — Stage 1</title>
+    <title>stock-expectation / prediction-accuracy — Stage 2</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -267,14 +267,14 @@
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
-          <div class="node active">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">Stage 1</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node active">
             <div class="dot"></div>
             <div class="label">Stage 2</div>
           </div>
@@ -284,57 +284,62 @@
 
     <main>
       <section>
-        <h2>Stage 1</h2>
+        <h2>Stage 2</h2>
         <p class="stage-summary">
-          Closes a fail-open gap in the store-level overextension gate so LIVE
-          BULL entries always have real overextension data to be judged against.
+          Cuts capital exposure to statistically dead signals by re-weighting
+          the ALGO table and tagging — then filtering — low-edge-band
+          predictions rather than blocking them outright.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Signal Downweight Edge Band</h3>
 
             <div class="card-section">
               <h4>Why</h4>
               <p>
-                The store-level overextension gate (RULE R2,
-                <code>_check_overextension_gate</code>) hard-rejects LIVE BULL
-                entries on parabolic blow-offs, but it reads
-                <code>overextension</code> and <code>return_1m</code> from the
-                caller-supplied <code>--components</code> JSON and fails open
-                when they are absent. A briefing or expect run that omitted
-                components silently bypassed the one enforcement that survives
-                cron. Entry-time evidence showed EXTREME-overextended BULL
-                entries winning only 29.1% versus 53.5% at NONE.
+                The 30-day weekly calibration run (2026-07-05) grades momentum
+                (24.6%), volume (23.3%), technical (26.5%), and news (21.1%)
+                signals as statistically dead; only sector (52.6%) and
+                fundamental (67.5%) beat a coin flip. Separately, both paper
+                books show the 0.60-0.70 raw-confidence band carrying negative
+                realized edge (US +1.0%, KR -0.1% average round-trip), yet the
+                bulk of predictions log into that band.
               </p>
             </div>
 
             <div class="card-section">
               <h4>What</h4>
               <p>
-                <code>stock-cli predict create</code> for LIVE BULL now
-                backfills missing <code>overextension</code> and
-                <code>return_1m</code> into components from fresh price bars
-                before insertion, so the R2 gate always has real data to act on.
-                Caller-supplied values are never overwritten. The system fails
-                open on any fetch or compute error, logging a stderr warning. A
-                new <code>--no-gate-refresh</code> escape hatch supports offline
-                use. INTERACTIVE and BEAR creates are untouched.
+                The <code>/expect</code> ALGO table now weights Momentum
+                +1.5&nbsp;→&nbsp;+1.0 and Volume +1.0&nbsp;→&nbsp;+0.5, dropping
+                the ALGO ceiling from 8.0 to 7.0, so a BUY (≥8.0) always
+                requires at least +1.0 of combined news/LLM-context
+                confirmation. A positive LLM_CONTEXT must cite sector relative
+                strength or a fundamental catalyst — never technical or momentum
+                grounds alone. All derived numbers (composite range, threshold
+                rationale, worked examples, sample JSON) were updated to match.
+                <code>predict create</code> now tags LIVE BULL predictions with
+                raw confidence in [0.60, 0.70] as
+                <code>components.low_edge_band = true</code> — a tag, not a
+                block, because a recalibrated-confidence floor is inactionable
+                (isotonic recalibration collapses everything toward ~0.25) and
+                blocking would starve the stage-4 learned blend of training
+                rows. <code>paper_trading_run</code>'s new
+                <code>filter_low_edge_band</code> skips tagged predictions
+                before committing paper capital.
               </p>
             </div>
 
             <div class="card-section">
               <h4>How</h4>
               <p>
-                A new <code>_refresh_overextension_components()</code> fetches
-                roughly 120 calendar days of bars via the existing provider
-                (<code>_get_provider().get_price_history</code>) and reuses
-                <code>compute_horizon_metrics</code> (which already computes
-                <code>overextension_level</code> and <code>return_1m</code>);
-                only missing keys are injected. It is wired into
-                <code>cmd_predict_create</code> between components parsing and
-                the DB insert. Development followed TDD: 10 tests were written
-                first, then the implementation.
+                Development followed TDD: 7 tagging tests and 1 filter test were
+                written first. The tag lives in
+                <code>cmd_predict_create</code>, right after the stage-1 gate
+                refresh; the filter is a pure helper called at the top of
+                <code>run_range</code>, which logs the count of skipped
+                predictions.
               </p>
             </div>
 
@@ -343,16 +348,21 @@
               <ul class="code-locations">
                 <li>
                   <code>stock_cli.py</code> —
-                  <code>_refresh_overextension_components</code> (+
-                  <code>GATE_REFRESH_DAYS</code>), call site in
-                  <code>cmd_predict_create</code>,
-                  <code>--no-gate-refresh</code> argparse flag
+                  <code>LOW_EDGE_BAND</code> constant + tag block in
+                  <code>cmd_predict_create</code>
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — helper unit tests +
-                  <code>cmd_predict_create</code> integration tests (parabolic
-                  reject, healthy insert with injected components, escape hatch,
-                  INTERACTIVE skip, fail-open insert)
+                  <code>scheduler/paper_trading_run.py</code> —
+                  <code>filter_low_edge_band</code>, SELECT +
+                  <code>run_range</code> wiring
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — point table,
+                  rationale note, Step 5b guidance, worked examples
+                </li>
+                <li>
+                  <code>tests/test_low_edge_band.py</code>,
+                  <code>scheduler/tests/test_paper_trading_run.py</code>
                 </li>
               </ul>
             </div>
@@ -361,14 +371,13 @@
               <h4>Verification</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883 passed (10
+                  <code>uv run pytest -m "not network"</code> — 895 passed (8
                   new)
                 </li>
                 <li>
-                  Live E2E: <code>predict create NVDA LIVE BULL</code> without
-                  components against a scratch DB — real bars fetched,
-                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>
-                  injected and stored
+                  A stale-reference sweep of <code>SKILL.md</code> for the old
+                  8.0-ceiling value found only the BUY threshold (intentionally
+                  still 8.0) remaining.
                 </li>
               </ul>
             </div>
@@ -377,31 +386,26 @@
               <h4>Review loop</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer subagent</strong>: 1 critical finding
-                  (missing BEAR-path test), 2 warnings (untested sparse-bars
-                  <code>return_1m=None</code>; untested KR ticker path), 1
-                  suggestion (include exception type in the fail-open warning).
-                  All four were addressed in <code>fb7f3bd</code> — 3 tests
-                  added (13 total), and the warning message now includes
-                  <code>type(exc).__name__</code>. No implementation bugs found.
+                  <strong>code-reviewer subagent</strong>: clean for merge — 0
+                  critical or warning findings, 2 non-blocking comment
+                  suggestions that were dismissed because existing comments
+                  already cite the rationale and the paper log already states
+                  the skip reason.
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: no findings — all
-                  four requirements (fail-open, no caller-value overwrite,
-                  escape hatch, INTERACTIVE/BEAR unaffected) judged satisfied.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: 2 P2 findings,
+                  both fixed — the overview line still claimed a composite max
+                  of +14 (corrected to +13, and the stale -4.5 ALGO floor header
+                  corrected to -4.0/-5.0-with-earnings); a worked example
+                  claimed a counterfactual BUY that is actually WATCH 7.5 under
+                  the new weights (reworded as pre-2026-07 behavior). Codex's
+                  "-11 floor" sub-claim was wrong (the earnings penalty makes
+                  -12 correct) and was kept as-is.
                 </li>
                 <li>
                   <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no
-                  correctness bugs; 2 low-severity test gaps — a BEAR
-                  integration test (already added via the code-reviewer finding)
-                  and a CLI-level test confirming complete components skip the
-                  fetch (added). Confirmed the
-                  <code>{"overextension": null}</code> edge case honors caller
-                  values.
-                </li>
-                <li>
-                  <strong>Codex PR bot (PR #61)</strong>: "Didn't find any major
-                  issues" — clean in one round.
+                  findings; verified all arithmetic, including both worked
+                  examples.
                 </li>
               </ul>
             </div>
@@ -409,9 +413,9 @@
             <div class="card-section">
               <h4>Retrospective</h4>
               <p class="retrospective">
-                The gate hole was closable entirely with existing utilities
-                (provider + indicators); the only new logic is the merge policy
-                (inject missing keys only) and the fail-open behavior.
+                Changing an LLM-executed prose spec cascades through worked
+                examples and derived sums — the consistency sweep mattered as
+                much as the table edit itself.
               </p>
             </div>
           </article>

@@ -10,7 +10,7 @@ description: "Stock expectation analysis. Combines algorithmic technical scoring
 Per stock:
 - A deterministic **BUY / WATCH / HOLD / AVOID / SELL** label, derived from a fixed point table augmented by an LLM-judged macro/narrative score
 - A **transmission chain** of exactly 3 facts: one technical, one news/fundamental, one risk
-- A **composite score** in the range -12 .. +13 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
+- A **composite score** in the range -11 .. +13 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
 - An **LLM context score** (-5 .. +3) with reasoning text capturing macro regime, sector lifecycle, and narrative that the deterministic table can't see
 - Independent **multi-horizon predictions** (1W / 1M / 6M — the Cycle 1Y call is analysis-only, never logged; see RULE C4) logged to `data/predictions.db`
 - An **outcome-telemetry sidecar** at `state/last-outcome-expect.json` for the weekly calibration loop
@@ -111,7 +111,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 
 ### Step 5 — Compute the algorithmic score (deterministic point table)
 
-**ALGO_SCORE — sums to a max of +7.0, floor -4.0 (-5.0 with the earnings penalty).** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
+**ALGO_SCORE — sums to a max of +7.0, floor -3.0 (-4.0 with the earnings penalty).** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
 
 | Component | Bucket (evaluate in order) | Points | Notes |
 |---|---|---|---|
@@ -135,7 +135,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 | **Earnings event** *(penalty only)* | next earnings within 7 days | -1.0 | fed by RULE R3 — apply -1.0 when `catalyst gate` reports the ticker's `trading_days_until ≤ 5` (cap or trim band). R3 then also caps/trims per Step 7. |
 | | else | 0 | |
 
-Max positive sum: 3 + 1.0 + 1.5 + 0.5 + 1 + 0 = **7.0**. Max negative drag: -1 + -0.5 + -0.5 + -1 + -1 = **-4.0**. Effective floor with earnings event also: **-5.0**.
+Max positive sum: 3 + 1.0 + 1.5 + 0.5 + 1 + 0 = **7.0**. Max negative drag: -1 + -0.5 + -0.5 + -1 = **-3.0**. Effective floor with earnings event also: **-4.0**.
 
 > **2026-07 down-weight rationale**: 30-day weekly calibration (2026-07-05) grades
 > momentum (24.6%) and volume (23.3%) statistically dead, while sector (52.6%) and
@@ -265,8 +265,8 @@ Max positive sum: 2 + 1 = **3.0**. Floor without hard caps: -2 + 0 = -2.0. With 
 
 ```
 COMPOSITE = ALGO_SCORE + NEWS_SCORE + LLM_CONTEXT_SCORE
-  range:  -12.0 (worst case)  ..  +13.0 (perfect)
-  (algo floor -5.0 with earnings penalty + news floor -2.0 + llm_context floor -5.0)
+  range:  -11.0 (worst case)  ..  +13.0 (perfect)
+  (algo floor -4.0 with earnings penalty + news floor -2.0 + llm_context floor -5.0)
 
 Label mapping (contiguous half-open ranges — every score lands in exactly one bucket):
   COMPOSITE >= 8.0          →  BUY     high-conviction long

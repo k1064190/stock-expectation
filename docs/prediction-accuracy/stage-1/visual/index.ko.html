@@ -116,6 +116,16 @@
         background: var(--accent);
       }
 
+      .node.done .dot {
+        border-color: var(--muted);
+        background: var(--muted);
+      }
+
+      .node.upcoming .dot {
+        border-color: var(--accent);
+        background: var(--card-bg);
+      }
+
       .node .label {
         font-size: 0.8rem;
         color: var(--muted);
@@ -125,6 +135,14 @@
       .node.active .label {
         color: var(--accent);
         font-weight: 600;
+      }
+
+      .node.done .label {
+        color: var(--muted);
+      }
+
+      .node.upcoming .label {
+        color: var(--muted);
       }
 
       .connector {
@@ -253,6 +271,13 @@
             <div class="dot"></div>
             <div class="label">1단계</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">2단계</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -376,6 +401,10 @@
                   components가 주어지면 fetch를 건너뛰는지 확인하는 CLI 레벨
                   테스트(추가됨). <code>{"overextension": null}</code> 엣지
                   케이스가 호출자 값을 존중함을 확인함.
+                </li>
+                <li>
+                  <strong>Codex PR 봇 (PR #61)</strong>: "특별한 이슈를 찾지
+                  못했다"— 한 번의 라운드로 깔끔하게 통과.
                 </li>
               </ul>
             </div>

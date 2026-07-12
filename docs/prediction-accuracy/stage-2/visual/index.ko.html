@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — Stage 1</title>
+    <title>stock-expectation / prediction-accuracy — 2단계</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -53,21 +53,21 @@
         font-size: 0.95rem;
       }
 
-      nav[aria-label="Language"] {
+      nav[aria-label="언어"] {
         font-size: 0.9rem;
       }
 
-      nav[aria-label="Language"] span {
+      nav[aria-label="언어"] span {
         color: var(--muted);
       }
 
-      nav[aria-label="Language"] a {
+      nav[aria-label="언어"] a {
         color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
 
-      nav[aria-label="Language"] a:hover {
+      nav[aria-label="언어"] a:hover {
         text-decoration: underline;
       }
 
@@ -257,26 +257,26 @@
     <header>
       <div>
         <h1>stock-expectation / prediction-accuracy</h1>
-        <p>Staged plan progress</p>
+        <p>단계별 진행 상황</p>
       </div>
-      <nav aria-label="Language">
-        <span>EN</span> | <a href="index.ko.html">한국어</a>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a> | <span>한국어</span>
       </nav>
     </header>
 
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
-          <div class="node active">
+          <div class="node done">
             <div class="dot"></div>
-            <div class="label">Stage 1</div>
+            <div class="label">1단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node active">
             <div class="dot"></div>
-            <div class="label">Stage 2</div>
+            <div class="label">2단계</div>
           </div>
         </li>
       </ol>
@@ -284,134 +284,133 @@
 
     <main>
       <section>
-        <h2>Stage 1</h2>
+        <h2>2단계</h2>
         <p class="stage-summary">
-          Closes a fail-open gap in the store-level overextension gate so LIVE
-          BULL entries always have real overextension data to be judged against.
+          통계적으로 죽은 시그널에 대한 자본 노출을 줄이기 위해 ALGO 테이블
+          가중치를 재조정하고, low-edge-band 예측을 완전히 차단하는 대신 태깅한
+          뒤 필터링합니다.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Signal Downweight Edge Band</h3>
 
             <div class="card-section">
-              <h4>Why</h4>
+              <h4>왜</h4>
               <p>
-                The store-level overextension gate (RULE R2,
-                <code>_check_overextension_gate</code>) hard-rejects LIVE BULL
-                entries on parabolic blow-offs, but it reads
-                <code>overextension</code> and <code>return_1m</code> from the
-                caller-supplied <code>--components</code> JSON and fails open
-                when they are absent. A briefing or expect run that omitted
-                components silently bypassed the one enforcement that survives
-                cron. Entry-time evidence showed EXTREME-overextended BULL
-                entries winning only 29.1% versus 53.5% at NONE.
+                30일 주간 캘리브레이션(2026-07-05)에서 모멘텀(24.6%), 거래량
+                (23.3%), 기술적(26.5%), 뉴스(21.1%) 시그널이 통계적으로 죽은
+                시그널로 판정되었고, 섹터(52.6%)와 펀더멘털(67.5%)만 동전
+                던지기보다 나은 성과를 보였습니다. 별도로, 두 페이퍼 계좌
+                모두에서 0.60~0.70 raw-confidence 구간이 음(-)의 실현 엣지(US
+                +1.0%, KR -0.1% 평균 왕복 수익률)를 보이는데도 예측 대부분이 이
+                구간에 몰려 로그되고 있었습니다.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>What</h4>
+              <h4>무엇을</h4>
               <p>
-                <code>stock-cli predict create</code> for LIVE BULL now
-                backfills missing <code>overextension</code> and
-                <code>return_1m</code> into components from fresh price bars
-                before insertion, so the R2 gate always has real data to act on.
-                Caller-supplied values are never overwritten. The system fails
-                open on any fetch or compute error, logging a stderr warning. A
-                new <code>--no-gate-refresh</code> escape hatch supports offline
-                use. INTERACTIVE and BEAR creates are untouched.
+                <code>/expect</code> ALGO 테이블에서 모멘텀 가중치를 +1.5 →
+                +1.0으로, 거래량을 +1.0 → +0.5로 낮춰 ALGO 상한을 8.0 → 7.0으로
+                낮췄습니다. 이에 따라 BUY(≥8.0) 판정은 항상 뉴스/ LLM-context의
+                결합 확신도가 +1.0 이상이어야 합니다. 긍정적 LLM_CONTEXT는
+                반드시 섹터 상대강도(sector-RS)나 펀더멘털 촉매를 근거로 들어야
+                하며, 기술적/모멘텀 근거만으로는 인정되지 않습니다. 파생되는
+                모든 수치(합성 점수 범위, 임계값 근거, 예시 계산, 샘플 JSON)를
+                함께 갱신했습니다. <code>predict create</code>는 이제 raw
+                confidence가 [0.60, 0.70]인 LIVE BULL 예측에
+                <code>components.low_edge_band = true</code>를 태깅합니다 —
+                차단이 아니라 태그입니다. 재보정 확신도(recal-confidence) 하한은
+                isotonic 보정이 모든 값을 ~0.25 근처로 수렴시켜 버려 실효성이
+                없고, 차단할 경우 4단계 학습형 블렌드에 필요한 학습 데이터 행이
+                고갈되기 때문입니다. <code>paper_trading_run</code>의 새
+                <code>filter_low_edge_band</code>는 페이퍼 자본을 투입하기 전에
+                태그된 예측을 건너뜁니다.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>How</h4>
+              <h4>어떻게</h4>
               <p>
-                A new <code>_refresh_overextension_components()</code> fetches
-                roughly 120 calendar days of bars via the existing provider
-                (<code>_get_provider().get_price_history</code>) and reuses
-                <code>compute_horizon_metrics</code> (which already computes
-                <code>overextension_level</code> and <code>return_1m</code>);
-                only missing keys are injected. It is wired into
-                <code>cmd_predict_create</code> between components parsing and
-                the DB insert. Development followed TDD: 10 tests were written
-                first, then the implementation.
+                개발은 TDD 방식으로 진행되어, 태깅 테스트 7개와 필터 테스트
+                1개를 먼저 작성했습니다. 태그는 1단계 게이트 리프레시 직후
+                <code>cmd_predict_create</code> 안에 위치하며, 필터는
+                <code>run_range</code> 최상단에서 호출되는 순수 헬퍼로, 건너뛴
+                예측 개수를 info 로그로 남깁니다.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>Code locations</h4>
+              <h4>코드 위치</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> —
-                  <code>_refresh_overextension_components</code> (+
-                  <code>GATE_REFRESH_DAYS</code>), call site in
-                  <code>cmd_predict_create</code>,
-                  <code>--no-gate-refresh</code> argparse flag
+                  <code>stock_cli.py</code> — <code>LOW_EDGE_BAND</code> 상수 +
+                  <code>cmd_predict_create</code> 내 태그 블록
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — helper unit tests +
-                  <code>cmd_predict_create</code> integration tests (parabolic
-                  reject, healthy insert with injected components, escape hatch,
-                  INTERACTIVE skip, fail-open insert)
+                  <code>scheduler/paper_trading_run.py</code> —
+                  <code>filter_low_edge_band</code>, SELECT +
+                  <code>run_range</code> 연결
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — 점수 테이블,
+                  근거 설명, Step 5b 가이드, 예시 계산
+                </li>
+                <li>
+                  <code>tests/test_low_edge_band.py</code>,
+                  <code>scheduler/tests/test_paper_trading_run.py</code>
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>Verification</h4>
+              <h4>검증</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883 passed (10
-                  new)
+                  <code>uv run pytest -m "not network"</code> — 895개 통과 (신규
+                  8개)
                 </li>
                 <li>
-                  Live E2E: <code>predict create NVDA LIVE BULL</code> without
-                  components against a scratch DB — real bars fetched,
-                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>
-                  injected and stored
+                  <code>SKILL.md</code>에서 예전 8.0 상한 값에 대한 잔존 참조를
+                  훑어본 결과, 의도적으로 유지된 BUY 임계값(8.0)만 남아 있음을
+                  확인함.
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>Review loop</h4>
+              <h4>리뷰 루프</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer subagent</strong>: 1 critical finding
-                  (missing BEAR-path test), 2 warnings (untested sparse-bars
-                  <code>return_1m=None</code>; untested KR ticker path), 1
-                  suggestion (include exception type in the fail-open warning).
-                  All four were addressed in <code>fb7f3bd</code> — 3 tests
-                  added (13 total), and the warning message now includes
-                  <code>type(exc).__name__</code>. No implementation bugs found.
+                  <strong>code-reviewer 서브에이전트</strong>: 병합 가능 —
+                  치명적/경고 발견 0건, 비차단 코멘트 제안 2건은 기각됨(기존
+                  코멘트가 이미 근거를 명시하고 있고, 페이퍼 로그도 이미 스킵
+                  사유를 남기고 있음).
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: no findings — all
-                  four requirements (fail-open, no caller-value overwrite,
-                  escape hatch, INTERACTIVE/BEAR unaffected) judged satisfied.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: P2 2건 발견, 모두
+                  수정됨 — 개요 문구가 여전히 합성 점수 최댓값을 +14라고
+                  주장하고 있어 +13으로 정정했고(오래된 -4.5 ALGO 하한 헤더도
+                  -4.0/실적 반영 시 -5.0으로 정정), 예시 계산 하나가 새 가중치
+                  하에서는 실제로 WATCH 7.5인데도 반사실적 BUY를 주장하고 있어
+                  "2026-07 이전 동작"으로 문구를 수정함. Codex의 "-11 하한" 하위
+                  주장은 틀렸으며(실적 페널티를 반영하면 -12가 맞음) 그대로
+                  유지함.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no
-                  correctness bugs; 2 low-severity test gaps — a BEAR
-                  integration test (already added via the code-reviewer finding)
-                  and a CLI-level test confirming complete components skip the
-                  fetch (added). Confirmed the
-                  <code>{"overextension": null}</code> edge case honors caller
-                  values.
-                </li>
-                <li>
-                  <strong>Codex PR bot (PR #61)</strong>: "Didn't find any major
-                  issues" — clean in one round.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 발견 사항
+                  없음. 두 예시 계산을 포함한 모든 산술을 검증함.
                 </li>
               </ul>
             </div>
 
             <div class="card-section">
-              <h4>Retrospective</h4>
+              <h4>회고</h4>
               <p class="retrospective">
-                The gate hole was closable entirely with existing utilities
-                (provider + indicators); the only new logic is the merge policy
-                (inject missing keys only) and the fail-open behavior.
+                LLM이 실행하는 프롬프트 스펙을 바꾸면 예시 계산과 파생 합계
+                전체로 영향이 퍼진다 — 일관성 점검이 테이블 수정 자체만큼이나
+                중요했다.
               </p>
             </div>
           </article>

@@ -61,6 +61,7 @@ except ImportError:
     pass
 
 from models import (
+    LOW_EDGE_BAND,
     Prediction,
     Direction,
     Market,
@@ -1951,10 +1952,6 @@ def _recalibrated_confidence(
 # days, comfortably above the 22 bars return_1m needs and the 20/15 bars for
 # MA20/RSI14.
 GATE_REFRESH_DAYS = 120
-
-# Raw-confidence band with negative realized edge (paper-trading reviews
-# 2026-06-28 / 2026-07-05). Inclusive on both ends.
-LOW_EDGE_BAND = (0.60, 0.70)
 
 
 def _refresh_overextension_components(
