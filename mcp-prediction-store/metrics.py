@@ -804,8 +804,8 @@ def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> 
             continue
         if not isinstance(comp, dict):
             continue
-        n_valid += 1
         win = 1 if r["status"] == "HIT" else 0
+        row_bucketed = False
         for k, v in comp.items():
             if isinstance(v, (dict, list)):
                 # Nested payloads (e.g. news_signal) have their own readout
@@ -821,6 +821,12 @@ def get_component_contribution(conn: sqlite3.Connection, min_count: int = 8) -> 
             slot = buckets.setdefault(k, {}).setdefault(label, [0, 0])
             slot[0] += win
             slot[1] += 1
+            row_bucketed = True
+        # A row whose components hold only nested payloads (e.g. just
+        # news_signal) contributes to no pillar — counting it would overstate
+        # how many rows carry measurable scalar components.
+        if row_bucketed:
+            n_valid += 1
 
     pillars: dict[str, dict] = {}
     for pillar, labs in buckets.items():
@@ -878,7 +884,7 @@ def get_news_tag_performance(conn: sqlite3.Connection, min_count: int = 8) -> di
         # iterate per-character, duplicate tags would count one prediction
         # twice, and truthy strings like "false" would arm the catalyst flag.
         if isinstance(tags, list):
-            for tag in {t for t in tags if isinstance(t, str)}:
+            for tag in {t.strip() for t in tags if isinstance(t, str) and t.strip()}:
                 slot = tag_buckets.setdefault(tag, [0, 0])
                 slot[0] += win
                 slot[1] += 1

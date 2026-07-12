@@ -200,3 +200,46 @@ def test_tag_performance_both_catalysts_and_multi_tags(conn):
     assert out["tags"]["analyst"]["n"] == 8
     assert out["catalysts"]["positive"]["n"] == 8
     assert out["catalysts"]["negative"]["win_rate"] == 0.5
+
+
+def test_tag_performance_strips_empty_tags(conn):
+    for i in range(300, 308):
+        _closed_row(conn, i, "HIT", {"event_tags": ["earnings", " ", ""]})
+
+    out = get_news_tag_performance(conn, min_count=4)
+
+    assert list(out["tags"].keys()) == ["earnings"]
+
+
+def test_component_contribution_skips_nested_only_rows(conn):
+    """Rows whose components hold ONLY nested payloads don't inflate n_with_components."""
+    import json as _json
+
+    for i in range(400, 405):
+        conn.execute(
+            """INSERT INTO predictions
+               (id, created_at, ticker, market, direction, confidence, components,
+                timeframe, reasoning, entry_price, signals_used, source, status, outcome_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                f"no{i}",
+                "2026-06-01T00:00:00+00:00",
+                "T",
+                "US",
+                "BULL",
+                0.6,
+                _json.dumps({"news_signal": {"event_tags": ["earnings"]}}),
+                "1W",
+                "r",
+                100.0,
+                "[]",
+                "LIVE",
+                "HIT",
+                "2026-06-08T00:00:00+00:00",
+            ),
+        )
+    conn.commit()
+
+    out = get_component_contribution(conn, min_count=1)
+
+    assert out["n_with_components"] == 0

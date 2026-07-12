@@ -602,3 +602,27 @@ def test_augment_news_signal_guards():
     p3 = _pred(market="KR")
     db_mod._augment_news_signal(p3, {"US": _MustNotCall()})
     assert p3.components is None
+
+
+def test_augment_news_signal_recomputes_over_garbage():
+    """A non-dict news_signal payload is replaced, not treated as populated."""
+    import daily_briefing as db_mod
+
+    class _P:
+        def get_news(self, ticker, limit=10, since_days=7):
+            return [{"headline": "Acme beats earnings estimates", "date": "2026-07-10"}]
+
+    pred = db_mod.Prediction(
+        ticker="ACME",
+        market="US",
+        direction="BULL",
+        confidence=0.62,
+        timeframe="1W",
+        reasoning="r",
+        entry_price=10.0,
+        source="LIVE",
+        components={"news_signal": "garbage"},
+    )
+    db_mod._augment_news_signal(pred, {"US": _P()})
+    assert isinstance(pred.components["news_signal"], dict)
+    assert pred.components["news_signal"]["unique_count"] == 1

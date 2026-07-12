@@ -1053,7 +1053,10 @@ def _augment_news_signal(pred, providers: dict) -> None:
     if pred.source != "LIVE":
         return
     comps = dict(pred.components or {})
-    if "news_signal" in comps:
+    # Only a usable dict counts as "already populated" — a null/string/list
+    # payload from the model would otherwise permanently lose the training row
+    # (get_news_tag_performance ignores non-dict signals). Recompute over it.
+    if isinstance(comps.get("news_signal"), dict):
         return
     try:
         from news_features import summarize_news
@@ -1061,7 +1064,7 @@ def _augment_news_signal(pred, providers: dict) -> None:
         provider = providers.get(pred.market)
         if provider is None:
             return
-        items = provider.get_news(pred.ticker, 10, 7) or []
+        items = provider.get_news(pred.ticker, limit=10, since_days=7) or []
         sig = summarize_news(
             [_news_item_obj(it) for it in items],
             datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -1190,14 +1193,9 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
                 )
                 continue
 
-            # Populate the overextension gate's components from fresh data when
-            # the model omitted them, so the store gate can't fail open here.
-            _augment_gate_components(pred, providers)
-            _augment_news_signal(pred, providers)
-
             # LIVE BEAR predictions are gated at the store (measured ~0% win
-            # rate). Skip them explicitly here so they are an intentional,
-            # visible no-op rather than an opaque insert error swallowed below.
+            # rate). Skip them BEFORE the augmentations so a doomed row never
+            # triggers the bar/news fetches (mirrors the 1Y skip above).
             if pred.direction == "BEAR":
                 logger.info(
                     "Skipping LIVE BEAR prediction (gated): %s %s %s",
@@ -1206,6 +1204,11 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
                     pred.timeframe,
                 )
                 continue
+
+            # Populate the overextension gate's components from fresh data when
+            # the model omitted them, so the store gate can't fail open here.
+            _augment_gate_components(pred, providers)
+            _augment_news_signal(pred, providers)
 
             insert_prediction(conn, pred)
             logged += 1
