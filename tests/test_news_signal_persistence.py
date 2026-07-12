@@ -51,6 +51,41 @@ def test_to_components_dict_roundtrips_key_fields():
     json.dumps(d)  # JSON-serializable
 
 
+def test_to_components_dict_strict_json_safe_on_nonfinite():
+    sig = NewsSignal(
+        unique_count=1,
+        raw_count=1,
+        mean_sentiment=float("nan"),
+        recency_weighted_sentiment=float("inf"),
+    )
+    d = sig.to_components_dict()
+    assert d["mean_sentiment"] is None
+    assert d["recency_weighted_sentiment"] is None
+    json.dumps(d, allow_nan=False)
+
+
+def test_tag_performance_type_discipline(conn):
+    """String tags, duplicate tags, and truthy-string catalysts are neutralized."""
+    for i in range(8):
+        _closed_row(
+            conn,
+            i,
+            "HIT",
+            {
+                "event_tags": ["earnings", "earnings", 3],
+                "has_negative_catalyst": "false",
+            },
+        )
+    _closed_row(conn, 99, "MISS", {"event_tags": "earnings"})
+
+    out = get_news_tag_performance(conn, min_count=4)
+
+    assert out["tags"]["earnings"]["n"] == 8  # deduped per row, string row ignored
+    assert "e" not in out["tags"]  # no per-character pollution
+    assert "3" not in out["tags"]  # non-str tag dropped
+    assert out["catalysts"] == {}  # "false" string is not True
+
+
 def test_to_components_dict_handles_none_sentiment():
     sig = NewsSignal(
         unique_count=0,
@@ -144,3 +179,24 @@ def test_component_contribution_skips_nested_news_signal(conn):
 
     assert "news_signal" not in out["pillars"]
     assert "algo" in out["pillars"]
+
+
+def test_tag_performance_both_catalysts_and_multi_tags(conn):
+    for i in range(8):
+        _closed_row(
+            conn,
+            200 + i,
+            "HIT" if i < 4 else "MISS",
+            {
+                "event_tags": ["earnings", "analyst"],
+                "has_positive_catalyst": True,
+                "has_negative_catalyst": True,
+            },
+        )
+
+    out = get_news_tag_performance(conn, min_count=4)
+
+    assert out["tags"]["earnings"]["n"] == 8
+    assert out["tags"]["analyst"]["n"] == 8
+    assert out["catalysts"]["positive"]["n"] == 8
+    assert out["catalysts"]["negative"]["win_rate"] == 0.5

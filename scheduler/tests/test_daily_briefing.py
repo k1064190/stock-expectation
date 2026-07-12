@@ -565,3 +565,40 @@ def test_augment_news_signal_fail_open():
     )
     db_mod._augment_news_signal(pred, {"US": _Boom()})
     assert pred.components is None or "news_signal" not in (pred.components or {})
+
+
+def test_augment_news_signal_guards():
+    """Non-LIVE no-ops; existing news_signal preserved; missing provider no-ops."""
+    import daily_briefing as db_mod
+
+    class _MustNotCall:
+        def get_news(self, *a, **k):
+            raise AssertionError("must not fetch")
+
+    def _pred(**kw):
+        base = dict(
+            ticker="ACME",
+            market="US",
+            direction="BULL",
+            confidence=0.62,
+            timeframe="1W",
+            reasoning="r",
+            entry_price=10.0,
+            source="LIVE",
+            components=None,
+        )
+        base.update(kw)
+        return db_mod.Prediction(**base)
+
+    p1 = _pred(source="INTERACTIVE")
+    db_mod._augment_news_signal(p1, {"US": _MustNotCall()})
+    assert p1.components is None
+
+    existing = {"news_signal": {"unique_count": 9}}
+    p2 = _pred(components=dict(existing))
+    db_mod._augment_news_signal(p2, {"US": _MustNotCall()})
+    assert p2.components == existing
+
+    p3 = _pred(market="KR")
+    db_mod._augment_news_signal(p3, {"US": _MustNotCall()})
+    assert p3.components is None

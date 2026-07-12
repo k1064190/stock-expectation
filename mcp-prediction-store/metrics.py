@@ -873,15 +873,20 @@ def get_news_tag_performance(conn: sqlite3.Connection, min_count: int = 8) -> di
             continue
         n_with += 1
         win = 1 if r["status"] == "HIT" else 0
-        for tag in sig.get("event_tags") or []:
-            slot = tag_buckets.setdefault(str(tag), [0, 0])
-            slot[0] += win
-            slot[1] += 1
-        if sig.get("has_positive_catalyst"):
+        tags = sig.get("event_tags")
+        # LLM-authored components need type discipline: a bare string would
+        # iterate per-character, duplicate tags would count one prediction
+        # twice, and truthy strings like "false" would arm the catalyst flag.
+        if isinstance(tags, list):
+            for tag in {t for t in tags if isinstance(t, str)}:
+                slot = tag_buckets.setdefault(tag, [0, 0])
+                slot[0] += win
+                slot[1] += 1
+        if sig.get("has_positive_catalyst") is True:
             slot = catalyst_buckets.setdefault("positive", [0, 0])
             slot[0] += win
             slot[1] += 1
-        if sig.get("has_negative_catalyst"):
+        if sig.get("has_negative_catalyst") is True:
             slot = catalyst_buckets.setdefault("negative", [0, 0])
             slot[0] += win
             slot[1] += 1

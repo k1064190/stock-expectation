@@ -1064,7 +1064,7 @@ def _augment_news_signal(pred, providers: dict) -> None:
         items = provider.get_news(pred.ticker, 10, 7) or []
         sig = summarize_news(
             [_news_item_obj(it) for it in items],
-            datetime.now().strftime("%Y-%m-%d"),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         )
         comps["news_signal"] = sig.to_components_dict()
         pred.components = comps

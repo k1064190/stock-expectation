@@ -268,7 +268,7 @@ bin/stock-cli predict create \
   --entry-price 268500 --target-price 300000 --stop-price 248000 \
   --reasoning "RSI14=74.5 healthy momentum, MA20>MA50>MA200 stack, return_1m=+36.6%, AV sentiment N/A (KR), 반도체 사이클 후반 cycle_risk_flag=True, LLM_CONTEXT -1.5 (late-stage sector)" \
   --signals technical,momentum,llm_context \
-  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","return_1m":0.12,"regime":"NEUTRAL","discovery_source":"presurge","setup_type":"pullback"}' \
+  --components '{"algo":6.0,"news":0.0,"llm_context":-1.5,"overextension":"NONE","return_1m":0.12,"regime":"NEUTRAL","discovery_source":"presurge","setup_type":"pullback","news_signal":{"unique_count":3,"mean_sentiment":null,"recency_weighted_sentiment":null,"event_tags":["earnings"],"has_positive_catalyst":false,"has_negative_catalyst":false}}' \
   --source LIVE \
   --recalibrate \
   --analysis-group-id "$GROUP_ID"
@@ -276,7 +276,10 @@ bin/stock-cli predict create \
 
 `--components`는 항상 해당 콜의 pillar별 기여도(algo/news/llm_context 점수 + overextension 레벨 +
 regime 라벨)를 담아 전달 — `bin/stock-cli component-contribution`로 세 능력의 기여를 따로 측정하고
-향후 blended confidence 학습에 사용.
+향후 blended confidence 학습에 사용. `news_signal`도 필수: `bin/stock-cli news` 출력의 `signal`
+블록에서 `unique_count`, `mean_sentiment`, `recency_weighted_sentiment`, `event_tags`,
+`has_positive_catalyst`, `has_negative_catalyst` 여섯 키만 값 그대로 복사 (`raw_count` 등은 제외) —
+`bin/stock-cli news-tag-performance`가 태그별 적중률을 학습하는 원천이다.
 
 **예측 품질 규칙:**
 - Confidence 0.55-0.85, 4-signal-alignment 규칙 + calibration 캡 적용

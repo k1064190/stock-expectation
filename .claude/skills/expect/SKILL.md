@@ -427,10 +427,11 @@ Always pass `--components` with the per-pillar contributions for this call
 capability-contribution analysis (`bin/stock-cli component-contribution`) and a
 future blended confidence — so the three capabilities can be measured separately.
 
-**Also include `news_signal`** — copy the `signal` block from the Step 4 `news`
-output verbatim into `--components` as `news_signal` with the keys
-`unique_count`, `mean_sentiment`, `recency_weighted_sentiment`, `event_tags`,
-`has_positive_catalyst`, `has_negative_catalyst` (drop `raw_count`). The
+**Also include `news_signal`** — from the `signal` block of the Step 4 `news`
+output, copy exactly these six keys (unchanged values) into `--components` as
+`news_signal`: `unique_count`, `mean_sentiment`, `recency_weighted_sentiment`,
+`event_tags`, `has_positive_catalyst`, `has_negative_catalyst`. Omit every
+other key (`raw_count`, etc.). The
 collapsed NEWS_SCORE is graded near-dead; persisting the raw fields lets
 `bin/stock-cli news-tag-performance` learn which catalyst tags actually predict.
 
