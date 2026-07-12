@@ -5,6 +5,13 @@ collapse (52.8% → 3.8%): gate hardening, signal re-weighting, news feature
 persistence, learned-blend confidence, per-stock claude -p deep dives, and a
 keyword-bucket audit loop.
 
+## Stage 5 — Per-stock claude -p deep-dive fan-out
+
+- [deep-dive-fanout](stage-5/deep-dive-fanout.md) — independent Bull/Bear/Judge
+  `claude -p` dive per scanner pick (bounded fan-out, strict-JSON, fail-open),
+  injected into the briefing prompt behind `--deep-dive` (default off); dive
+  stored in `components.deep_dive`, never logs predictions itself.
+
 ## Stage 4a — Learned blend: offline model + validation harness
 
 - [learned-blend-offline](stage-4a/learned-blend-offline.md) — hand-rolled L2
