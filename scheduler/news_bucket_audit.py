@@ -37,6 +37,7 @@ try:
 except ImportError:
     pass
 
+from deep_dive import _call_claude
 from macro_news import MACRO_RISK_BUCKETS, _match_risk_bucket, get_macro_news
 from news_features import (
     EVENT_KEYWORDS,
@@ -114,7 +115,9 @@ def collect_headlines(conn, providers: dict, days: int = 7) -> list[dict]:
                 }
             )
     try:
-        for it in get_macro_news() or []:
+        # Defensive slice — an unexpectedly large macro backlog must not blow
+        # up the auditor prompt.
+        for it in list(get_macro_news() or [])[:20]:
             rows.append(
                 {
                     "source": "macro",
@@ -180,7 +183,12 @@ def build_audit_prompt(annotated: list[dict]) -> str:
         if r["macro_bucket"]:
             verdicts.append(f"macro={r['macro_bucket']}")
         v = "; ".join(verdicts) if verdicts else "(no match)"
-        sample_lines.append(f"{i}. [{r['source']}] {r['headline']}\n   → matcher: {v}")
+        # Defang tag-breakout attempts: a headline containing "</sample>"
+        # must not escape the untrusted-data block. Also flatten newlines.
+        safe_headline = (
+            str(r["headline"]).replace("</", "< /").replace("\n", " ").strip()
+        )
+        sample_lines.append(f"{i}. [{r['source']}] {safe_headline}\n   → matcher: {v}")
     sample = "\n".join(sample_lines)
 
     return f"""You are auditing hand-maintained keyword buckets used by a stock-prediction pipeline to score news headlines. The matchers are pure keyword lookups (word-boundary for ASCII, substring for Korean), so they produce false positives (precedent: a bare "blockade" keyword fired the war_conflict macro bucket on a ballot-counting-site blockade story, wrongly trimming every pick that day) and false negatives (novel catalyst phrasings not in the lists).
@@ -242,19 +250,24 @@ def main() -> int:
     from providers.kr import KoreanMarketProvider
     from providers.us import USMarketProvider
 
+    # Fail-open provider construction: one broken provider (bad env, network
+    # in __init__) must not kill the audit of the other market + macro feed.
+    providers = {}
+    for name, cls in (("US", USMarketProvider), ("KR", KoreanMarketProvider)):
+        try:
+            providers[name] = cls()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("%s provider unavailable (fail-open): %s", name, exc)
+
     conn = get_connection()
     try:
-        rows = collect_headlines(
-            conn, {"US": USMarketProvider(), "KR": KoreanMarketProvider()}, args.days
-        )
+        rows = collect_headlines(conn, providers, args.days)
     finally:
         conn.close()
     if not rows:
         logger.warning("no headlines sampled — nothing to audit")
         return 0
     annotated = annotate(rows)
-
-    from deep_dive import _call_claude
 
     llm_output = _call_claude(build_audit_prompt(annotated), timeout=LLM_TIMEOUT)
 
