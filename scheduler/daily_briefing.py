@@ -51,6 +51,7 @@ except ImportError:
     pass
 
 from models import (
+    LOW_EDGE_BAND,
     Prediction,
     get_connection,
     insert_prediction,
@@ -1095,6 +1096,16 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
                 target_price=p.get("target_price"),
                 stop_price=p.get("stop_price"),
             )
+
+            # Mirror the CLI path's low-edge-band tag so API-mode LIVE BULLs
+            # in the negative-edge 0.60-0.70 raw-confidence band are also
+            # skipped by the paper book (tag, never block).
+            if (
+                pred.direction == "BULL"
+                and LOW_EDGE_BAND[0] <= raw_conf <= LOW_EDGE_BAND[1]
+            ):
+                pred.components = dict(pred.components or {})
+                pred.components["low_edge_band"] = True
 
             # Validate required fields
             if not pred.ticker or pred.entry_price <= 0:

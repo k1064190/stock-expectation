@@ -61,6 +61,7 @@ except ImportError:
     pass
 
 from models import (
+    LOW_EDGE_BAND,
     Prediction,
     Direction,
     Market,
@@ -2052,6 +2053,18 @@ def cmd_predict_create(args) -> int:
             components, _ = _refresh_overextension_components(
                 components, args.ticker, args.market
             )
+
+        # Tag (never block) the raw-confidence band with negative realized
+        # edge in both paper books (US +1.0%, KR -0.1% avg round-trip):
+        # predictions still log so the learned blend keeps training rows, but
+        # capital-touching consumers (paper trading) skip tagged picks.
+        if (
+            args.source.upper() == "LIVE"
+            and args.direction.upper() == "BULL"
+            and LOW_EDGE_BAND[0] <= args.confidence <= LOW_EDGE_BAND[1]
+        ):
+            components = dict(components or {})
+            components["low_edge_band"] = True
 
         conn = get_connection()
         try:

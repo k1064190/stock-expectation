@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — 1단계</title>
+    <title>stock-expectation / prediction-accuracy — 2단계</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -267,14 +267,14 @@
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
-          <div class="node active">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">1단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node active">
             <div class="dot"></div>
             <div class="label">2단계</div>
           </div>
@@ -291,60 +291,60 @@
 
     <main>
       <section>
-        <h2>1단계</h2>
+        <h2>2단계</h2>
         <p class="stage-summary">
-          스토어 단계의 과열도(overextension) 게이트에 있던 fail-open 허점을
-          메워, LIVE BULL 진입이 항상 실제 과열도 데이터를 근거로 판정되도록
-          합니다.
+          통계적으로 죽은 시그널에 대한 자본 노출을 줄이기 위해 ALGO 테이블
+          가중치를 재조정하고, low-edge-band 예측을 완전히 차단하는 대신 태깅한
+          뒤 필터링합니다.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Signal Downweight Edge Band</h3>
 
             <div class="card-section">
               <h4>왜</h4>
               <p>
-                스토어 단계 과열도 게이트(RULE R2,
-                <code>_check_overextension_gate</code>)는 포물선형 급등
-                (parabolic blow-off) 국면에서 LIVE BULL 진입을 강제로
-                거부하지만, 호출자가 전달한 <code>--components</code> JSON에서
-                <code>overextension</code>과 <code>return_1m</code>을 읽어오기
-                때문에 이 값들이 없으면 fail-open(통과)되어 버립니다. 브리핑이나
-                expect 실행에서 components를 생략하면 cron에서도 살아남는 유일한
-                강제 규칙이 조용히 우회되던 셈입니다. 진입 시점 데이터로는
-                EXTREME 수준으로 과열된 BULL 진입의 승률이 29.1%에 불과했던
-                반면, NONE 수준에서는 53.5%였습니다.
+                30일 주간 캘리브레이션(2026-07-05)에서 모멘텀(24.6%), 거래량
+                (23.3%), 기술적(26.5%), 뉴스(21.1%) 시그널이 통계적으로 죽은
+                시그널로 판정되었고, 섹터(52.6%)와 펀더멘털(67.5%)만 동전
+                던지기보다 나은 성과를 보였습니다. 별도로, 두 페이퍼 계좌
+                모두에서 0.60~0.70 raw-confidence 구간이 음(-)의 실현 엣지(US
+                +1.0%, KR -0.1% 평균 왕복 수익률)를 보이는데도 예측 대부분이 이
+                구간에 몰려 로그되고 있었습니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>무엇을</h4>
               <p>
-                LIVE BULL에 대한 <code>stock-cli predict create</code>는 이제
-                DB에 삽입하기 전에 최신 가격 바(bar) 데이터로부터
-                <code>overextension</code>과 <code>return_1m</code>의 누락 값을
-                components에 채워 넣어, R2 게이트가 항상 실제 데이터를 근거로
-                동작하도록 합니다. 호출자가 값을 전달한 경우에는 절대 덮어쓰지
-                않습니다. 데이터 조회나 계산 과정에서 오류가 나면 stderr 경고를
-                남기고 fail-open으로 동작합니다. 오프라인 사용을 위한 새로운
-                <code>--no-gate-refresh</code> 탈출구도 추가되었습니다.
-                INTERACTIVE와 BEAR 생성 경로는 변경되지 않았습니다.
+                <code>/expect</code> ALGO 테이블에서 모멘텀 가중치를 +1.5 →
+                +1.0으로, 거래량을 +1.0 → +0.5로 낮춰 ALGO 상한을 8.0 → 7.0으로
+                낮췄습니다. 이에 따라 BUY(≥8.0) 판정은 항상 뉴스/ LLM-context의
+                결합 확신도가 +1.0 이상이어야 합니다. 긍정적 LLM_CONTEXT는
+                반드시 섹터 상대강도(sector-RS)나 펀더멘털 촉매를 근거로 들어야
+                하며, 기술적/모멘텀 근거만으로는 인정되지 않습니다. 파생되는
+                모든 수치(합성 점수 범위, 임계값 근거, 예시 계산, 샘플 JSON)를
+                함께 갱신했습니다. <code>predict create</code>는 이제 raw
+                confidence가 [0.60, 0.70]인 LIVE BULL 예측에
+                <code>components.low_edge_band = true</code>를 태깅합니다 —
+                차단이 아니라 태그입니다. 재보정 확신도(recal-confidence) 하한은
+                isotonic 보정이 모든 값을 ~0.25 근처로 수렴시켜 버려 실효성이
+                없고, 차단할 경우 4단계 학습형 블렌드에 필요한 학습 데이터 행이
+                고갈되기 때문입니다. <code>paper_trading_run</code>의 새
+                <code>filter_low_edge_band</code>는 페이퍼 자본을 투입하기 전에
+                태그된 예측을 건너뜁니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>어떻게</h4>
               <p>
-                새로 추가된 <code>_refresh_overextension_components()</code>는
-                기존 provider(<code>_get_provider().get_price_history</code>)를
-                통해 약 120 캘린더 일치의 바 데이터를 가져오고,
-                <code>overextension_level</code>과 <code>return_1m</code>을 이미
-                계산하는 <code>compute_horizon_metrics</code>를 재사용합니다.
-                누락된 키만 주입됩니다. 이 로직은 components 파싱과 DB 삽입
-                사이, <code>cmd_predict_create</code> 안에 연결되었습니다.
-                개발은 TDD 방식으로 진행되어, 구현 전에 테스트 10개를 먼저
-                작성했습니다.
+                개발은 TDD 방식으로 진행되어, 태깅 테스트 7개와 필터 테스트
+                1개를 먼저 작성했습니다. 태그는 1단계 게이트 리프레시 직후
+                <code>cmd_predict_create</code> 안에 위치하며, 필터는
+                <code>run_range</code> 최상단에서 호출되는 순수 헬퍼로, 건너뛴
+                예측 개수를 info 로그로 남깁니다.
               </p>
             </div>
 
@@ -352,17 +352,21 @@
               <h4>코드 위치</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> —
-                  <code>_refresh_overextension_components</code> (+
-                  <code>GATE_REFRESH_DAYS</code>),
-                  <code>cmd_predict_create</code> 내 호출 지점,
-                  <code>--no-gate-refresh</code> argparse 플래그
+                  <code>stock_cli.py</code> — <code>LOW_EDGE_BAND</code> 상수 +
+                  <code>cmd_predict_create</code> 내 태그 블록
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — 헬퍼 단위 테스트 +
-                  <code>cmd_predict_create</code> 통합 테스트(포물선형 거부,
-                  주입된 components를 사용한 정상 삽입, 탈출구, INTERACTIVE
-                  스킵, fail-open 삽입)
+                  <code>scheduler/paper_trading_run.py</code> —
+                  <code>filter_low_edge_band</code>, SELECT +
+                  <code>run_range</code> 연결
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — 점수 테이블,
+                  근거 설명, Step 5b 가이드, 예시 계산
+                </li>
+                <li>
+                  <code>tests/test_low_edge_band.py</code>,
+                  <code>scheduler/tests/test_paper_trading_run.py</code>
                 </li>
               </ul>
             </div>
@@ -371,15 +375,13 @@
               <h4>검증</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883개 통과 (신규
-                  10개)
+                  <code>uv run pytest -m "not network"</code> — 895개 통과 (신규
+                  8개)
                 </li>
                 <li>
-                  실제 E2E: components 없이
-                  <code>predict create NVDA LIVE BULL</code>을 스크래치 DB에
-                  대해 실행 — 실제 바 데이터를 가져와
-                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>이
-                  주입되어 저장됨
+                  <code>SKILL.md</code>에서 예전 8.0 상한 값에 대한 잔존 참조를
+                  훑어본 결과, 의도적으로 유지된 BUY 임계값(8.0)만 남아 있음을
+                  확인함.
                 </li>
               </ul>
             </div>
@@ -388,30 +390,36 @@
               <h4>리뷰 루프</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer 서브에이전트</strong>: 치명적 이슈
-                  1건(BEAR 경로 테스트 누락), 경고 2건(희소한 바 데이터에서
-                  <code>return_1m=None</code> 미검증, KR 티커 경로 미검증), 제안
-                  1건(fail-open 경고 메시지에 예외 타입 포함). 네 가지 모두
-                  <code>fb7f3bd</code>에서 해결됨 — 테스트 3개 추가(총 13개),
-                  경고 메시지에 <code>type(exc).__name__</code>이 포함됨.
-                  구현상의 버그는 발견되지 않음.
+                  <strong>code-reviewer 서브에이전트</strong>: 병합 가능 —
+                  치명적/경고 발견 0건, 비차단 코멘트 제안 2건은 기각됨(기존
+                  코멘트가 이미 근거를 명시하고 있고, 페이퍼 로그도 이미 스킵
+                  사유를 남기고 있음).
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: 발견 사항 없음 —
-                  네 가지 요구사항(fail-open, 호출자 값 미덮어쓰기, 탈출구,
-                  INTERACTIVE/BEAR 영향 없음) 모두 충족된 것으로 판단됨.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: P2 2건 발견, 모두
+                  수정됨 — 개요 문구가 여전히 합성 점수 최댓값을 +14라고
+                  주장하고 있어 +13으로 정정했고, 예시 계산 하나가 새 가중치
+                  하에서는 실제로 WATCH 7.5인데도 반사실적 BUY를 주장하고 있어
+                  "2026-07 이전 동작"으로 문구를 수정함. 처음엔 기각됐던 Codex의
+                  "-11 컴포지트 하한" 하위 주장은 실제로 맞는 것으로 확인됨 —
+                  기존 문서가 실적 발표 페널티를 이중 계산하고 있었고, 실제
+                  드래그는 -3.0, 실적 발표 포함 하한은 -4.0, 컴포지트 하한은
+                  -11.0이며, 이는 아래 PR 리뷰 라운드에서 수정됨.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 정확성
-                  버그 없음. 낮은 심각도의 테스트 공백 2건 — BEAR 통합
-                  테스트(code-reviewer 지적으로 이미 추가됨)와 완전한
-                  components가 주어지면 fetch를 건너뛰는지 확인하는 CLI 레벨
-                  테스트(추가됨). <code>{"overextension": null}</code> 엣지
-                  케이스가 호출자 값을 존중함을 확인함.
+                  <strong>PR #62 봇 (1라운드)</strong>: Codex 봇 — API 모드
+                  <code>log_predictions</code> 경로에
+                  <code>low_edge_band</code> 태그가 누락된 P2를 발견(상수를
+                  <code>models.LOW_EDGE_BAND</code>
+                  로 옮기고 태그를 그대로 반영, 회귀 테스트 추가로 해결). Gemini
+                  Code Assist — components가 이미 dict일 때 발생하는
+                  <code>filter_low_edge_band</code>의 TypeError(방어적으로
+                  수정), 위의 ALGO 하한 산술 오류(수정), 테스트 픽스처의 임시 DB
+                  정리 누락(수정).
                 </li>
                 <li>
-                  <strong>Codex PR 봇 (PR #61)</strong>: "특별한 이슈를 찾지
-                  못했다"— 한 번의 라운드로 깔끔하게 통과.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 발견 사항
+                  없음. 두 예시 계산을 포함한 모든 산술을 검증함.
                 </li>
               </ul>
             </div>
@@ -419,9 +427,9 @@
             <div class="card-section">
               <h4>회고</h4>
               <p class="retrospective">
-                이 게이트의 허점은 기존 유틸리티(provider + 지표 계산)만으로도
-                완전히 메울 수 있었다. 새로 추가된 로직은 병합 정책(누락된 키만
-                주입)과 fail-open 동작뿐이다.
+                LLM이 실행하는 프롬프트 스펙을 바꾸면 예시 계산과 파생 합계
+                전체로 영향이 퍼진다 — 일관성 점검이 테이블 수정 자체만큼이나
+                중요했다.
               </p>
             </div>
           </article>

@@ -467,6 +467,12 @@ def validate_prediction_dict(p: dict) -> list[str]:
 # logic — so this STORE-LEVEL gate is the one enforcement that survives cron.
 GATE_PARABOLIC_RETURN_1M = 0.20  # trailing 21-day return above which a BULL is a chase
 
+# Raw-confidence band with negative realized edge (paper-trading reviews
+# 2026-06-28 / 2026-07-05). LIVE BULL predictions inside it are tagged
+# ``components.low_edge_band`` — logged for training, skipped by the paper
+# book. Inclusive on both ends. Shared by the CLI and API-mode logging paths.
+LOW_EDGE_BAND = (0.60, 0.70)
+
 
 def _check_overextension_gate(pred: Prediction) -> None:
     """Hard-reject LIVE BULL predictions entered on a parabolic blow-off.
