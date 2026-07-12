@@ -36,6 +36,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 # Add project paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -633,7 +634,7 @@ Rules:
 - GATE R2 (overextension): from horizon-metrics `overextension_level` — EXTREME → WATCH only, never BULL; ELEVATED → raise the BUY bar + trim confidence.
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
 - GATE R3 (event risk): see the `## Event Risk` block above. A ticker with `WATCH cap` (earnings ≤2 trading days) → WATCH only, never a new BULL; an earnings/macro `trim` shaves confidence one step (stacks under R1/R2). Cite the earnings date + trading-days-until in the reasoning. If the block says unavailable, treat R3 as zero.
-- COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
+- COMPONENTS (mandatory): every `predict create` must pass `--components` JSON including the pillar scores AND `"overextension"` (NONE/ELEVATED/EXTREME) AND `"return_1m"` (decimal) AND `"discovery_source"` (presurge/momentum) AND `"setup_type"` AND `"news_signal"` (copy the `signal` block from `bin/stock-cli news` — unique_count, mean_sentiment, recency_weighted_sentiment, event_tags, has_positive_catalyst, has_negative_catalyst). The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly so the gate and cohort tracking work.
 - Primary timeframe: 1W (Short). Produce Short/Medium(1M)/Long(6M) horizons per the expect skill; discuss the Cycle(1Y) outlook in the narrative only — NEVER log a 1Y row (the store hard-rejects LIVE 1Y: 0/12 hits, avg -23.8%).
 - HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W.
 - Must actually call `bin/stock-cli predict create` for each horizon ≥ 0.60 confidence per pick
@@ -717,7 +718,7 @@ Rules:
 - GATE R2 (overextension): horizon-metrics `overextension_level` EXTREME → WATCH only; ELEVATED → raise the bar + trim.
 - PARABOLIC CAP: any name already up >20% over the trailing month (`return_1m` > 0.20) is WATCH only, never a new BULL.
 - GATE R3 (event risk): see the `## Event Risk` block above. KR is macro-only (no per-ticker earnings feed) — a market-wide macro trim (US FOMC/CPI) shaves every pick's confidence; if the block says unavailable, treat R3 as zero.
-- COMPONENTS (mandatory): every `predict create` passes `--components` JSON with the pillar scores AND `"overextension"` AND `"return_1m"` (decimal) AND `"discovery_source"` AND `"setup_type"`. The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly.
+- COMPONENTS (mandatory): every `predict create` passes `--components` JSON with the pillar scores AND `"overextension"` AND `"return_1m"` (decimal) AND `"discovery_source"` AND `"setup_type"` AND `"news_signal"` (copy the `signal` block from `bin/stock-cli news`). The store HARD-REJECTS a LIVE BULL with overextension EXTREME or return_1m>0.20 — pass these honestly.
 - HORIZON by stream: PRE-SURGE picks anchor conviction at 1M+ (base/pullback setups need weeks — backtested ~60% expire dead at 1W vs ~11% at 1M); MOMENTUM picks may anchor at 1W. (KR default is already 1M.)
 - Consider won/dollar impact on exporters
 - Cross-market: US 반도체·AI·auto-tech 모멘텀은 KR 반도체·전장·SW 통합사로
@@ -1036,6 +1037,58 @@ def _augment_gate_components(pred, providers: dict) -> None:
         logger.debug("gate-component augmentation failed for %s: %s", pred.ticker, e)
 
 
+def _augment_news_signal(pred, providers: dict) -> None:
+    """Persist the raw ``NewsSignal`` under ``components.news_signal``.
+
+    Stage 3 of the accuracy plan: the collapsed news score is graded dead, but
+    the underlying fields (event tags, catalysts, sentiment) are computed then
+    discarded — this stores them per prediction so per-tag hit rates can be
+    learned. LIVE only; never overwrites a model-supplied ``news_signal``.
+    Fail-open: any fetch/compute error leaves the prediction unchanged.
+
+    Args:
+        pred: The Prediction about to be inserted (mutated in place).
+        providers: ``{"US": USMarketProvider, "KR": KoreanMarketProvider}`` cache.
+    """
+    if pred.source != "LIVE":
+        return
+    comps = dict(pred.components or {})
+    # Only a usable dict counts as "already populated" — a null/string/list
+    # payload from the model would otherwise permanently lose the training row
+    # (get_news_tag_performance ignores non-dict signals). Recompute over it.
+    if isinstance(comps.get("news_signal"), dict):
+        return
+    try:
+        from news_features import summarize_news
+
+        provider = providers.get(pred.market)
+        if provider is None:
+            return
+        items = provider.get_news(pred.ticker, limit=10, since_days=7) or []
+        sig = summarize_news(
+            [_news_item_obj(it) for it in items],
+            datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        )
+        comps["news_signal"] = sig.to_components_dict()
+        pred.components = comps
+    except Exception as e:  # noqa: BLE001 — augmentation is best-effort
+        logger.debug("news-signal augmentation failed for %s: %s", pred.ticker, e)
+
+
+def _news_item_obj(item):
+    """Coerce a dict into the attribute-access shape ``summarize_news`` reads.
+
+    Provider NewsItem dataclasses pass through untouched.
+    """
+    if isinstance(item, dict):
+        return SimpleNamespace(
+            headline=item.get("headline", ""),
+            date=item.get("date", ""),
+            sentiment_score=item.get("sentiment_score"),
+        )
+    return item
+
+
 def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -> int:
     """Insert parsed predictions into the database.
 
@@ -1140,13 +1193,9 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
                 )
                 continue
 
-            # Populate the overextension gate's components from fresh data when
-            # the model omitted them, so the store gate can't fail open here.
-            _augment_gate_components(pred, providers)
-
             # LIVE BEAR predictions are gated at the store (measured ~0% win
-            # rate). Skip them explicitly here so they are an intentional,
-            # visible no-op rather than an opaque insert error swallowed below.
+            # rate). Skip them BEFORE the augmentations so a doomed row never
+            # triggers the bar/news fetches (mirrors the 1Y skip above).
             if pred.direction == "BEAR":
                 logger.info(
                     "Skipping LIVE BEAR prediction (gated): %s %s %s",
@@ -1155,6 +1204,11 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
                     pred.timeframe,
                 )
                 continue
+
+            # Populate the overextension gate's components from fresh data when
+            # the model omitted them, so the store gate can't fail open here.
+            _augment_gate_components(pred, providers)
+            _augment_news_signal(pred, providers)
 
             insert_prediction(conn, pred)
             logged += 1

@@ -5,6 +5,13 @@ collapse (52.8% → 3.8%): gate hardening, signal re-weighting, news feature
 persistence, learned-blend confidence, per-stock claude -p deep dives, and a
 keyword-bucket audit loop.
 
+## Stage 3 — Raw NewsSignal persistence + per-tag performance
+
+- [news-signal-persistence](stage-3/news-signal-persistence.md) — full NewsSignal
+  (event tags, sentiment, catalysts) persisted under `components.news_signal` on
+  every LIVE prediction (API augment + skill contract); new
+  `stock-cli news-tag-performance` readout with min-N guard.
+
 ## Stage 2 — Dead-signal down-weight + low-edge-band tagging
 
 - [signal-downweight-edge-band](stage-2/signal-downweight-edge-band.md) — /expect

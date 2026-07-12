@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation / prediction-accuracy — Stage 3</title>
+    <style>
+      :root {
+        --accent: #2f5d62;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0dfda;
+        --text: #2a2a28;
+        --muted: #74736c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Helvetica,
+          Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.9rem;
+      }
+
+      nav[aria-label="Language"] span {
+        color: var(--muted);
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      .timeline-wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 2rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+
+      .timeline li:last-child {
+        flex: 0 0 auto;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+      }
+
+      .dot {
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 2px solid var(--border);
+        background: var(--card-bg);
+      }
+
+      .node.active .dot {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+
+      .node.done .dot {
+        border-color: var(--muted);
+        background: var(--muted);
+      }
+
+      .node.upcoming .dot {
+        border-color: var(--accent);
+        background: var(--card-bg);
+      }
+
+      .node .label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.active .label {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .node.done .label {
+        color: var(--muted);
+      }
+
+      .node.upcoming .label {
+        color: var(--muted);
+      }
+
+      .connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin: 0 0.5rem;
+        margin-bottom: 1.3rem;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+
+      section > p.stage-summary {
+        color: var(--muted);
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      article.card h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        font-size: 1.15rem;
+      }
+
+      .card-section {
+        margin-bottom: 1.1rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        margin: 0 0 0.35rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      .card-section p {
+        margin: 0;
+      }
+
+      .card-section ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .card-section li {
+        margin-bottom: 0.3rem;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.88em;
+        background: #f0efe9;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+
+      .code-locations {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .code-locations li {
+        margin-bottom: 0.4rem;
+      }
+
+      .retrospective {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline .label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>stock-expectation / prediction-accuracy</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span>EN</span> | <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <div class="timeline-wrap">
+      <ol class="timeline">
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 1</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node done">
+            <div class="dot"></div>
+            <div class="label">Stage 2</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node active">
+            <div class="dot"></div>
+            <div class="label">Stage 3</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <main>
+      <section>
+        <h2>Stage 3</h2>
+        <p class="stage-summary">
+          Stops discarding the rich per-article news signal at prediction time
+          and starts persisting it, so which catalysts actually predict can
+          eventually be measured.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>News Signal Persistence</h3>
+
+            <div class="card-section">
+              <h4>Why</h4>
+              <p>
+                The scalar news score is graded near-dead (21-33% win), but the
+                richer <code>NewsSignal</code> fields it collapses from — event
+                tags such as earnings, M&amp;A, and analyst actions,
+                recency-weighted sentiment, and hard positive or negative
+                catalysts — were computed at prediction time and then discarded.
+                Without persisting them, nothing can ever learn which news
+                catalysts actually predict, and every day of delay loses labeled
+                training rows for the stage-4 learned blend and beyond.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>What</h4>
+              <p>
+                <code>NewsSignal.to_components_dict()</code> produces a compact
+                JSON payload now persisted under
+                <code>components.news_signal</code> on every prediction. In API
+                mode, <code>_augment_news_signal</code> inside
+                <code>log_predictions</code> fetches per-ticker news and stores
+                the signal for LIVE predictions only, failing open and never
+                overwriting a model-supplied value. For CLI-driven modes
+                (claude-code/codex), the <code>/expect</code> skill and both
+                briefing prompts now mandate <code>news_signal</code> in
+                <code>--components</code>. A new
+                <code>get_news_tag_performance</code> function and
+                <code>stock-cli news-tag-performance</code> command report
+                per-event-tag and per-catalyst hit rates over closed
+                predictions, guarded by a minimum sample size (default 8).
+                <code>get_component_contribution</code> now skips nested dict or
+                list values so the new payload cannot pollute pillar buckets.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>How</h4>
+              <p>
+                Development followed TDD: 6 new tests were written before the
+                implementation. The augment helper mirrors the existing
+                <code>_augment_gate_components</code> pattern, and
+                <code>_news_item_obj</code> bridges dict fixtures to the
+                attribute-access shape that <code>summarize_news</code>
+                expects.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>Code locations</h4>
+              <ul class="code-locations">
+                <li>
+                  <code>mcp-market-data/news_features.py</code> —
+                  <code>NewsSignal.to_components_dict</code>
+                </li>
+                <li>
+                  <code>scheduler/daily_briefing.py</code> —
+                  <code>_augment_news_signal</code>,
+                  <code>_news_item_obj</code>, prompt contract lines (US/KR)
+                </li>
+                <li>
+                  <code>mcp-prediction-store/metrics.py</code> —
+                  <code>get_news_tag_performance</code>, nested-value skip
+                </li>
+                <li>
+                  <code>stock_cli.py</code> —
+                  <code>news-tag-performance</code> subcommand
+                </li>
+                <li>
+                  <code>.claude/skills/expect/SKILL.md</code> — components
+                  contract
+                </li>
+                <li>
+                  <code>tests/test_news_signal_persistence.py</code>,
+                  <code>scheduler/tests/test_daily_briefing.py</code>
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Verification</h4>
+              <ul>
+                <li>
+                  <code>uv run pytest -m "not network"</code> — 904 passed (6
+                  new)
+                </li>
+                <li>
+                  CLI smoke test: <code>stock-cli news-tag-performance</code>
+                  on an empty database returns the zero-state JSON shape.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Review loop</h4>
+              <ul>
+                <li>
+                  <strong>code-reviewer subagent</strong>: ready to ship — 1
+                  warning (missing <code>--min-count</code> validation,
+                  dismissed as matching the existing
+                  <code>component-contribution</code> convention) and 2
+                  test-coverage suggestions (guard tests and multi-tag /
+                  both-catalyst tests, both added).
+                </li>
+                <li>
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: 2 medium and 1 low
+                  finding, all fixed — the contract wording ("verbatim" versus
+                  dropping <code>raw_count</code>) was rewritten as an explicit
+                  six-key copy and the <code>daily-briefing</code> skill example
+                  was updated to include <code>news_signal</code>; tag
+                  aggregation now type-checks as <code>list[str]</code>, dedups
+                  per row, and requires catalyst flags to be exactly
+                  <code>True</code>; <code>to_components_dict</code> now
+                  nullifies non-finite floats, tested with
+                  <code>allow_nan=False</code>.
+                </li>
+                <li>
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 2 low
+                  findings, both fixed — a string <code>event_tags</code> guard
+                  (superseded by the stricter Codex fix) and a UTC-anchored
+                  <code>asof_date</code> in <code>_augment_news_signal</code>.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Retrospective</h4>
+              <p class="retrospective">
+                The measurement side (tag performance) will stay underpowered
+                for weeks — the readout deliberately refuses verdicts below the
+                minimum sample size rather than reporting noise.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
