@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation / prediction-accuracy — Stage 1</title>
+    <style>
+      :root {
+        --accent: #2f5d62;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0dfda;
+        --text: #2a2a28;
+        --muted: #74736c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Helvetica,
+          Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav[aria-label="Language"] {
+        font-size: 0.9rem;
+      }
+
+      nav[aria-label="Language"] span {
+        color: var(--muted);
+      }
+
+      nav[aria-label="Language"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="Language"] a:hover {
+        text-decoration: underline;
+      }
+
+      .timeline-wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 2rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+
+      .timeline li:last-child {
+        flex: 0 0 auto;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+      }
+
+      .dot {
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 2px solid var(--border);
+        background: var(--card-bg);
+      }
+
+      .node.active .dot {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+
+      .node .label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.active .label {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin: 0 0.5rem;
+        margin-bottom: 1.3rem;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+
+      section > p.stage-summary {
+        color: var(--muted);
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      article.card h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        font-size: 1.15rem;
+      }
+
+      .card-section {
+        margin-bottom: 1.1rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        margin: 0 0 0.35rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      .card-section p {
+        margin: 0;
+      }
+
+      .card-section ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .card-section li {
+        margin-bottom: 0.3rem;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.88em;
+        background: #f0efe9;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+
+      .code-locations {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .code-locations li {
+        margin-bottom: 0.4rem;
+      }
+
+      .retrospective {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline .label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>stock-expectation / prediction-accuracy</h1>
+        <p>Staged plan progress</p>
+      </div>
+      <nav aria-label="Language">
+        <span>EN</span> | <a href="index.ko.html">한국어</a>
+      </nav>
+    </header>
+
+    <div class="timeline-wrap">
+      <ol class="timeline">
+        <li>
+          <div class="node active">
+            <div class="dot"></div>
+            <div class="label">Stage 1</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <main>
+      <section>
+        <h2>Stage 1</h2>
+        <p class="stage-summary">
+          Closes a fail-open gap in the store-level overextension gate so LIVE
+          BULL entries always have real overextension data to be judged against.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>Overextension Gate Refresh</h3>
+
+            <div class="card-section">
+              <h4>Why</h4>
+              <p>
+                The store-level overextension gate (RULE R2,
+                <code>_check_overextension_gate</code>) hard-rejects LIVE BULL
+                entries on parabolic blow-offs, but it reads
+                <code>overextension</code> and <code>return_1m</code> from the
+                caller-supplied <code>--components</code> JSON and fails open
+                when they are absent. A briefing or expect run that omitted
+                components silently bypassed the one enforcement that survives
+                cron. Entry-time evidence showed EXTREME-overextended BULL
+                entries winning only 29.1% versus 53.5% at NONE.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>What</h4>
+              <p>
+                <code>stock-cli predict create</code> for LIVE BULL now
+                backfills missing <code>overextension</code> and
+                <code>return_1m</code> into components from fresh price bars
+                before insertion, so the R2 gate always has real data to act on.
+                Caller-supplied values are never overwritten. The system fails
+                open on any fetch or compute error, logging a stderr warning. A
+                new <code>--no-gate-refresh</code> escape hatch supports offline
+                use. INTERACTIVE and BEAR creates are untouched.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>How</h4>
+              <p>
+                A new <code>_refresh_overextension_components()</code> fetches
+                roughly 120 calendar days of bars via the existing provider
+                (<code>_get_provider().get_price_history</code>) and reuses
+                <code>compute_horizon_metrics</code> (which already computes
+                <code>overextension_level</code> and <code>return_1m</code>);
+                only missing keys are injected. It is wired into
+                <code>cmd_predict_create</code> between components parsing and
+                the DB insert. Development followed TDD: 10 tests were written
+                first, then the implementation.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>Code locations</h4>
+              <ul class="code-locations">
+                <li>
+                  <code>stock_cli.py</code> —
+                  <code>_refresh_overextension_components</code> (+
+                  <code>GATE_REFRESH_DAYS</code>), call site in
+                  <code>cmd_predict_create</code>,
+                  <code>--no-gate-refresh</code> argparse flag
+                </li>
+                <li>
+                  <code>tests/test_gate_refresh.py</code> — helper unit tests +
+                  <code>cmd_predict_create</code> integration tests (parabolic
+                  reject, healthy insert with injected components, escape hatch,
+                  INTERACTIVE skip, fail-open insert)
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Verification</h4>
+              <ul>
+                <li>
+                  <code>uv run pytest -m "not network"</code> — 883 passed (10
+                  new)
+                </li>
+                <li>
+                  Live E2E: <code>predict create NVDA LIVE BULL</code> without
+                  components against a scratch DB — real bars fetched,
+                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>
+                  injected and stored
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Review loop</h4>
+              <ul>
+                <li>
+                  <strong>code-reviewer subagent</strong>: 1 critical finding
+                  (missing BEAR-path test), 2 warnings (untested sparse-bars
+                  <code>return_1m=None</code>; untested KR ticker path), 1
+                  suggestion (include exception type in the fail-open warning).
+                  All four were addressed in <code>fb7f3bd</code> — 3 tests
+                  added (13 total), and the warning message now includes
+                  <code>type(exc).__name__</code>. No implementation bugs found.
+                </li>
+                <li>
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: no findings — all
+                  four requirements (fail-open, no caller-value overwrite,
+                  escape hatch, INTERACTIVE/BEAR unaffected) judged satisfied.
+                </li>
+                <li>
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no
+                  correctness bugs; 2 low-severity test gaps — a BEAR
+                  integration test (already added via the code-reviewer finding)
+                  and a CLI-level test confirming complete components skip the
+                  fetch (added). Confirmed the
+                  <code>{"overextension": null}</code> edge case honors caller
+                  values.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>Retrospective</h4>
+              <p class="retrospective">
+                The gate hole was closable entirely with existing utilities
+                (provider + indicators); the only new logic is the merge policy
+                (inject missing keys only) and the fail-open behavior.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
