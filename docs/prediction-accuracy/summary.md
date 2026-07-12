@@ -5,6 +5,12 @@ collapse (52.8% → 3.8%): gate hardening, signal re-weighting, news feature
 persistence, learned-blend confidence, per-stock claude -p deep dives, and a
 keyword-bucket audit loop.
 
+## Stage 6 — Monthly LLM audit of news keyword buckets
+
+- [news-bucket-audit](stage-6/news-bucket-audit.md) — report-only monthly job:
+  samples live headlines, shows current matcher verdicts to a `claude -p`
+  auditor, writes precision/misses/suggested-edits report; human applies via PR.
+
 ## Stage 5 — Per-stock claude -p deep-dive fan-out
 
 - [deep-dive-fanout](stage-5/deep-dive-fanout.md) — independent Bull/Bear/Judge

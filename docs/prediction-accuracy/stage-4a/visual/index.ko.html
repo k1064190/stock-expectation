@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>stock-expectation / prediction-accuracy — 1단계</title>
+    <title>stock-expectation / prediction-accuracy — 4a단계</title>
     <style>
       :root {
         --accent: #2f5d62;
@@ -271,28 +271,28 @@
     <div class="timeline-wrap">
       <ol class="timeline">
         <li>
-          <div class="node active">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">1단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">2단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node done">
             <div class="dot"></div>
             <div class="label">3단계</div>
           </div>
           <span class="connector"></span>
         </li>
         <li>
-          <div class="node upcoming">
+          <div class="node active">
             <div class="dot"></div>
             <div class="label">4a단계</div>
           </div>
@@ -316,33 +316,33 @@
 
     <main>
       <section>
-        <h2>1단계</h2>
+        <h2>4a단계</h2>
         <p class="stage-summary">
-          스토어 단계의 과열도(overextension) 게이트에 있던 fail-open 허점을 메워, LIVE BULL 진입이 항상 실제 과열도 데이터를 근거로 판정되도록 합니다.
+          학습형 신뢰도 블렌드를 오프라인에서 만들고 raw/등장형(isotonic) 기준과 비교 검증하며, 실데이터에서 이겼을 때만 라이브에 연결합니다 — 현재는 이기지 못합니다.
         </p>
 
         <div class="card-grid">
           <article class="card">
-            <h3>Overextension Gate Refresh</h3>
+            <h3>Learned Blend Offline</h3>
 
             <div class="card-section">
               <h4>왜</h4>
               <p>
-                스토어 단계의 과열도(overextension) 게이트(규칙 R2, <code>_check_overextension_gate</code>)는 급등 후 폭락(parabolic blow-off) 상황에서 LIVE BULL 진입을 강하게 거부하지만, <code>overextension</code>과 <code>return_1m</code> 값을 호출자가 제공하는 <code>--components</code> JSON에서 읽어오며 값이 없으면 fail-open으로 통과시킵니다. components를 생략한 브리핑이나 <code>/expect</code> 실행은 cron에서 살아남는 유일한 강제 검증을 조용히 우회할 수 있었습니다. 진입 시점 증거: EXTREME 과열 상태의 BULL 진입은 승률 29.1%로, NONE 상태의 53.5%에 크게 못 미쳤습니다.
+                raw confidence는 순열 검정(permutation test)에서 판별력이 전혀 없고, 등장형(isotonic) 재보정기는 모든 값을 기저율 ~0.25로 수렴시켜 — confidence가 더 이상 후보 순위를 매기지 못합니다. 상시 capstone(docs/stage-11)은 저장된 <code>components</code> 필러들에 대한 학습형 블렌드를 처방했으며, 조건은 components 태그가 붙은 종료된 예측 100건 이상이었습니다. 이제 사용 가능한 150건으로 그 임계값을 넘었습니다.
               </p>
             </div>
 
             <div class="card-section">
               <h4>무엇을</h4>
               <p>
-                이제 LIVE BULL에 대한 <code>stock-cli predict create</code>는 삽입 전에 최신 가격 바(bar)로부터 누락된 <code>overextension</code>과 <code>return_1m</code>을 components에 채워 넣어, R2 게이트가 항상 실제 데이터를 근거로 판정하도록 합니다. 호출자가 제공한 값은 절대 덮어쓰지 않고, 조회나 계산 중 오류가 나면 stderr 경고와 함께 fail-open으로 동작하며, 오프라인 사용을 위한 새 <code>--no-gate-refresh</code> 탈출구가 추가되었습니다. INTERACTIVE와 BEAR 생성 경로는 그대로 유지됩니다.
+                <code>mcp-prediction-store/blend.py</code>는 손수 구현한(hand-rolled) L2 로지스틱 회귀를 구현합니다 — 손수 구현한 등장형 PAV와 마찬가지로 새로운 의존성 없이 — 고정된 11개 피처 벡터(algo/news/llm_context/return_1m 점수, overextension·regime 원-핫, market, timeframe)에 대해 열 표준화와 결정론적 풀배치 경사하강을 사용합니다. 검증은 누수 없는(leak-free) walk-forward 교차검증을 사용합니다: 폴드는 <code>created_at</code> 기준으로 나뉘고, 각 폴드는 해당 폴드의 첫 테스트 <code>created_at</code> 이전에 <code>outcome_date</code>가 있는 행에서만 학습합니다 — 즉 예측 시점에 실제로 알려져 있던 결과만 사용하므로 겹치는 호라이즌이 누수를 일으킬 수 없습니다. 기준선은 raw confidence와 학습 폴드의 등장형 매핑이며, 지표는 Brier 점수와 순위 AUC를 pooled와 fold-mean 두 방식으로 봅니다. <code>blend_wins</code>는 Brier에서 등장형을 이기고 AUC가 0.55를 넘어야 참이 됩니다. <code>stock-cli blend-eval [--write]</code>는 CV 리포트를 생성하고, <code>--write</code>는 전체 행으로 학습하여 CV 지표가 담긴 <code>state/blend_model.json</code>을 저장합니다 — 4b 단계에서 연결하기 전까지는 비활성 상태입니다. 주간 캘리브레이션 리포트에는 fail-open 방식의 "Learned blend (offline walk-forward CV)" 섹션이 추가되었습니다.
               </p>
             </div>
 
             <div class="card-section">
-              <h4>어떻게</h4>
+              <h4>실데이터 결과</h4>
               <p>
-                새 <code>_refresh_overextension_components()</code>는 기존 프로바이더 (<code>_get_provider().get_price_history</code>)를 통해 약 120 캘린더일치 바를 가져오고, 이미 <code>overextension_level</code>과 <code>return_1m</code>을 계산하는 <code>compute_horizon_metrics</code>를 재사용하여 누락된 키만 주입합니다. components 파싱과 DB 삽입 사이의 <code>cmd_predict_create</code>에 연결되었습니다. 개발은 TDD로 진행되어 구현 전에 테스트 10개를 먼저 작성했습니다.
+                실제 150건 표본(2026-07-12, 누수 없는 CV)에서 블렌드는 정직하게 집니다: 블렌드 Brier 0.233 / AUC 0.406 대 등장형 Brier 0.123 (raw 0.348). components 태그 이력이 아직 짧고 호라이즌이 겹치기 때문에 현재는 학습할 만큼 이미 결과가 알려진 폴드가 단 하나뿐이며, 그 폴드에서 블렌드는 순위를 잘못 매기는 반면 등장형의 평평한 기저율 출력이 Brier에서 이깁니다. <code>blend_wins: false</code>이므로 라이브에는 아무것도 연결되지 않았고, 주간 리포트는 데이터가 쌓이는 대로 계속 재평가합니다. 이는 오프라인 단계가 정확히 잡아내기 위해 존재하는 결과입니다.
               </p>
             </div>
 
@@ -350,10 +350,16 @@
               <h4>코드 위치</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> — <code>_refresh_overextension_components</code> (+ <code>GATE_REFRESH_DAYS</code>), <code>cmd_predict_create</code> 내 호출 지점, <code>--no-gate-refresh</code> argparse 플래그
+                  <code>mcp-prediction-store/blend.py</code> — 전체 모듈
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — 헬퍼 단위 테스트 + <code>cmd_predict_create</code> 통합 테스트(parabolic 거부, 주입된 components로 정상 삽입, escape hatch, INTERACTIVE 스킵, fail-open 삽입)
+                  <code>stock_cli.py</code> — <code>cmd_blend_eval</code> + <code>blend-eval</code> 파서
+                </li>
+                <li>
+                  <code>scheduler/weekly_calibration.py</code> — <code>_render_blend_eval</code>, <code>main()</code> 연결
+                </li>
+                <li>
+                  <code>tests/test_blend.py</code> — 테스트 12개(계수 복원, L2 축소, 알려진 AUC 값, 분할 시간 순서/무누수, 학습 가능한 패턴을 갖는 end-to-end 픽스처, 영속화 round-trip)
                 </li>
               </ul>
             </div>
@@ -362,10 +368,10 @@
               <h4>검증</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883개 통과 (신규 10개)
+                  <code>uv run pytest -m "not network"</code> — 923개 통과 (신규 12개)
                 </li>
                 <li>
-                  실환경 E2E: components 없이 scratch DB에 대해 <code>predict create NVDA LIVE BULL</code> 실행 — 실제 바를 가져와 <code>{"overextension": "NONE", "return_1m": 0.0133}</code>을 주입하고 저장함
+                  실제 DB에 대한 읽기 전용 평가(위 수치); 빈 DB에서의 CLI 스모크는 zero-state 형태를 반환함
                 </li>
               </ul>
             </div>
@@ -374,16 +380,13 @@
               <h4>리뷰 루프</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer 서브에이전트</strong>: 치명적 1건(BEAR 경로 테스트 누락), 경고 2건(희소 바에서 <code>return_1m=None</code> 미검증, KR 티커 경로 미검증), 제안 1건(fail-open 경고에 예외 타입 포함). 네 건 모두 반영 — 테스트 3개 추가(총 13개), 경고 메시지에 <code>type(exc).__name__</code> 포함. 구현 버그는 없었음.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: CRITICAL 1건 — <code>outcome_date</code> 기준으로 나눈 walk-forward 폴드가 테스트 예측의 <code>created_at</code> 시점에는 아직 알려지지 않은 결과를 누수시킴. 수정: 폴드가 이제 <code>created_at</code>을 기준으로 하고, 폴드별 학습 풀은 <code>outcome_date &lt; 첫 테스트 created_at</code>인 행이며, 최소 학습 크기 미만인 폴드는 건너뛰고 회귀 테스트를 추가함. MEDIUM 1건 — n으로 나눈 L2 페널티가 데이터가 늘어남에 따라 감쇠함; 스텝당 상수 페널티로 수정(<code>L2_DEFAULT</code>를 1.0에서 0.05로 재조정). LOW 1건 — pooled AUC가 폴드 간 레짐 변화로 왜곡됨; 이제 fold-mean AUC를 함께 보고함.
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: 발견 사항 없음 — 네 가지 요구사항(fail-open, 호출자 값 미덮어쓰기, escape hatch, INTERACTIVE/BEAR 무영향) 모두 충족으로 판정.
+                  <strong>code-reviewer 서브에이전트</strong>: 두 수정 모두 확인, 치명/경고 없음("병합 가능"); 독스트링이 장황하다는 제안 1건은 기각.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 정확성 버그 없음; 낮은 수준의 테스트 공백 2건 — BEAR 통합 테스트와 CLI 수준의 "완전한 components는 조회를 건너뜀" 테스트, 둘 다 추가됨. <code>{"overextension": null}</code> 엣지 케이스가 호출자 값을 존중함을 확인.
-                </li>
-                <li>
-                  <strong>Codex PR 봇 (PR #61)</strong>: "주요 이슈를 발견하지 못함" — 한 라운드 만에 클린.
+                  <strong>Codex</strong>: 리뷰 시점에 CLI와 GitHub 봇 모두 쿼터 소진 — 쿼터가 재설정되는 PR-봇 라운드로 Codex 검토를 연기함.
                 </li>
               </ul>
             </div>
@@ -391,7 +394,7 @@
             <div class="card-section">
               <h4>회고</h4>
               <p class="retrospective">
-                게이트의 허점은 기존 유틸리티(프로바이더 + 지표)만으로 완전히 메울 수 있었다. 새로 추가된 로직은 병합 정책(누락된 키만 주입)과 fail-open 동작뿐이다.
+                이 검증 하네스는 첫날부터 제 몫을 했다 — 그럴듯해 보이는 모델을 그대로 썼다면 라이브 confidence가 오히려 더 나빠졌을 것이다(순위가 뒤집힘). 매주 재실행하고, 지속적인 CV 승리가 있을 때만 (4b 단계에서) 연결한다.
               </p>
             </div>
           </article>

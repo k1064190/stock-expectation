@@ -53,21 +53,25 @@
         font-size: 0.95rem;
       }
 
-      nav[aria-label="Language"] {
+      nav[aria-label="Language"],
+      nav[aria-label="언어"] {
         font-size: 0.9rem;
       }
 
-      nav[aria-label="Language"] span {
+      nav[aria-label="Language"] span,
+      nav[aria-label="언어"] span {
         color: var(--muted);
       }
 
-      nav[aria-label="Language"] a {
+      nav[aria-label="Language"] a,
+      nav[aria-label="언어"] a {
         color: var(--accent);
         text-decoration: none;
         font-weight: 600;
       }
 
-      nav[aria-label="Language"] a:hover {
+      nav[aria-label="Language"] a:hover,
+      nav[aria-label="언어"] a:hover {
         text-decoration: underline;
       }
 
@@ -285,6 +289,27 @@
             <div class="dot"></div>
             <div class="label">Stage 3</div>
           </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 4a</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 5</div>
+          </div>
+          <span class="connector"></span>
+        </li>
+        <li>
+          <div class="node upcoming">
+            <div class="dot"></div>
+            <div class="label">Stage 6</div>
+          </div>
         </li>
       </ol>
     </div>
@@ -293,8 +318,7 @@
       <section>
         <h2>Stage 1</h2>
         <p class="stage-summary">
-          Closes a fail-open gap in the store-level overextension gate so LIVE
-          BULL entries always have real overextension data to be judged against.
+          Closes a fail-open gap in the store-level overextension gate so LIVE BULL entries always have real overextension data to be judged against.
         </p>
 
         <div class="card-grid">
@@ -304,44 +328,21 @@
             <div class="card-section">
               <h4>Why</h4>
               <p>
-                The store-level overextension gate (RULE R2,
-                <code>_check_overextension_gate</code>) hard-rejects LIVE BULL
-                entries on parabolic blow-offs, but it reads
-                <code>overextension</code> and <code>return_1m</code> from the
-                caller-supplied <code>--components</code> JSON and fails open
-                when they are absent. A briefing or expect run that omitted
-                components silently bypassed the one enforcement that survives
-                cron. Entry-time evidence showed EXTREME-overextended BULL
-                entries winning only 29.1% versus 53.5% at NONE.
+                The store-level overextension gate (rule R2, <code>_check_overextension_gate</code>) hard-rejects LIVE BULL entries on parabolic blow-offs, but it reads <code>overextension</code> and <code>return_1m</code> from the caller-supplied <code>--components</code> JSON and fails open when they are absent. A briefing or <code>/expect</code> run that omitted components silently bypassed the one enforcement that survives cron. Entry-time evidence: EXTREME-overextended BULL entries won 29.1% versus 53.5% at NONE.
               </p>
             </div>
 
             <div class="card-section">
               <h4>What</h4>
               <p>
-                <code>stock-cli predict create</code> for LIVE BULL now
-                backfills missing <code>overextension</code> and
-                <code>return_1m</code> into components from fresh price bars
-                before insertion, so the R2 gate always has real data to act on.
-                Caller-supplied values are never overwritten. The system fails
-                open on any fetch or compute error, logging a stderr warning. A
-                new <code>--no-gate-refresh</code> escape hatch supports offline
-                use. INTERACTIVE and BEAR creates are untouched.
+                <code>stock-cli predict create</code> for LIVE BULL now backfills missing <code>overextension</code> and <code>return_1m</code> into components from fresh price bars before insertion, so the R2 gate always has real data to act on. Caller-supplied values are never overwritten, the helper fails open on any fetch or compute error with a stderr warning, and a new <code>--no-gate-refresh</code> escape hatch covers offline use. INTERACTIVE and BEAR creates are untouched.
               </p>
             </div>
 
             <div class="card-section">
               <h4>How</h4>
               <p>
-                A new <code>_refresh_overextension_components()</code> fetches
-                roughly 120 calendar days of bars via the existing provider
-                (<code>_get_provider().get_price_history</code>) and reuses
-                <code>compute_horizon_metrics</code> (which already computes
-                <code>overextension_level</code> and <code>return_1m</code>);
-                only missing keys are injected. It is wired into
-                <code>cmd_predict_create</code> between components parsing and
-                the DB insert. Development followed TDD: 10 tests were written
-                first, then the implementation.
+                A new <code>_refresh_overextension_components()</code> fetches roughly 120 calendar days of bars via the existing provider (<code>_get_provider().get_price_history</code>) and reuses <code>compute_horizon_metrics</code>, which already computes <code>overextension_level</code> and <code>return_1m</code>; only missing keys are injected. It is wired into <code>cmd_predict_create</code> between components parsing and the DB insert. Development followed TDD: 10 tests were written before the implementation.
               </p>
             </div>
 
@@ -349,17 +350,10 @@
               <h4>Code locations</h4>
               <ul class="code-locations">
                 <li>
-                  <code>stock_cli.py</code> —
-                  <code>_refresh_overextension_components</code> (+
-                  <code>GATE_REFRESH_DAYS</code>), call site in
-                  <code>cmd_predict_create</code>,
-                  <code>--no-gate-refresh</code> argparse flag
+                  <code>stock_cli.py</code> — <code>_refresh_overextension_components</code> (+ <code>GATE_REFRESH_DAYS</code>), call site in <code>cmd_predict_create</code>, <code>--no-gate-refresh</code> argparse flag
                 </li>
                 <li>
-                  <code>tests/test_gate_refresh.py</code> — helper unit tests +
-                  <code>cmd_predict_create</code> integration tests (parabolic
-                  reject, healthy insert with injected components, escape hatch,
-                  INTERACTIVE skip, fail-open insert)
+                  <code>tests/test_gate_refresh.py</code> — helper unit tests + <code>cmd_predict_create</code> integration tests (parabolic reject, healthy insert with injected components, escape hatch, INTERACTIVE skip, fail-open insert)
                 </li>
               </ul>
             </div>
@@ -368,14 +362,10 @@
               <h4>Verification</h4>
               <ul>
                 <li>
-                  <code>uv run pytest -m "not network"</code> — 883 passed (10
-                  new)
+                  <code>uv run pytest -m "not network"</code> — 883 passed (10 new)
                 </li>
                 <li>
-                  Live E2E: <code>predict create NVDA LIVE BULL</code> without
-                  components against a scratch DB — real bars fetched,
-                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>
-                  injected and stored
+                  Live E2E: <code>predict create NVDA LIVE BULL</code> without components against a scratch DB — real bars fetched, <code>{"overextension": "NONE", "return_1m": 0.0133}</code> injected and stored
                 </li>
               </ul>
             </div>
@@ -384,31 +374,16 @@
               <h4>Review loop</h4>
               <ul>
                 <li>
-                  <strong>code-reviewer subagent</strong>: 1 critical finding
-                  (missing BEAR-path test), 2 warnings (untested sparse-bars
-                  <code>return_1m=None</code>; untested KR ticker path), 1
-                  suggestion (include exception type in the fail-open warning).
-                  All four were addressed in <code>fb7f3bd</code> — 3 tests
-                  added (13 total), and the warning message now includes
-                  <code>type(exc).__name__</code>. No implementation bugs found.
+                  <strong>code-reviewer subagent</strong>: 1 critical (BEAR-path test missing), 2 warnings (sparse-bars <code>return_1m=None</code> untested; KR ticker path untested), 1 suggestion (include exception type in the fail-open warning). All four addressed — 3 tests added (13 total), warning message now includes <code>type(exc).__name__</code>. No implementation bugs found.
                 </li>
                 <li>
-                  <strong>Codex (gpt-5.6-sol, high)</strong>: no findings — all
-                  four requirements (fail-open, no caller-value overwrite,
-                  escape hatch, INTERACTIVE/BEAR unaffected) judged satisfied.
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: no findings — all four requirements (fail-open, no caller-value overwrite, escape hatch, INTERACTIVE/BEAR unaffected) judged satisfied.
                 </li>
                 <li>
-                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no
-                  correctness bugs; 2 low-severity test gaps — a BEAR
-                  integration test (already added via the code-reviewer finding)
-                  and a CLI-level test confirming complete components skip the
-                  fetch (added). Confirmed the
-                  <code>{"overextension": null}</code> edge case honors caller
-                  values.
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: no correctness bugs; 2 low test gaps — a BEAR integration test and a CLI-level "complete components skips fetch" test, both added. Confirmed the <code>{"overextension": null}</code> edge honors caller values.
                 </li>
                 <li>
-                  <strong>Codex PR bot (PR #61)</strong>: "Didn't find any major
-                  issues" — clean in one round.
+                  <strong>Codex PR bot (PR #61)</strong>: "Didn't find any major issues" — clean in one round.
                 </li>
               </ul>
             </div>
@@ -416,9 +391,7 @@
             <div class="card-section">
               <h4>Retrospective</h4>
               <p class="retrospective">
-                The gate hole was closable entirely with existing utilities
-                (provider + indicators); the only new logic is the merge policy
-                (inject missing keys only) and the fail-open behavior.
+                The gate hole was closable entirely with existing utilities (provider + indicators); the only new logic is the merge policy — inject missing keys only — and the fail-open behavior.
               </p>
             </div>
           </article>

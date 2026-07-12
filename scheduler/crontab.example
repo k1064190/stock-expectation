@@ -142,3 +142,9 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
 # 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
 # 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
+
+# === Monthly news keyword-bucket audit (stage 6, report-only) ===
+# First Sunday-ish: 1st of each month 20:00 KST. Samples recent live headlines,
+# has claude -p judge the keyword buckets (precision/misses/suggested edits),
+# writes reports/news-bucket-audit-YYYY-MM-DD.md. Human applies edits via PR.
+0 20 1 * * cd $PROJECT && uv run python scheduler/news_bucket_audit.py >> $LOG_DIR/news_bucket_audit.log 2>&1
