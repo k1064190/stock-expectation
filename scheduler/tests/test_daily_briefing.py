@@ -626,3 +626,45 @@ def test_augment_news_signal_recomputes_over_garbage():
     db_mod._augment_news_signal(pred, {"US": _P()})
     assert isinstance(pred.components["news_signal"], dict)
     assert pred.components["news_signal"]["unique_count"] == 1
+
+
+def test_deep_dive_block_disabled_and_fail_open(monkeypatch):
+    import daily_briefing as db_mod
+
+    class _C:
+        ticker = "AAA"
+
+    # disabled → ""
+    assert db_mod._deep_dive_block([_C()], {}, "US", False, 6) == ""
+    # enabled but fan-out raises → "" (fail-open)
+    import deep_dive as dd_mod
+
+    monkeypatch.setattr(
+        dd_mod, "run_deep_dives", lambda *a, **k: (_ for _ in ()).throw(RuntimeError())
+    )
+    assert db_mod._deep_dive_block([_C()], {}, "US", True, 6) == ""
+
+
+def test_deep_dive_block_renders(monkeypatch):
+    import daily_briefing as db_mod
+    import deep_dive as dd_mod
+
+    class _C:
+        ticker = "AAA"
+
+    monkeypatch.setattr(
+        dd_mod,
+        "run_deep_dives",
+        lambda *a, **k: {
+            "AAA": {
+                "ticker": "AAA",
+                "context_score": -2.0,
+                "conviction": "HIGH",
+                "risks": ["r1"],
+                "catalysts": [],
+                "summary": "s",
+            }
+        },
+    )
+    block = db_mod._deep_dive_block([_C()], {"AAA": []}, "US", True, 6)
+    assert "AAA" in block and "-2.0" in block

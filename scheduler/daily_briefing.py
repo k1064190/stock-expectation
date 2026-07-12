@@ -554,7 +554,29 @@ def _macro_block_and_risk() -> tuple[str, str]:
         return "", "NORMAL"
 
 
-def build_claude_code_prompt(market: str) -> str:
+def _deep_dive_block(picks, news_by_ticker, market, enabled, cap) -> str:
+    """Run the per-stock deep-dive fan-out and render its prompt block.
+
+    Fail-open: disabled, empty, or fully-failed dives return "" and the
+    briefing proceeds on the shallow path.
+    """
+    if not enabled or not picks:
+        return ""
+    try:
+        import deep_dive
+
+        results = deep_dive.run_deep_dives(
+            picks, news_by_ticker, cap=cap, market=market
+        )
+        return deep_dive.format_deep_dives_for_prompt(results)
+    except Exception as exc:  # noqa: BLE001 — never block the briefing
+        logger.warning("deep-dive fan-out failed (fail-open): %s", exc)
+        return ""
+
+
+def build_claude_code_prompt(
+    market: str, deep_dive_enabled: bool = False, deep_dive_cap: int = 6
+) -> str:
     """Build the briefing prompt for the LLM CLI subprocess.
 
     Originally named for Claude Code; now also fed to Codex CLI (--mode
@@ -590,6 +612,11 @@ def build_claude_code_prompt(market: str) -> str:
         themes_block = format_themes_for_prompt(us_themes)
         event_gate_block = _event_gate_block("US", [c.ticker for c in picks])
         macro_block = _macro_block()
+        dive_block = _deep_dive_block(
+            picks, us_news, "US", deep_dive_enabled, deep_dive_cap
+        )
+        if dive_block:
+            macro_block = f"{macro_block}\n\n{dive_block}"
         ticker_csv = ",".join(c.ticker for c in us_candidates) or "SPY,QQQ,DIA"
         return f"""Generate a US market daily briefing for {today}.
 
@@ -671,6 +698,11 @@ every section to the Predictions Logged table."""
         themes_block = format_themes_for_prompt(kr_themes)
         event_gate_block = _event_gate_block("KR", [c.ticker for c in picks])
         macro_block = _macro_block()
+        dive_block = _deep_dive_block(
+            picks, kr_news, "KR", deep_dive_enabled, deep_dive_cap
+        )
+        if dive_block:
+            macro_block = f"{macro_block}\n\n{dive_block}"
         ticker_csv = ",".join(c.ticker for c in kr_candidates) or "005930,000660"
         return f"""Generate a Korean market daily briefing for {today}.
 
@@ -1232,13 +1264,22 @@ def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -
 # ---------------------------------------------------------------------------
 
 
-def run_briefing(market: str, mode: str = "codex-cli") -> None:
+def run_briefing(
+    market: str,
+    mode: str = "codex-cli",
+    deep_dive: bool = False,
+    deep_dive_cap: int = 6,
+) -> None:
     """Run the full daily briefing pipeline for a market.
 
     Args:
         market: "US", "KR", or "ALL".
         mode: "codex-cli" (default, codex CLI), "claude-code" (claude CLI),
             or "api" (Anthropic API directly).
+        deep_dive: Run an independent `claude -p` deep dive per scanner pick
+            and inject the results into the briefing prompt (stage 5;
+            claude-code/codex-cli modes only — API mode ignores it).
+        deep_dive_cap: Max picks dived per market.
     """
     markets = ["US", "KR"] if market == "ALL" else [market.upper()]
 
@@ -1247,13 +1288,17 @@ def run_briefing(market: str, mode: str = "codex-cli") -> None:
 
         try:
             if mode == "claude-code":
-                prompt = build_claude_code_prompt(mkt)
+                prompt = build_claude_code_prompt(
+                    mkt, deep_dive_enabled=deep_dive, deep_dive_cap=deep_dive_cap
+                )
                 logger.info("Calling claude CLI for %s briefing", mkt)
                 response = call_claude_code(prompt)
                 # In claude-code mode, predictions are logged by Claude via MCP.
                 # No need to parse and log separately.
             elif mode == "codex-cli":
-                prompt = build_claude_code_prompt(mkt)
+                prompt = build_claude_code_prompt(
+                    mkt, deep_dive_enabled=deep_dive, deep_dive_cap=deep_dive_cap
+                )
                 logger.info("Calling codex CLI for %s briefing", mkt)
                 response = call_codex_cli(prompt)
                 # In codex-cli mode, predictions are logged by Codex executing
@@ -1318,6 +1363,26 @@ if __name__ == "__main__":
             "api: uses Anthropic API directly, requires ANTHROPIC_API_KEY."
         ),
     )
+    parser.add_argument(
+        "--deep-dive",
+        action="store_true",
+        help=(
+            "Run an independent `claude -p` deep dive (Bull/Bear/Judge) per "
+            "scanner pick and inject the results into the briefing prompt. "
+            "Default off — adds up to ~cap dives x minutes per market."
+        ),
+    )
+    parser.add_argument(
+        "--deep-dive-cap",
+        type=int,
+        default=6,
+        help="Max picks deep-dived per market (default 6)",
+    )
     args = parser.parse_args()
 
-    run_briefing(args.market, args.mode)
+    run_briefing(
+        args.market,
+        args.mode,
+        deep_dive=args.deep_dive,
+        deep_dive_cap=args.deep_dive_cap,
+    )
