@@ -5,6 +5,13 @@ collapse (52.8% → 3.8%): gate hardening, signal re-weighting, news feature
 persistence, learned-blend confidence, per-stock claude -p deep dives, and a
 keyword-bucket audit loop.
 
+## Stage 4a — Learned blend: offline model + validation harness
+
+- [learned-blend-offline](stage-4a/learned-blend-offline.md) — hand-rolled L2
+  logistic regression over components pillars + leak-free walk-forward CV vs
+  raw/isotonic baselines; `stock-cli blend-eval`; weekly-report section. Real
+  data verdict: blend loses (Brier 0.233 vs isotonic 0.123) → not wired live.
+
 ## Stage 3 — Raw NewsSignal persistence + per-tag performance
 
 - [news-signal-persistence](stage-3/news-signal-persistence.md) — full NewsSignal

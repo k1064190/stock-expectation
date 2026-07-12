@@ -44,9 +44,10 @@ FEATURE_NAMES = [
     "tf_6m",
 ]
 
-# Training hyperparameters. Strong-ish L2 for the small (~150-row, ~18%
-# positive) sample; deterministic full-batch gradient descent.
-L2_DEFAULT = 1.0
+# Training hyperparameters. L2 is applied per-step WITHOUT the /n average
+# (constant strength as data grows); 0.05 with lr 0.1 ≈ 0.5% weight decay per
+# step — meaningful shrinkage on the small (~150-row, ~18% positive) sample.
+L2_DEFAULT = 0.05
 EPOCHS_DEFAULT = 600
 LR_DEFAULT = 0.1
 MIN_ROWS_DEFAULT = 100  # matches the capstone-readiness threshold
@@ -128,7 +129,9 @@ def fit_logistic(
                 gw[j] += err * xi[j]
             gb += err
         for j in range(d):
-            w[j] -= lr * (gw[j] / n + l2 * w[j] / n)
+            # Penalty NOT divided by n — dividing would let effective
+            # regularization decay as the dataset grows (review finding).
+            w[j] -= lr * (gw[j] / n + l2 * w[j])
         b -= lr * gb / n
     return w, b
 
@@ -212,13 +215,20 @@ def walk_forward_splits(
 
 
 def _fetch_rows(conn: sqlite3.Connection) -> list[dict]:
-    """Closed LIVE/INTERACTIVE rows with components carrying an algo pillar."""
+    """Closed LIVE/INTERACTIVE rows with components carrying an algo pillar.
+
+    Sorted by ``created_at`` (prediction time) — the anchor for leak-free
+    walk-forward folds. ``outcome_date`` rides along so each fold can restrict
+    its training set to rows whose outcomes were already KNOWN when the fold's
+    test predictions were made.
+    """
     rows = conn.execute(
         "SELECT market, timeframe, status, components, "
-        "COALESCE(raw_confidence, confidence) AS raw_conf, outcome_date "
+        "COALESCE(raw_confidence, confidence) AS raw_conf, "
+        "created_at, outcome_date "
         "FROM predictions "
         "WHERE status IN ('HIT', 'MISS') AND components IS NOT NULL "
-        "ORDER BY outcome_date ASC"
+        "ORDER BY created_at ASC"
     ).fetchall()
     out = []
     for r in rows:
@@ -233,6 +243,8 @@ def _fetch_rows(conn: sqlite3.Connection) -> list[dict]:
                 "x": extract_features(comp, r["market"], r["timeframe"]),
                 "y": 1 if r["status"] == "HIT" else 0,
                 "raw_conf": float(r["raw_conf"] or 0.5),
+                "created_at": r["created_at"] or "",
+                "outcome_date": r["outcome_date"] or "",
             }
         )
     return out
@@ -275,15 +287,23 @@ def evaluate(
 ) -> dict:
     """Walk-forward comparison: blend vs raw confidence vs isotonic baseline.
 
+    Leak-free by prediction time: rows are folded by ``created_at``, and each
+    fold trains ONLY on rows whose ``outcome_date`` precedes the fold's first
+    test ``created_at`` — i.e. outcomes that were actually known when the test
+    predictions were made. Folds whose known-outcome pool is smaller than
+    ``min_train`` are skipped.
+
     Args:
         conn: SQLite connection.
         min_rows: Minimum components-tagged closed rows to attempt CV.
-        n_folds: Expanding-window folds.
-        min_train: Minimum training rows for the first fold.
+        n_folds: Expanding-window folds (by created_at order).
+        min_train: Minimum known-outcome training rows per fold.
 
     Returns:
-        Dict with n_rows, folds, per-model {brier, auc}, ``blend_wins``
-        (blend beats isotonic on Brier AND blend AUC > 0.55), and status.
+        Dict with n_rows, folds, per-model {brier, auc} (pooled) plus
+        ``auc_fold_mean`` per model (regime shifts between folds can distort
+        pooled AUC), ``blend_wins`` (blend beats isotonic on pooled Brier AND
+        pooled blend AUC > 0.55), and status.
     """
     rows = _fetch_rows(conn)
     n = len(rows)
@@ -308,30 +328,61 @@ def evaluate(
     preds_r: list[float] = []
     preds_i: list[float] = []
     ys: list[int] = []
-    for train_end, test_start, test_end in splits:
-        train = rows[:train_end]
+    fold_aucs: dict[str, list[float]] = {"blend": [], "raw": [], "isotonic": []}
+    folds_run = 0
+    for _, test_start, test_end in splits:
         test = rows[test_start:test_end]
         if not test:
             continue
+        # Known-outcome training pool at the moment the fold's first test
+        # prediction was created — never rows still open at that time.
+        cutoff = test[0]["created_at"]
+        train = [r for r in rows if r["outcome_date"] and r["outcome_date"] < cutoff]
+        if len(train) < min_train:
+            continue
+        folds_run += 1
         Xs, means, stds = _standardize([r["x"] for r in train])
         w, b = fit_logistic(Xs, [r["y"] for r in train])
-        for r in test:
-            preds_b.append(predict_proba(_apply_scaling(r["x"], means, stds), w, b))
-            preds_r.append(r["raw_conf"])
-            ys.append(r["y"])
-        preds_i.extend(
-            _isotonic_baseline(
-                [r["raw_conf"] for r in train],
-                [r["y"] for r in train],
-                [r["raw_conf"] for r in test],
-            )
+        f_b = [predict_proba(_apply_scaling(r["x"], means, stds), w, b) for r in test]
+        f_r = [r["raw_conf"] for r in test]
+        f_i = _isotonic_baseline(
+            [r["raw_conf"] for r in train],
+            [r["y"] for r in train],
+            f_r,
         )
-    result["folds"] = len(splits)
-    result["blend"] = {"brier": round(brier(preds_b, ys), 4), "auc": auc(preds_b, ys)}
-    result["raw"] = {"brier": round(brier(preds_r, ys), 4), "auc": auc(preds_r, ys)}
+        f_y = [r["y"] for r in test]
+        preds_b.extend(f_b)
+        preds_r.extend(f_r)
+        preds_i.extend(f_i)
+        ys.extend(f_y)
+        for name, fp in (("blend", f_b), ("raw", f_r), ("isotonic", f_i)):
+            fa = auc(fp, f_y)
+            if fa is not None:
+                fold_aucs[name].append(fa)
+
+    result["folds"] = folds_run
+    if not ys:
+        result["status"] = "no folds had enough known outcomes to train on"
+        return result
+
+    def _fold_mean(name: str):
+        vals = fold_aucs[name]
+        return round(sum(vals) / len(vals), 4) if vals else None
+
+    result["blend"] = {
+        "brier": round(brier(preds_b, ys), 4),
+        "auc": auc(preds_b, ys),
+        "auc_fold_mean": _fold_mean("blend"),
+    }
+    result["raw"] = {
+        "brier": round(brier(preds_r, ys), 4),
+        "auc": auc(preds_r, ys),
+        "auc_fold_mean": _fold_mean("raw"),
+    }
     result["isotonic"] = {
         "brier": round(brier(preds_i, ys), 4),
         "auc": auc(preds_i, ys),
+        "auc_fold_mean": _fold_mean("isotonic"),
     }
     blend_auc = result["blend"]["auc"]
     result["blend_wins"] = bool(

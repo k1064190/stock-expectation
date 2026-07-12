@@ -141,7 +141,7 @@ def conn():
     path.unlink(missing_ok=True)
 
 
-def _row(conn, i, status, algo, outcome_day, raw_conf=0.6):
+def _row(conn, i, status, algo, created_day, outcome_day, raw_conf=0.6):
     comp = json.dumps(
         {"algo": algo, "news": 0.0, "llm_context": 0.0, "overextension": "NONE"}
     )
@@ -153,7 +153,7 @@ def _row(conn, i, status, algo, outcome_day, raw_conf=0.6):
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             f"b{i}",
-            "2026-05-01T00:00:00+00:00",
+            f"2026-05-{created_day:02d}T00:00:00+00:00",
             "T",
             "US",
             "BULL",
@@ -166,35 +166,54 @@ def _row(conn, i, status, algo, outcome_day, raw_conf=0.6):
             "[]",
             "LIVE",
             status,
-            f"2026-06-{outcome_day:02d}T00:00:00+00:00",
+            f"2026-05-{outcome_day:02d}T12:00:00+00:00",
         ),
     )
     conn.commit()
 
 
 def _seed_learnable(conn, n=160):
-    """algo>=6 wins 70%, algo<=3 wins 15% — a learnable pattern."""
+    """algo>=6 wins 70%, algo<=3 wins 15% — a learnable, stationary pattern.
+
+    ~6 predictions created per day, each resolving 3 days later, so later
+    walk-forward folds have a growing pool of already-known outcomes.
+    """
     rng = random.Random(3)
-    day = 1
     for i in range(n):
         hi = i % 2 == 0
         algo = 7.0 if hi else 2.0
         win = rng.random() < (0.70 if hi else 0.15)
-        _row(conn, i, "HIT" if win else "MISS", algo, day)
-        if i % 6 == 5:
-            day = min(day + 1, 28)
+        created = min(i // 6 + 1, 26)
+        _row(conn, i, "HIT" if win else "MISS", algo, created, created + 3)
 
 
 def test_evaluate_learnable_pattern_beats_baselines(conn):
     _seed_learnable(conn)
-    result = blend.evaluate(conn, min_rows=100)
+    result = blend.evaluate(conn, min_rows=100, min_train=30)
 
     assert result["n_rows"] == 160
     assert result["folds"] >= 2
     assert result["blend"]["brier"] < result["raw"]["brier"]
     assert result["blend"]["auc"] > 0.65
+    assert result["blend"]["auc_fold_mean"] > 0.65
     assert isinstance(result["blend_wins"], bool)
     assert result["blend_wins"] is True
+
+
+def test_evaluate_trains_only_on_known_outcomes(conn):
+    """Rows still open at a fold's first test created_at never train that fold.
+
+    All outcomes resolve AFTER every prediction was created → no fold can have
+    a known-outcome training pool → evaluate reports zero usable folds instead
+    of silently leaking future outcomes.
+    """
+    for i in range(120):
+        _row(conn, 500 + i, "HIT" if i % 3 == 0 else "MISS", 5.0, 1, 28)
+
+    result = blend.evaluate(conn, min_rows=100, min_train=30)
+
+    assert result["folds"] == 0
+    assert "known outcomes" in result["status"]
 
 
 def test_evaluate_below_min_rows(conn):
