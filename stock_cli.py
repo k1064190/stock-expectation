@@ -1991,7 +1991,7 @@ def _refresh_overextension_components(
     except Exception as exc:
         print(
             f"warning: overextension gate refresh failed for {ticker} "
-            f"(fail-open): {exc}",
+            f"(fail-open): {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
         return components, False

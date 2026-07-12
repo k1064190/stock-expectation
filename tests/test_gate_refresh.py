@@ -114,6 +114,42 @@ def test_refresh_fail_open_on_fetch_error(monkeypatch, capsys):
     assert "gate refresh" in capsys.readouterr().err.lower()
 
 
+def test_refresh_sparse_bars_degrades_gracefully(monkeypatch):
+    """<22 bars: return_1m is None (not injected), overextension still set."""
+    provider = _FakeProvider(bars=_flat_bars(n=10))
+    _patch_provider(monkeypatch, provider)
+
+    out, refreshed = stock_cli._refresh_overextension_components(None, "NVDA", "US")
+
+    assert refreshed is True
+    assert out["overextension"] == "NONE"
+    assert "return_1m" not in out
+
+
+def test_refresh_kr_market_uses_kr_provider(monkeypatch):
+    """KR tickers route through _get_provider('KR') with the raw ticker."""
+    seen = {}
+
+    class _KRProvider(_FakeProvider):
+        def get_price_history(self, ticker, days=30):
+            seen["ticker"] = ticker
+            return super().get_price_history(ticker, days)
+
+    provider = _KRProvider(bars=_flat_bars())
+
+    def _fake_get_provider(market):
+        seen["market"] = market
+        return provider
+
+    monkeypatch.setattr(stock_cli, "_get_provider", _fake_get_provider)
+
+    out, refreshed = stock_cli._refresh_overextension_components(None, "5930", "KR")
+
+    assert refreshed is True
+    assert seen == {"market": "KR", "ticker": "5930"}
+    assert out["overextension"] == "NONE"
+
+
 def test_refresh_fail_open_on_empty_bars(monkeypatch):
     provider = _FakeProvider(bars=[])
     _patch_provider(monkeypatch, provider)
@@ -199,6 +235,22 @@ def test_create_interactive_skips_refresh(monkeypatch, use_temp_db, capsys):
     rc, _ = _run_create(_make_args(ticker="TSLA", source="INTERACTIVE"), capsys)
 
     assert rc == 0
+    assert provider.calls == 0
+
+
+def test_create_bear_skips_refresh(monkeypatch, use_temp_db, capsys):
+    """BEAR never triggers the refresh — no fetch even on the LIVE path.
+
+    (The LIVE BEAR create itself is hard-rejected by the store's separate
+    BEAR gate, hence rc == 1; the assertion that matters is calls == 0.)
+    """
+    provider = _FakeProvider(exc=AssertionError("must not fetch"))
+    _patch_provider(monkeypatch, provider)
+
+    rc, out = _run_create(_make_args(ticker="META", direction="BEAR"), capsys)
+
+    assert rc == 1
+    assert "BEAR" in out["error"]
     assert provider.calls == 0
 
 
