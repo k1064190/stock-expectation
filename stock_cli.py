@@ -1947,6 +1947,62 @@ def _recalibrated_confidence(
     )
 
 
+# Calendar days of bars fetched for the store-time gate refresh: ~80 trading
+# days, comfortably above the 22 bars return_1m needs and the 20/15 bars for
+# MA20/RSI14.
+GATE_REFRESH_DAYS = 120
+
+
+def _refresh_overextension_components(
+    components: Optional[dict], ticker: str, market: str
+) -> tuple[Optional[dict], bool]:
+    """Backfill ``overextension``/``return_1m`` into components from fresh bars.
+
+    The store-level overextension gate (RULE R2) reads those two fields from
+    ``components`` and fails open when they are absent — so a caller that
+    simply omits ``--components`` bypasses the gate (the INTEGRATION TODO in
+    docs/stage-12/blended-funnel-gate.md). Called for LIVE BULL creates only.
+
+    Args:
+        components: Parsed ``--components`` dict, or None.
+        ticker: Ticker as passed on the CLI.
+        market: "US" or "KR".
+
+    Returns:
+        (components, refreshed). Caller-supplied values are never overwritten;
+        only missing fields are injected. Fail-open: on any fetch/compute
+        error (or empty bars) the input is returned unchanged with a warning
+        on stderr, so data outages never block prediction logging.
+    """
+    missing = [
+        k
+        for k in ("overextension", "return_1m")
+        if not components or k not in components
+    ]
+    if not missing:
+        return components, False
+    try:
+        bars = _get_provider(market).get_price_history(ticker, days=GATE_REFRESH_DAYS)
+        if not bars:
+            raise ValueError(f"no price data for {ticker} on {market}")
+        metrics = compute_horizon_metrics(
+            bars=bars, ticker=ticker.upper(), market=market.upper()
+        )
+    except Exception as exc:
+        print(
+            f"warning: overextension gate refresh failed for {ticker} "
+            f"(fail-open): {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return components, False
+    refreshed = dict(components or {})
+    if "overextension" in missing:
+        refreshed["overextension"] = metrics.overextension_level
+    if "return_1m" in missing and metrics.return_1m is not None:
+        refreshed["return_1m"] = metrics.return_1m
+    return refreshed, True
+
+
 def cmd_predict_create(args) -> int:
     """Create a new prediction."""
     try:
@@ -1987,6 +2043,15 @@ def cmd_predict_create(args) -> int:
             if not isinstance(components, dict):
                 _print_json({"error": "--components must be a JSON object"})
                 return 1
+
+        if (
+            args.source.upper() == "LIVE"
+            and args.direction.upper() == "BULL"
+            and not getattr(args, "no_gate_refresh", False)
+        ):
+            components, _ = _refresh_overextension_components(
+                components, args.ticker, args.market
+            )
 
         conn = get_connection()
         try:
@@ -3391,6 +3456,15 @@ def build_parser() -> argparse.ArgumentParser:
             "(built from closed predictions of the same source) before storing, "
             "so logged confidence reflects observed accuracy. No-op until enough "
             "closed predictions exist."
+        ),
+    )
+    pc.add_argument(
+        "--no-gate-refresh",
+        action="store_true",
+        help=(
+            "Skip the store-time overextension refresh (LIVE BULL creates with "
+            "missing overextension/return_1m components normally fetch fresh "
+            "bars so the R2 gate can act). Escape hatch for offline use."
         ),
     )
     pc.set_defaults(func=cmd_predict_create)

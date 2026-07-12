@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stock-expectation / prediction-accuracy — 1단계</title>
+    <style>
+      :root {
+        --accent: #2f5d62;
+        --bg: #f7f7f5;
+        --card-bg: #ffffff;
+        --border: #e0dfda;
+        --text: #2a2a28;
+        --muted: #74736c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Helvetica,
+          Arial, sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      header h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      nav[aria-label="언어"] {
+        font-size: 0.9rem;
+      }
+
+      nav[aria-label="언어"] span {
+        color: var(--muted);
+      }
+
+      nav[aria-label="언어"] a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      nav[aria-label="언어"] a:hover {
+        text-decoration: underline;
+      }
+
+      .timeline-wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 2rem;
+      }
+
+      .timeline {
+        display: flex;
+        align-items: center;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        display: flex;
+        align-items: center;
+        flex: 1;
+      }
+
+      .timeline li:last-child {
+        flex: 0 0 auto;
+      }
+
+      .node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+      }
+
+      .dot {
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 2px solid var(--border);
+        background: var(--card-bg);
+      }
+
+      .node.active .dot {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+
+      .node .label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .node.active .label {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .connector {
+        flex: 1;
+        height: 2px;
+        background: var(--border);
+        margin: 0 0.5rem;
+        margin-bottom: 1.3rem;
+      }
+
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 1.5rem 3rem;
+      }
+
+      section > h2 {
+        font-size: 1.25rem;
+        color: var(--accent);
+        margin-bottom: 0.25rem;
+      }
+
+      section > p.stage-summary {
+        color: var(--muted);
+        margin-top: 0;
+        margin-bottom: 1.5rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      article.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+      }
+
+      article.card h3 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        font-size: 1.15rem;
+      }
+
+      .card-section {
+        margin-bottom: 1.1rem;
+      }
+
+      .card-section:last-child {
+        margin-bottom: 0;
+      }
+
+      .card-section h4 {
+        margin: 0 0 0.35rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--accent);
+      }
+
+      .card-section p {
+        margin: 0;
+      }
+
+      .card-section ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .card-section li {
+        margin-bottom: 0.3rem;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.88em;
+        background: #f0efe9;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+
+      .code-locations {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .code-locations li {
+        margin-bottom: 0.4rem;
+      }
+
+      .retrospective {
+        font-style: italic;
+        color: var(--muted);
+      }
+
+      @media (max-width: 720px) {
+        .card-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline .label {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>stock-expectation / prediction-accuracy</h1>
+        <p>단계별 진행 상황</p>
+      </div>
+      <nav aria-label="언어">
+        <a href="index.html">EN</a> | <span>한국어</span>
+      </nav>
+    </header>
+
+    <div class="timeline-wrap">
+      <ol class="timeline">
+        <li>
+          <div class="node active">
+            <div class="dot"></div>
+            <div class="label">1단계</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <main>
+      <section>
+        <h2>1단계</h2>
+        <p class="stage-summary">
+          스토어 단계의 과열도(overextension) 게이트에 있던 fail-open 허점을
+          메워, LIVE BULL 진입이 항상 실제 과열도 데이터를 근거로 판정되도록
+          합니다.
+        </p>
+
+        <div class="card-grid">
+          <article class="card">
+            <h3>Overextension Gate Refresh</h3>
+
+            <div class="card-section">
+              <h4>왜</h4>
+              <p>
+                스토어 단계 과열도 게이트(RULE R2,
+                <code>_check_overextension_gate</code>)는 포물선형 급등
+                (parabolic blow-off) 국면에서 LIVE BULL 진입을 강제로
+                거부하지만, 호출자가 전달한 <code>--components</code> JSON에서
+                <code>overextension</code>과 <code>return_1m</code>을 읽어오기
+                때문에 이 값들이 없으면 fail-open(통과)되어 버립니다. 브리핑이나
+                expect 실행에서 components를 생략하면 cron에서도 살아남는 유일한
+                강제 규칙이 조용히 우회되던 셈입니다. 진입 시점 데이터로는
+                EXTREME 수준으로 과열된 BULL 진입의 승률이 29.1%에 불과했던
+                반면, NONE 수준에서는 53.5%였습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>무엇을</h4>
+              <p>
+                LIVE BULL에 대한 <code>stock-cli predict create</code>는 이제
+                DB에 삽입하기 전에 최신 가격 바(bar) 데이터로부터
+                <code>overextension</code>과 <code>return_1m</code>의 누락 값을
+                components에 채워 넣어, R2 게이트가 항상 실제 데이터를 근거로
+                동작하도록 합니다. 호출자가 값을 전달한 경우에는 절대 덮어쓰지
+                않습니다. 데이터 조회나 계산 과정에서 오류가 나면 stderr 경고를
+                남기고 fail-open으로 동작합니다. 오프라인 사용을 위한 새로운
+                <code>--no-gate-refresh</code> 탈출구도 추가되었습니다.
+                INTERACTIVE와 BEAR 생성 경로는 변경되지 않았습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>어떻게</h4>
+              <p>
+                새로 추가된 <code>_refresh_overextension_components()</code>는
+                기존 provider(<code>_get_provider().get_price_history</code>)를
+                통해 약 120 캘린더 일치의 바 데이터를 가져오고,
+                <code>overextension_level</code>과 <code>return_1m</code>을 이미
+                계산하는 <code>compute_horizon_metrics</code>를 재사용합니다.
+                누락된 키만 주입됩니다. 이 로직은 components 파싱과 DB 삽입
+                사이, <code>cmd_predict_create</code> 안에 연결되었습니다.
+                개발은 TDD 방식으로 진행되어, 구현 전에 테스트 10개를 먼저
+                작성했습니다.
+              </p>
+            </div>
+
+            <div class="card-section">
+              <h4>코드 위치</h4>
+              <ul class="code-locations">
+                <li>
+                  <code>stock_cli.py</code> —
+                  <code>_refresh_overextension_components</code> (+
+                  <code>GATE_REFRESH_DAYS</code>),
+                  <code>cmd_predict_create</code> 내 호출 지점,
+                  <code>--no-gate-refresh</code> argparse 플래그
+                </li>
+                <li>
+                  <code>tests/test_gate_refresh.py</code> — 헬퍼 단위 테스트 +
+                  <code>cmd_predict_create</code> 통합 테스트(포물선형 거부,
+                  주입된 components를 사용한 정상 삽입, 탈출구, INTERACTIVE
+                  스킵, fail-open 삽입)
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>검증</h4>
+              <ul>
+                <li>
+                  <code>uv run pytest -m "not network"</code> — 883개 통과 (신규
+                  10개)
+                </li>
+                <li>
+                  실제 E2E: components 없이
+                  <code>predict create NVDA LIVE BULL</code>을 스크래치 DB에
+                  대해 실행 — 실제 바 데이터를 가져와
+                  <code>{"overextension": "NONE", "return_1m": 0.0133}</code>이
+                  주입되어 저장됨
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>리뷰 루프</h4>
+              <ul>
+                <li>
+                  <strong>code-reviewer 서브에이전트</strong>: 치명적 이슈
+                  1건(BEAR 경로 테스트 누락), 경고 2건(희소한 바 데이터에서
+                  <code>return_1m=None</code> 미검증, KR 티커 경로 미검증), 제안
+                  1건(fail-open 경고 메시지에 예외 타입 포함). 네 가지 모두
+                  <code>fb7f3bd</code>에서 해결됨 — 테스트 3개 추가(총 13개),
+                  경고 메시지에 <code>type(exc).__name__</code>이 포함됨.
+                  구현상의 버그는 발견되지 않음.
+                </li>
+                <li>
+                  <strong>Codex (gpt-5.6-sol, high)</strong>: 발견 사항 없음 —
+                  네 가지 요구사항(fail-open, 호출자 값 미덮어쓰기, 탈출구,
+                  INTERACTIVE/BEAR 영향 없음) 모두 충족된 것으로 판단됨.
+                </li>
+                <li>
+                  <strong>Antigravity (Gemini 3.1 Pro High)</strong>: 정확성
+                  버그 없음. 낮은 심각도의 테스트 공백 2건 — BEAR 통합
+                  테스트(code-reviewer 지적으로 이미 추가됨)와 완전한
+                  components가 주어지면 fetch를 건너뛰는지 확인하는 CLI 레벨
+                  테스트(추가됨). <code>{"overextension": null}</code> 엣지
+                  케이스가 호출자 값을 존중함을 확인함.
+                </li>
+              </ul>
+            </div>
+
+            <div class="card-section">
+              <h4>회고</h4>
+              <p class="retrospective">
+                이 게이트의 허점은 기존 유틸리티(provider + 지표 계산)만으로도
+                완전히 메울 수 있었다. 새로 추가된 로직은 병합 정책(누락된 키만
+                주입)과 fail-open 동작뿐이다.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
