@@ -5,6 +5,13 @@ collapse (52.8% → 3.8%): gate hardening, signal re-weighting, news feature
 persistence, learned-blend confidence, per-stock claude -p deep dives, and a
 keyword-bucket audit loop.
 
+## Stage 2 — Dead-signal down-weight + low-edge-band tagging
+
+- [signal-downweight-edge-band](stage-2/signal-downweight-edge-band.md) — /expect
+  ALGO ceiling 8.0→7.0 (momentum/volume down-weighted per 30d calibration; BUY now
+  needs news/LLM confirmation); LIVE BULL 0.60-0.70 raw-conf tagged
+  `low_edge_band` and skipped by the paper book (logged for training).
+
 ## Stage 1 — Store-time overextension gate refresh
 
 - [overextension-gate-refresh](stage-1/overextension-gate-refresh.md) — LIVE BULL

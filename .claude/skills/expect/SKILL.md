@@ -10,7 +10,7 @@ description: "Stock expectation analysis. Combines algorithmic technical scoring
 Per stock:
 - A deterministic **BUY / WATCH / HOLD / AVOID / SELL** label, derived from a fixed point table augmented by an LLM-judged macro/narrative score
 - A **transmission chain** of exactly 3 facts: one technical, one news/fundamental, one risk
-- A **composite score** in the range -12 .. +14 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
+- A **composite score** in the range -12 .. +13 with the components broken out (ALGO + NEWS + LLM_CONTEXT)
 - An **LLM context score** (-5 .. +3) with reasoning text capturing macro regime, sector lifecycle, and narrative that the deterministic table can't see
 - Independent **multi-horizon predictions** (1W / 1M / 6M — the Cycle 1Y call is analysis-only, never logged; see RULE C4) logged to `data/predictions.db`
 - An **outcome-telemetry sidecar** at `state/last-outcome-expect.json` for the weekly calibration loop
@@ -111,7 +111,7 @@ If Finnhub returns nothing and the fallback chain produces an empty list, treat 
 
 ### Step 5 — Compute the algorithmic score (deterministic point table)
 
-**ALGO_SCORE — sums to a max of +7.0, can go as low as -4.5.** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
+**ALGO_SCORE — sums to a max of +7.0, floor -4.0 (-5.0 with the earnings penalty).** Buckets within each component are mutually exclusive — evaluate top-to-bottom and stop at the first match (`if/elif`):
 
 | Component | Bucket (evaluate in order) | Points | Notes |
 |---|---|---|---|
@@ -365,7 +365,7 @@ Threshold rationale: BUY at 8.0 with the ALGO ceiling at 7.0 (2026-07 down-weigh
 - LLM_CONTEXT = -3.0 (KOSPI parabolic +25% / 22d, magazine cover "1만피" target, FX 1500 stress, sector late-stage)
 - COMPOSITE = **4.5 → HOLD** (macro context overrides an otherwise WATCH-adjacent setup)
 
-Without LLM_CONTEXT the system would have labelled this BUY at the very top of a blow-off — exactly the failure mode this score is designed to prevent.
+Under the pre-2026-07 weights the system would have labelled this BUY at the very top of a blow-off without LLM_CONTEXT; with the down-weighted table it sits at WATCH (7.5) on mechanics alone, and the context score pushes it firmly to HOLD — two independent layers now block the same failure mode.
 
 ### Step 8 — Transmission chain (exactly 3 facts)
 
@@ -575,7 +575,7 @@ Overconfidence flag in the 0.70-0.80 bucket — output confidence reduced 5%.
 **News (1.0/3):** Headline_volume +1.0
 **LLM Context (-3.0):** KOSPI 5/15 key reversal day -6.12% off ATH 8047 + 외인 -5.56조 매도 + USD/KRW 1500 돌파 = market-top-detector defensive. Sector late-stage parabolic (+25% / 22d). Samsung 노조 파업 5/21 imminent. Fundamentals intact (NVDA Blackwell demand, HBM cycle), so -3.0 (not -5.0).
 
-**Without LLM_CONTEXT this would have been BUY at the very top.** Anti-momentum-bias circuit fired correctly.
+**Under pre-2026-07 weights this printed a raw BUY at the very top** (now WATCH 7.5 on mechanics alone). Anti-momentum-bias circuit fired correctly.
 
 #### 3. MU ($426) — WATCH (composite 7.0, capped by RULE C1)
 ...
