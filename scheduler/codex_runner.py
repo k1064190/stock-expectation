@@ -41,6 +41,8 @@ def run_codex(
 
     command = [
         codex_path,
+        "-a",
+        "never",
         "exec",
         "--skip-git-repo-check",
         "--disable",

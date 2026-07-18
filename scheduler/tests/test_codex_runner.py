@@ -36,6 +36,8 @@ def test_run_codex_uses_cron_safe_noninteractive_command(monkeypatch, tmp_path):
     assert result == "completed briefing"
     assert captured["command"] == [
         "/usr/bin/codex",
+        "-a",
+        "never",
         "exec",
         "--skip-git-repo-check",
         "--disable",
