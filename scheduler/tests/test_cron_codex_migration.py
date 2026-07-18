@@ -39,6 +39,11 @@ def test_crontab_source_is_codex_only():
     assert "gold_trend.py --llm-mode codex-cli" in text
 
 
+def test_cron_runbook_has_no_unsupported_api_mode():
+    text = (PROJECT_ROOT / "cron_setting.md").read_text(encoding="utf-8")
+    assert "--mode api" not in text
+
+
 def test_anthropic_scheduler_extra_is_removed():
     text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert "anthropic" not in text.lower()

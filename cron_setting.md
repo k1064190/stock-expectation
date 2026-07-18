@@ -156,7 +156,7 @@ Other jobs (briefings, weekly calibration) are not smoke-tested but will fire on
 2. **No log rotation** — files grow indefinitely. Add `logrotate` if `~/logs/stock-expectation/` exceeds a few hundred MB.
 3. **No retry-on-failure** at the cron level — if `outcome_tracker.py` happens to fail mid-run, the next day's 06:00 run will pick up the same `OPEN` predictions and re-evaluate. Idempotent by design.
 4. **No retry-on-failure for daily briefings** — if a Codex CLI invocation fails, the failure is logged and Telegram gets the existing failure notice, but cron itself waits for the next scheduled run.
-5. **Codex CLI auth is required** for daily briefings. If Codex CLI auth expires or the configured model is unavailable, briefing jobs will fail until re-auth, setting `CODEX_MODEL`, or switching to `--mode api`.
+5. **Codex CLI auth is required** for daily briefings. If Codex CLI auth expires or the configured model is unavailable, briefing jobs will fail until Codex is re-authenticated or `CODEX_MODEL` is set to an available model.
 
 ## Cleanup / rollback
 
