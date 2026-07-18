@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stock-expectation / codex-cron-migration — 3단계</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f7f7f5;
+      --surface: #fffefb;
+      --border: #deded8;
+      --text: #252927;
+      --muted: #6b726f;
+      --accent: #176b68;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+        "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .page-shell {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: clamp(1.45rem, 4vw, 2rem);
+      line-height: 1.25;
+      letter-spacing: -0.025em;
+    }
+
+    .subtitle,
+    .language-switcher .current,
+    .stage-summary {
+      color: var(--muted);
+    }
+
+    .subtitle {
+      margin-bottom: 0;
+    }
+
+    .language-switcher {
+      flex: 0 0 auto;
+      padding-top: 5px;
+      white-space: nowrap;
+      font-size: 0.94rem;
+    }
+
+    .language-switcher a {
+      color: var(--accent);
+      font-weight: 650;
+      text-underline-offset: 3px;
+    }
+
+    .language-switcher .separator {
+      margin: 0 8px;
+      color: var(--border);
+    }
+
+    .timeline {
+      padding: 36px 0 42px;
+    }
+
+    .timeline ol {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      max-width: 520px;
+      margin: 0;
+      margin-inline: auto;
+      padding: 0;
+      list-style: none;
+    }
+
+    .timeline ol::before {
+      position: absolute;
+      top: 16px;
+      right: 16.6667%;
+      left: 16.6667%;
+      height: 2px;
+      background: var(--border);
+      content: "";
+    }
+
+    .timeline li {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      min-width: 120px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .timeline-node {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: var(--background);
+      color: var(--accent);
+    }
+
+    .timeline .current {
+      color: var(--accent);
+    }
+
+    .timeline .current .timeline-node {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .timeline .earlier .timeline-node {
+      border-color: var(--muted);
+      background: var(--muted);
+      color: #ffffff;
+    }
+
+    .stage-heading {
+      margin-bottom: 24px;
+    }
+
+    .stage-heading h2 {
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 1.5rem;
+      line-height: 1.3;
+    }
+
+    .stage-summary {
+      max-width: 760px;
+      margin-bottom: 0;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    article {
+      grid-column: 1 / -1;
+      padding: 30px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    article h3 {
+      margin-bottom: 26px;
+      font-size: 1.3rem;
+      line-height: 1.3;
+    }
+
+    .content-block + .content-block {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid #ecece7;
+    }
+
+    .content-block h4 {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .content-block p,
+    .content-block ul {
+      margin-bottom: 0;
+    }
+
+    ul {
+      padding-left: 1.3rem;
+    }
+
+    li + li {
+      margin-top: 5px;
+    }
+
+    code {
+      color: #33413e;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9em;
+    }
+
+    .code-locations {
+      columns: 2;
+      column-gap: 32px;
+    }
+
+    .code-locations li {
+      break-inside: avoid;
+    }
+
+    .retrospective {
+      color: #4d5552;
+    }
+
+    @media (max-width: 720px) {
+      .page-shell {
+        width: min(100% - 28px, 1080px);
+        padding-top: 30px;
+      }
+
+      header {
+        gap: 20px;
+      }
+
+      .timeline li {
+        min-width: 0;
+      }
+
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      article {
+        grid-column: auto;
+        padding: 22px;
+      }
+
+      .code-locations {
+        columns: 1;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+      }
+
+      .language-switcher {
+        padding-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header>
+      <div>
+        <h1>stock-expectation / codex-cron-migration</h1>
+        <p class="subtitle">단계별 진행 상황</p>
+      </div>
+      <nav class="language-switcher" aria-label="언어">
+        <a href="index.html" lang="en">EN</a><span class="separator">|</span><span class="current">한국어</span>
+      </nav>
+    </header>
+
+    <nav class="timeline" aria-label="단계 진행">
+      <ol>
+        <li class="earlier">
+          <span class="timeline-node">1</span>
+          <span>1단계</span>
+        </li>
+        <li class="earlier">
+          <span class="timeline-node">2</span>
+          <span>2단계</span>
+        </li>
+        <li class="current" aria-current="step">
+          <span class="timeline-node">3</span>
+          <span>3단계</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section aria-labelledby="stage-3-heading">
+        <div class="stage-heading">
+          <h2 id="stage-3-heading">3단계</h2>
+          <p class="stage-summary">백업과 검증을 마친 Codex 전용 crontab 후보가 준비되었으며, 설치는 검토된 배포 이후로 제한됩니다.</p>
+        </div>
+
+        <div class="card-grid">
+          <article aria-labelledby="live-crontab-candidate-title">
+            <h3 id="live-crontab-candidate-title">Live Crontab Candidate</h3>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-why">
+              <h4 id="live-crontab-candidate-why">왜</h4>
+              <p>설치된 crontab에는 여전히 활성 Claude 브리핑 명령, 더 이상 필요하지 않은 Claude/API 대체 블록, 암묵적인 Claude 금 작업 기본값, 암묵적인 할인 수집기 기본값이 남아 있습니다. 기능 브랜치가 배포되기 전에 대체 항목을 설치하면 금 및 할인 작업이 중단됩니다.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-what">
+              <h4 id="live-crontab-candidate-what">무엇을</h4>
+              <ul>
+                <li>변환 전에 128줄의 실제 crontab을 백업하고 롤백 및 후보 파일을 모두 <code>600</code> 모드로 영구 저장했습니다.</li>
+                <li>세 일일 브리핑을 모두 <code>codex-cli</code>로 설정한 후보를 렌더링했습니다.</li>
+                <li>주석 처리된 Claude 및 Anthropic API 대체 블록을 제거했습니다.</li>
+                <li>금 작업은 <code>--llm-mode codex-cli</code>를, 할인 정보 작업은 <code>DEALS_COLLECTORS=codex</code>를 명시적으로 사용하도록 했습니다.</li>
+                <li>관련 없는 Gemini 비디오 파이프라인과 pure-Python 작업을 포함해 활성 일정 12개를 모두 유지했습니다.</li>
+                <li>두 저장소 변경 사항이 모두 검토되고 배포될 때까지 설치를 연기했습니다.</li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-how">
+              <h4 id="live-crontab-candidate-how">어떻게</h4>
+              <p>영구 백업은 <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code>(<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>)이고 후보는 <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code>(<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>)입니다. 후보는 <code>crontab -n</code> 검사를 통과했습니다. 후보에는 Claude/Anthropic/API-mode 텍스트가 없으며, 비대상 활성 명령 해시는 백업과 후보에서 동일합니다(<code>e61a6295e9ae3e7411bd9fc1d61a824cda276d54250275a03039abd5328fd64f</code>).</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-code">
+              <h4 id="live-crontab-candidate-code">코드 위치</h4>
+              <ul class="code-locations">
+                <li><code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code></li>
+                <li><code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code></li>
+                <li><code>scheduler/crontab.example</code></li>
+                <li><code>scheduler/codex_runner.py</code></li>
+                <li><code>src/discount_please/deals/collectors/codex.py</code></li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-retrospective">
+              <h4 id="live-crontab-candidate-retrospective">회고</h4>
+              <p class="retrospective"><em>렌더링/검증과 설치를 분리하면 서로 다른 버전이 섞여 발생하는 Cron 실패를 방지할 수 있습니다. Antigravity가 제기한 유효한 영속성 지적에 따라 롤백/후보 파일을 <code>/tmp</code> 밖으로 옮겼습니다. 요약 인덱스 지적은 3단계 요약 항목이 처음 범위로 지정된 diff 밖에 이미 존재했으므로 기각했습니다. 최종 재검토에서는 지적 사항이 없었습니다. Doctor Cho는 Claude 검토를 면제했으며, 실제 설치는 검토된 배포 이후로 계속 제한됩니다.</em></p>
+            </section>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

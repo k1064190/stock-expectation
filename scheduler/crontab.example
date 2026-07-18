@@ -10,27 +10,19 @@
 # Install:
 #   crontab scheduler/crontab.example
 #
-# Three modes available (pick one per briefing line):
-#   --mode claude-code (active): Uses `claude -p` CLI. No API key needed,
-#       Anthropic subscription. Restored as active on 2026-06-19 by request
-#       (matches the installed crontab). Known historical risk: headless quota
-#       rate-limiting / silent hangs on cron triggers (the 2026-05-18 symptom)
-#       — watch $LOG_DIR/briefing_*.log and fall back to codex-cli if it recurs.
-#   --mode codex-cli: Uses `codex exec` CLI. Draws on ChatGPT Plus credit,
-#       no API key needed (see docs/stage-9/codex-cli-mode.md). Commented fallback.
-#   --mode api: Uses Anthropic API directly. Requires ANTHROPIC_API_KEY
-#       and `uv sync --extra api`. Pay-per-call; most stable.
+# Scheduled LLM jobs use `codex exec` with gpt-5.6-sol/high by default. No API
+# key is needed; authentication comes from the host's Codex CLI session.
 #
 # Environment variables:
 #   TELEGRAM_BOT_TOKEN — for Telegram delivery
 #   TELEGRAM_CHAT_ID — target Telegram chat
 #   FMP_API_KEY — (optional) for enhanced US data
-#   ANTHROPIC_API_KEY — only needed with --mode api
+#   CODEX_MODEL — (optional) model override for account availability
 #
 # Logs written to ~/logs/stock-expectation/
 
 SHELL=/bin/bash
-# nvm-managed node is required by `codex` and `claude` CLI subprocesses.
+# nvm-managed node is required by the `codex` CLI subprocess.
 # Without the nvm bin dir on PATH, cron-triggered codex-cli runs fail with
 # `/usr/bin/env: 'node': No such file or directory` (exit 127) — observed
 # on the 2026-05-19 00:00 KST US mid-session briefing. Update this path
@@ -45,17 +37,14 @@ TZ=Asia/Seoul
 PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
-# === Claude Code mode (active) ===
-# Uses `claude -p` with bin/stock-cli. No Anthropic API cost (subscription).
-# Restored as active on 2026-06-19 by request (matches the installed crontab).
-# Watch $LOG_DIR/briefing_*.log for the 2026-05-18 headless quota / silent-hang
-# symptom; fall back to the codex-cli block below if it recurs.
+# === Codex CLI jobs ===
+# Uses `codex exec` with bin/stock-cli and the host's Codex authentication.
 
 # Korean market briefing — 07:00 KST Mon-Fri (before KR market opens 09:00)
-0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
 # US market pre-market briefing — 21:00 KST Mon-Fri (US pre-market starts ~22:00 KST)
-0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # US market mid-session briefing — 00:00 KST Tue-Sat
 # US regular trading runs 22:30-05:00 KST during EDT (Mar-Nov) and shifts
@@ -66,20 +55,12 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # Day-of-week filter is Tue-Sat (2-6) so we get exactly the five US
 # trading days: Mon trading -> Tue 00:00 KST, ..., Fri trading -> Sat
 # 00:00 KST. Sun and Mon 00:00 KST are skipped (US market closed).
-0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # Monthly ISA contribution briefing — 07:37 KST on the 1st (off the :00 mark).
 # Adjust the day-of-month and --amount to your contribution schedule; the
 # amount is ALWAYS explicit here (never defaulted inside the scripts).
-37 7 1 * * cd $PROJECT && uv run python scheduler/isa_briefing.py --amount 1000000 --mode claude-code >> $LOG_DIR/isa_briefing.log 2>&1
-
-# === Codex CLI mode (commented fallback) ===
-# Uncomment + comment out the claude-code lines above if claude-code headless
-# auth/quota becomes unreliable. Uses `codex exec` (ChatGPT Plus credit, no
-# Anthropic cost; see docs/stage-9/codex-cli-mode.md).
-# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
-# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
-# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
+37 7 1 * * cd $PROJECT && uv run python scheduler/isa_briefing.py --amount 1000000 --mode codex-cli >> $LOG_DIR/isa_briefing.log 2>&1
 
 # Outcome tracker — 06:00 KST daily
 # US regular session closes at 05:00 KST. Running outcome tracker at 06:00
@@ -96,7 +77,7 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 # Deterministic KRX-gold technical + macro scorecard + one LLM summary paragraph.
 # Emits ACCUMULATE/HOLD/PAUSE to Telegram + reports/gold-trend-YYYY-MM-DD.md and
 # rolls state/gold_trend.json (12 weeks). Refresh data/gold_macro_factors.yaml quarterly.
-0 21 * * 0 cd $PROJECT && uv run python scheduler/gold_trend.py >> $LOG_DIR/gold_trend.log 2>&1
+0 21 * * 0 cd $PROJECT && uv run python scheduler/gold_trend.py --llm-mode codex-cli >> $LOG_DIR/gold_trend.log 2>&1
 
 # Learned-blend capstone readiness monitor — Monday 08:13 KST
 # Pure read; counts CLOSED predictions carrying pillar components and sends a
@@ -137,14 +118,8 @@ LOG_DIR=/home/cwh/logs/stock-expectation
 0,30 22-23 * * 1-5 cd $PROJECT && uv run python scheduler/watchlist_monitor.py --market US >> $LOG_DIR/watchlist_monitor.log 2>&1
 0,30 0-6 * * 2-6 cd $PROJECT && uv run python scheduler/watchlist_monitor.py --market US >> $LOG_DIR/watchlist_monitor.log 2>&1
 
-# === Anthropic API mode (alternative) ===
-# Uncomment to use. Requires `uv sync --extra api` and ANTHROPIC_API_KEY.
-# 0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode api >> $LOG_DIR/briefing_kr.log 2>&1
-# 0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
-# 0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode api >> $LOG_DIR/briefing_us.log 2>&1
-
 # === Monthly news keyword-bucket audit (stage 6, report-only) ===
 # First Sunday-ish: 1st of each month 20:00 KST. Samples recent live headlines,
-# has claude -p judge the keyword buckets (precision/misses/suggested edits),
+# has Codex judge the keyword buckets (precision/misses/suggested edits),
 # writes reports/news-bucket-audit-YYYY-MM-DD.md. Human applies edits via PR.
 0 20 1 * * cd $PROJECT && uv run python scheduler/news_bucket_audit.py >> $LOG_DIR/news_bucket_audit.log 2>&1

@@ -8,7 +8,7 @@ is data-blocked: it needs enough CLOSED predictions that carry per-pillar
 qualifying set grows as picks close.
 
 This monitor counts the qualifying rows and, once the threshold is crossed,
-sends a one-shot Telegram ping so Doctor Cho can ask Claude to build the
+sends a one-shot Telegram ping so Doctor Cho can ask Codex to build the
 capstone (as a reviewed PR — it changes live confidence, so it is not built
 unsupervised). It is pure-read, never mutates predictions, and never raises.
 
@@ -133,7 +133,7 @@ def run(threshold: int | None = None) -> dict:
             "📊 Learned-blend capstone 데이터 준비 완료\n"
             f"components 태그된 closed 예측 {total}건 "
             f"(HIT {hits} / MISS {misses}, 임계 {threshold}).\n"
-            "Claude에게 'learned-blend capstone 빌드해줘'라고 요청하세요 "
+            "Codex에게 'learned-blend capstone 빌드해줘'라고 요청하세요 "
             "(Stage 18 — 검증 후 PR로 제출)."
         )
         try:

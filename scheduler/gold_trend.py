@@ -13,7 +13,6 @@ import json
 import math
 import os
 import pathlib
-import subprocess
 import sys
 from datetime import datetime, timedelta
 from typing import Optional
@@ -28,6 +27,8 @@ import yaml
 PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from scheduler.codex_runner import run_codex
 
 # Auto-load .env for Telegram credentials, matching the other scheduler
 # entry points (daily_briefing, outcome_tracker, paper_trading_run).
@@ -465,16 +466,9 @@ def run_llm_summary(prompt: str, mode: str) -> Optional[str]:
     if mode == "none":
         return None
     try:
-        proc = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=120,
+        return run_codex(
+            prompt, cwd=PROJECT_ROOT, timeout=120, sandbox="read-only"
         )
-        if proc.returncode != 0:
-            return None
-        out = proc.stdout.strip()
-        return out or None
     except Exception:
         return None
 
@@ -561,7 +555,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Weekly gold trend analysis")
     parser.add_argument("--config", default="data/gold_macro_factors.yaml")
     parser.add_argument(
-        "--llm-mode", choices=["claude-code", "none"], default="claude-code"
+        "--llm-mode", choices=["codex-cli", "none"], default="codex-cli"
     )
     parser.add_argument("--no-telegram", action="store_true")
     parser.add_argument("--state", default="state/gold_trend.json")

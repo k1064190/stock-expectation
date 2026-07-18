@@ -1,14 +1,14 @@
 # Cron Setup — Stock Expectation
 
-Installed on **2026-05-11 by Claude Code session**. Documents the active scheduled tasks, the rationale for each, and how to inspect / modify / disable them.
+Originally installed on 2026-05-11 and migrated to Codex-only LLM execution on **2026-07-17**. Documents the active scheduled tasks, the rationale for each, and how to inspect / modify / disable them.
 
 ## Active schedule (all times KST)
 
 | Schedule | Job | Mode | Purpose |
 |---|---|---|---|
-| Mon-Fri 07:00 | `scheduler/daily_briefing.py --market KR` | claude-code | KR market briefing (before 09:00 open) |
-| Mon-Fri 21:00 | `scheduler/daily_briefing.py --market US` | claude-code | US market briefing (US pre-market opens 22:00 KST) |
-| Tue-Sat 00:00 | `scheduler/daily_briefing.py --market US` | claude-code | US mid-session briefing |
+| Mon-Fri 07:00 | `scheduler/daily_briefing.py --market KR` | codex-cli | KR market briefing (before 09:00 open) |
+| Mon-Fri 21:00 | `scheduler/daily_briefing.py --market US` | codex-cli | US market briefing (US pre-market opens 22:00 KST) |
+| Tue-Sat 00:00 | `scheduler/daily_briefing.py --market US` | codex-cli | US mid-session briefing |
 | Daily 06:00 | `scheduler/outcome_tracker.py` | pure-Python | Judge previous day's HIT/MISS/EXPIRED |
 | Sunday 22:00 | `scheduler/weekly_calibration.py` | pure-Python | Weekly calibration report + 12-week trend |
 | Monday 08:13 | `scheduler/capstone_readiness.py` | pure-Python | Ping when ≥100 components-tagged closed preds exist (learned-blend capstone unblock) |
@@ -23,15 +23,14 @@ System TZ on this host is already `Asia/Seoul`. The crontab also declares `TZ=As
 - **Outcome tracker daily 06:00 (incl. weekends):** Runs after the US close so Friday closes are judged Saturday morning rather than waiting to Monday. Weekend runs are cheap (KR/US markets closed → most predictions stay open).
 - **Weekly calibration Sunday 22:00:** End-of-week reflection time before next week's trading. Pure Python read from `predictions.db`, writes report + trend JSON. No LLM cost.
 
-## Mode choice — claude-code (not API)
+## LLM execution — Codex CLI only
 
-The daily briefings run via `claude -p` (Claude Code CLI in non-interactive mode), **not** the Anthropic API. This matches the installed crontab as of 2026-06-19 (restored from codex-cli by request). Reason:
+Scheduled LLM jobs run through `codex exec`, defaulting to `gpt-5.6-sol` with high reasoning effort:
 
-- `ANTHROPIC_API_KEY` is NOT set in `.env` on this host; claude-code uses the Anthropic subscription, no per-call API cost.
-- `claude` CLI is on the cron `PATH` through the nvm-managed Node bin directory declared in `scheduler/crontab.example`.
-- `codex-cli` (`codex exec`, ChatGPT Plus credit) remains the commented fallback in `scheduler/crontab.example`. Historical note: claude-code headless runs once showed quota rate-limiting / silent hangs (2026-05-18) — watch `briefing_*.log`, and switch to the codex-cli block if it recurs.
-
-To switch to API mode later: set `ANTHROPIC_API_KEY` in `.env`, run `uv sync --extra api`, then edit the crontab via `crontab -e` and replace `--mode claude-code` with `--mode api` on the daily_briefing lines.
+- The nvm-managed Node directory in `PATH` exposes the authenticated `codex` binary to cron.
+- `CODEX_MODEL` can override the default model when account availability requires it.
+- `scheduler/codex_runner.py` supplies a 15-minute subprocess timeout, closed stdin, captured stderr, and an explicit workspace-write network grant.
+- There is no scheduled Claude CLI or Anthropic API fallback.
 
 ## Logs
 
@@ -67,7 +66,7 @@ To disable Telegram per-job, comment the `TELEGRAM_BOT_TOKEN` line in `.env` (th
 ```
 # ============================================================
 # Stock Expectation — Scheduled Tasks
-# Installed by Claude Code session on 2026-05-11.
+# Codex-only LLM execution since 2026-07-17.
 # All times in KST (Asia/Seoul). See cron_setting.md for details.
 # ============================================================
 
@@ -79,13 +78,13 @@ PROJECT=/home/cwh/projects/stock-expectation
 LOG_DIR=/home/cwh/logs/stock-expectation
 
 # KR market briefing — weekdays 07:00 KST (before KR market opens 09:00)
-0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode claude-code >> $LOG_DIR/briefing_kr.log 2>&1
+0 7 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market KR --mode codex-cli >> $LOG_DIR/briefing_kr.log 2>&1
 
 # US market briefing — weekdays 21:00 KST (US pre-market opens 22:00 KST)
-0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 21 * * 1-5 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # US market mid-session briefing — 00:00 KST Tue-Sat
-0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode claude-code >> $LOG_DIR/briefing_us.log 2>&1
+0 0 * * 2-6 cd $PROJECT && uv run python scheduler/daily_briefing.py --market US --mode codex-cli >> $LOG_DIR/briefing_us.log 2>&1
 
 # Outcome tracker — every day 06:00 KST (judges previous day's closes)
 0 6 * * * cd $PROJECT && uv run python scheduler/outcome_tracker.py >> $LOG_DIR/outcome_tracker.log 2>&1

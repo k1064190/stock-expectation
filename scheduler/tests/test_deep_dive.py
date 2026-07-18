@@ -1,4 +1,4 @@
-"""Tests for the per-stock claude -p deep-dive fan-out (accuracy stage 5)."""
+"""Tests for the per-stock Codex deep-dive fan-out (accuracy stage 5)."""
 
 import json
 import sys
@@ -126,7 +126,7 @@ def test_run_deep_dives_fan_out_and_fail_open(monkeypatch):
         calls.append("BAD")
         return "sorry, I cannot help with that"
 
-    monkeypatch.setattr(dd, "_call_claude", fake_call)
+    monkeypatch.setattr(dd, "_call_codex", fake_call)
 
     cands = [_Cand("GOOD"), _Cand("SLOW"), _Cand("BAD")]
     news = {"GOOD": [], "SLOW": [], "BAD": []}
@@ -146,7 +146,7 @@ def test_run_deep_dives_cap(monkeypatch):
                 seen.append(t)
         return "```json\n" + json.dumps(_valid_payload(ticker="X")) + "\n```"
 
-    monkeypatch.setattr(dd, "_call_claude", fake_call)
+    monkeypatch.setattr(dd, "_call_codex", fake_call)
 
     cands = [_Cand(f"T{i}") for i in range(4)]
     dd.run_deep_dives(cands, {}, cap=2, parallelism=1, timeout=5)

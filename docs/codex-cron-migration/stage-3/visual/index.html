@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stock-expectation / codex-cron-migration — Stage 3</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f7f7f5;
+      --surface: #fffefb;
+      --border: #deded8;
+      --text: #252927;
+      --muted: #6b726f;
+      --accent: #176b68;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+        "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .page-shell {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: clamp(1.45rem, 4vw, 2rem);
+      line-height: 1.25;
+      letter-spacing: -0.025em;
+    }
+
+    .subtitle,
+    .language-switcher .current,
+    .stage-summary {
+      color: var(--muted);
+    }
+
+    .subtitle {
+      margin-bottom: 0;
+    }
+
+    .language-switcher {
+      flex: 0 0 auto;
+      padding-top: 5px;
+      white-space: nowrap;
+      font-size: 0.94rem;
+    }
+
+    .language-switcher a {
+      color: var(--accent);
+      font-weight: 650;
+      text-underline-offset: 3px;
+    }
+
+    .language-switcher .separator {
+      margin: 0 8px;
+      color: var(--border);
+    }
+
+    .timeline {
+      padding: 36px 0 42px;
+    }
+
+    .timeline ol {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      max-width: 520px;
+      margin: 0;
+      margin-inline: auto;
+      padding: 0;
+      list-style: none;
+    }
+
+    .timeline ol::before {
+      position: absolute;
+      top: 16px;
+      right: 16.6667%;
+      left: 16.6667%;
+      height: 2px;
+      background: var(--border);
+      content: "";
+    }
+
+    .timeline li {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      min-width: 120px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .timeline-node {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: var(--background);
+      color: var(--accent);
+    }
+
+    .timeline .current {
+      color: var(--accent);
+    }
+
+    .timeline .current .timeline-node {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .timeline .earlier .timeline-node {
+      border-color: var(--muted);
+      background: var(--muted);
+      color: #ffffff;
+    }
+
+    .stage-heading {
+      margin-bottom: 24px;
+    }
+
+    .stage-heading h2 {
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 1.5rem;
+      line-height: 1.3;
+    }
+
+    .stage-summary {
+      max-width: 760px;
+      margin-bottom: 0;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    article {
+      grid-column: 1 / -1;
+      padding: 30px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    article h3 {
+      margin-bottom: 26px;
+      font-size: 1.3rem;
+      line-height: 1.3;
+    }
+
+    .content-block + .content-block {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid #ecece7;
+    }
+
+    .content-block h4 {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .content-block p,
+    .content-block ul {
+      margin-bottom: 0;
+    }
+
+    ul {
+      padding-left: 1.3rem;
+    }
+
+    li + li {
+      margin-top: 5px;
+    }
+
+    code {
+      color: #33413e;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9em;
+    }
+
+    .code-locations {
+      columns: 2;
+      column-gap: 32px;
+    }
+
+    .code-locations li {
+      break-inside: avoid;
+    }
+
+    .retrospective {
+      color: #4d5552;
+    }
+
+    @media (max-width: 720px) {
+      .page-shell {
+        width: min(100% - 28px, 1080px);
+        padding-top: 30px;
+      }
+
+      header {
+        gap: 20px;
+      }
+
+      .timeline li {
+        min-width: 0;
+      }
+
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      article {
+        grid-column: auto;
+        padding: 22px;
+      }
+
+      .code-locations {
+        columns: 1;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+      }
+
+      .language-switcher {
+        padding-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header>
+      <div>
+        <h1>stock-expectation / codex-cron-migration</h1>
+        <p class="subtitle">Staged plan progress</p>
+      </div>
+      <nav class="language-switcher" aria-label="Language">
+        <span class="current">EN</span><span class="separator">|</span><a href="index.ko.html" lang="ko">한국어</a>
+      </nav>
+    </header>
+
+    <nav class="timeline" aria-label="Stage progress">
+      <ol>
+        <li class="earlier">
+          <span class="timeline-node">1</span>
+          <span>Stage 1</span>
+        </li>
+        <li class="earlier">
+          <span class="timeline-node">2</span>
+          <span>Stage 2</span>
+        </li>
+        <li class="current" aria-current="step">
+          <span class="timeline-node">3</span>
+          <span>Stage 3</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section aria-labelledby="stage-3-heading">
+        <div class="stage-heading">
+          <h2 id="stage-3-heading">Stage 3</h2>
+          <p class="stage-summary">A backed-up and validated Codex-only crontab candidate is ready, with installation gated on reviewed deployment.</p>
+        </div>
+
+        <div class="card-grid">
+          <article aria-labelledby="live-crontab-candidate-title">
+            <h3 id="live-crontab-candidate-title">Live Crontab Candidate</h3>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-why">
+              <h4 id="live-crontab-candidate-why">Why</h4>
+              <p>The installed crontab still contains active Claude briefing commands, obsolete Claude/API fallback blocks, an implicit Claude gold default, and an implicit discount collector default. Installing replacements before the feature branches are deployed would break the gold and discount jobs.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-what">
+              <h4 id="live-crontab-candidate-what">What</h4>
+              <ul>
+                <li>Backed up the 128-line live crontab before transformation and persisted both rollback and candidate files with mode <code>600</code>.</li>
+                <li>Rendered a candidate with all three daily briefings set to <code>codex-cli</code>.</li>
+                <li>Removed commented Claude and Anthropic API fallback blocks.</li>
+                <li>Made gold use <code>--llm-mode codex-cli</code> and discount deals use <code>DEALS_COLLECTORS=codex</code> explicitly.</li>
+                <li>Preserved all 12 active schedules, including the unrelated Gemini video pipeline and pure-Python jobs.</li>
+                <li>Deferred installation until both repository changes are reviewed and deployed.</li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-how">
+              <h4 id="live-crontab-candidate-how">How</h4>
+              <p>The persistent backup is <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code> (<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>) and the candidate is <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code> (<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>). <code>crontab -n</code> accepted the candidate. It contains no Claude/Anthropic/API-mode text, and the non-target active-command hash is identical in backup and candidate (<code>e61a6295e9ae3e7411bd9fc1d61a824cda276d54250275a03039abd5328fd64f</code>).</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-code">
+              <h4 id="live-crontab-candidate-code">Code locations</h4>
+              <ul class="code-locations">
+                <li><code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code></li>
+                <li><code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code></li>
+                <li><code>scheduler/crontab.example</code></li>
+                <li><code>scheduler/codex_runner.py</code></li>
+                <li><code>src/discount_please/deals/collectors/codex.py</code></li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="live-crontab-candidate-retrospective">
+              <h4 id="live-crontab-candidate-retrospective">Retrospective</h4>
+              <p class="retrospective"><em>Separating render/validation from installation prevents a mixed-version cron failure. Antigravity's valid persistence finding moved the rollback/candidate files out of <code>/tmp</code>; its summary-index finding was dismissed because the Stage 3 summary entry already existed outside the initially scoped diff. Its final re-review was clean. Doctor Cho waived Claude review, and live installation remains gated on reviewed deployment.</em></p>
+            </section>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,19 +1,8 @@
 """Daily briefing generator.
 
-Three modes of operation:
-  --mode codex-cli (default): Invokes `codex exec` CLI. Uses ChatGPT Plus
-      credit, no API key needed. Codex reads .claude/skills/ markdown
-      files as context and runs `bin/stock-cli` via Bash to fetch data
-      and log predictions. Switched to default on 2026-05-18 after the
-      Anthropic headless subscription quota started silently throttling
-      claude-code cron runs (see docs/stage-9/codex-cli-mode.md).
-  --mode claude-code: Invokes `claude -p` CLI. Uses Claude Code
-      subscription, no API key needed. Same prompt path as codex-cli.
-      Subject to Anthropic headless-subscription throttling as of
-      2026-05; kept as a fallback for when codex-cli has its own issues.
-  --mode api: Calls Anthropic API directly. Requires ANTHROPIC_API_KEY.
-      Data is pre-fetched by this script and injected into the prompt.
-      Predictions are returned as JSON, parsed, and logged by this script.
+Scheduled briefings invoke ``codex exec`` in non-interactive mode. Codex reads
+the existing ``.claude/skills/`` markdown as context and runs
+``bin/stock-cli`` via Bash to fetch data and log predictions.
 
 Run twice daily:
     07:00 KST — Korean market briefing (before KR open)
@@ -22,7 +11,6 @@ Run twice daily:
 Usage:
     uv run python scheduler/daily_briefing.py --market KR
     uv run python scheduler/daily_briefing.py --market US --mode codex-cli
-    uv run python scheduler/daily_briefing.py --market US --mode api
     uv run python scheduler/daily_briefing.py --market ALL
 """
 
@@ -31,8 +19,6 @@ import json
 import logging
 import os
 import re
-import shutil
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,7 +29,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-prediction-store"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp-market-data"))
 
-# Auto-load .env for ANTHROPIC_API_KEY / FMP_API_KEY / Telegram credentials.
+# Auto-load .env for market-data and Telegram credentials.
 try:
     from dotenv import load_dotenv
 
@@ -68,6 +54,7 @@ from providers.us import USMarketProvider
 from providers.kr import KoreanMarketProvider
 from indicators import compute_horizon_metrics
 from telegram_sender import send_briefing
+from codex_runner import run_codex
 from blended_funnel import (
     assemble_blended_candidates,
     format_blended_for_prompt,
@@ -420,7 +407,7 @@ def get_portfolio_context(market: str) -> str:
     Why this lives in Python (not in SKILL.md instructions): a previous
     KR briefing emitted "보유 종목 없음 — 본 task 범위 밖이라 미조회"
     even though 5 KR + 11 US positions existed in the local DB. The
-    claude -p run treated portfolio fetch as optional and skipped it.
+    A prior CLI run treated portfolio fetch as optional and skipped it.
     Putting the data directly in the prompt makes it impossible to ignore.
 
     Steps:
@@ -519,7 +506,7 @@ def get_portfolio_context(market: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Claude Code CLI mode
+# Codex CLI prompt builder
 # ---------------------------------------------------------------------------
 
 
@@ -574,26 +561,19 @@ def _deep_dive_block(picks, news_by_ticker, market, enabled, cap) -> str:
         return ""
 
 
-def build_claude_code_prompt(
+def build_agent_prompt(
     market: str, deep_dive_enabled: bool = False, deep_dive_cap: int = 6
 ) -> str:
-    """Build the briefing prompt for the LLM CLI subprocess.
+    """Build the briefing prompt for the Codex CLI subprocess.
 
-    Originally named for Claude Code; now also fed to Codex CLI (--mode
-    codex-cli) and shared between both routes because the prompt body is
-    LLM-agnostic — it references `.claude/skills/` markdown files and
-    `bin/stock-cli` shell commands that either CLI can follow. Kept under
-    the same name to avoid touching callers.
-
-    In this mode, Claude Code invokes `bin/stock-cli` via Bash to fetch data
-    and log predictions. The daily-briefing skill is also auto-loaded from
-    `.claude/skills/`, so Claude will follow that workflow.
+    Codex receives explicit pointers to the existing ``.claude/skills/``
+    markdown and uses ``bin/stock-cli`` for data access and prediction logging.
 
     Args:
         market: "US" or "KR".
 
     Returns:
-        Prompt string for `claude -p`.
+        Prompt string for ``codex exec``.
     """
     track_record = get_track_record_context()
     portfolio_context = get_portfolio_context(market)
@@ -778,190 +758,11 @@ last thing you emit is the full markdown briefing, beginning with
 every section to the Predictions Logged table."""
 
 
-def call_claude_code(prompt: str) -> str:
-    """Invoke `claude -p` CLI in non-interactive mode.
-
-    Claude Code runs inside the project directory where `.claude/skills/`
-    is auto-loaded, and uses `bin/stock-cli` via Bash to fetch data and
-    log predictions.
-
-    Args:
-        prompt: The prompt to send to Claude Code.
-
-    Returns:
-        Claude Code's response text.
-
-    Raises:
-        RuntimeError: If claude CLI is not found or returns an error.
-    """
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        raise RuntimeError(
-            "claude CLI not found. Install Claude Code or use --mode api"
-        )
-
-    result = subprocess.run(
-        [
-            claude_path,
-            "-p",
-            prompt,
-            "--output-format",
-            "text",
-        ],
-        capture_output=True,
-        text=True,
-        # 15 min ceiling. KR briefing typically runs 3-5 min; US can run
-        # 5-8 min when the portfolio review section is exercised against
-        # 10+ positions (each needs a current-price fetch + P&L calc +
-        # recommendation), and the 2026-05-12 21:00 cron firing hit
-        # the previous 300s ceiling. 900s keeps headroom while still
-        # bounding the worst case.
-        timeout=900,
-        cwd=str(PROJECT_ROOT),
-    )
-
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"claude CLI failed (exit {result.returncode}): {result.stderr[:500]}"
-        )
-
-    return result.stdout
-
-
-# ---------------------------------------------------------------------------
-# Codex CLI mode (alternative to claude-code)
-# ---------------------------------------------------------------------------
-
-
-def call_codex_cli(prompt: str) -> str:
-    """Invoke `codex exec` CLI in non-interactive mode.
-
-    Mirrors call_claude_code but routes through OpenAI's Codex CLI instead of
-    Anthropic's Claude Code. Useful when Anthropic's subscription headless
-    quota is exhausted or rate-limited (as observed 2026-05-18 cron run).
-    Codex reads .claude/skills/ markdown files as plain context — it does
-    not "load" them as native skills, but the prompt explicitly references
-    them so Codex follows the instructions inline.
-
-    Workarounds applied:
-    - ``--disable apps``: codex-cli 0.130.0 ships a broken
-      ``_create_map_with_locations`` MCP tool whose schema OpenAI rejects.
-      Disabling the apps feature skips it.
-    - ``--sandbox workspace-write``: required for codex to execute
-      ``bin/stock-cli`` and other bash commands the prompt instructs.
-    - ``--full-auto``: auto-approve tool calls without interactive prompts
-      (we run under cron, no human to approve).
-
-    Args:
-        prompt: The prompt to send to Codex.
-
-    Returns:
-        Codex's final assistant message text (stdout, stderr suppressed
-        to drop reasoning summaries and MCP startup noise).
-
-    Raises:
-        RuntimeError: If codex CLI is not found or returns a non-zero exit.
-    """
-    codex_path = shutil.which("codex")
-    if not codex_path:
-        raise RuntimeError(
-            "codex CLI not found. Install Codex or use --mode claude-code / --mode api"
-        )
-
-    # NOTE(stage-9): `--disable apps` papers over a codex-cli 0.130.0 bundled
-    # MCP tool (`_create_map_with_locations`) whose JSON schema OpenAI rejects.
-    # When codex-cli 0.131+ ships, smoke-test removing this flag and drop it
-    # if the bundled tool schema is fixed upstream. Without this flag every
-    # codex exec call fails with HTTP 400.
-    #
-    # CODEX_MODEL env var override (default gpt-5.5): codex-cli requires a
-    # specific model name and gpt-5.5 is the project's preferred quality tier
-    # (matches codex-subagent skill default). OpenAI's rollout is gradual and
-    # individual accounts may lose/gain access — set CODEX_MODEL=gpt-5.4
-    # (or similar) in the environment to override without touching this file.
-    codex_model = os.environ.get("CODEX_MODEL", "gpt-5.5")
-    result = subprocess.run(
-        [
-            codex_path,
-            "exec",
-            "--skip-git-repo-check",
-            "--disable",
-            "apps",
-            "-m",
-            codex_model,
-            "--config",
-            'model_reasoning_effort="high"',
-            # Explicit network grant: codex's workspace-write sandbox can be
-            # configured (per-host or per-profile) to disable network by
-            # default. bin/stock-cli needs outbound HTTPS (yfinance, Naver
-            # Finance, Telegram delivery, FMP fallback) so we override here
-            # rather than trusting the host default.
-            "--config",
-            "sandbox_workspace_write.network_access=true",
-            "--sandbox",
-            "workspace-write",
-            "--full-auto",
-            "-C",
-            str(PROJECT_ROOT),
-            prompt,
-        ],
-        capture_output=True,
-        text=True,
-        # Same 15 min ceiling as claude-code. Codex generally completes in
-        # 3-6 min for KR/US briefings; the headroom catches occasional
-        # slow tool-call chains without leaving stuck cron processes.
-        timeout=900,
-        cwd=str(PROJECT_ROOT),
-    )
-
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"codex CLI failed (exit {result.returncode}): {result.stderr[:500]}"
-        )
-
-    return result.stdout
-
-
-# ---------------------------------------------------------------------------
-# Anthropic API mode (fallback)
-# ---------------------------------------------------------------------------
-
-
-def call_claude_api(prompt: str) -> str:
-    """Call Anthropic API directly with the briefing prompt.
-
-    Uses Claude Sonnet for cost efficiency. Requires ANTHROPIC_API_KEY.
-    Requires the `api` extra: `uv sync --extra api`.
-
-    Args:
-        prompt: Full prompt with market data and track record injected.
-
-    Returns:
-        Claude's response text.
-    """
-    try:
-        import anthropic
-    except ImportError as e:
-        raise RuntimeError(
-            "--mode api requires the anthropic package. "
-            "Install with: uv sync --extra api"
-        ) from e
-
-    client = anthropic.Anthropic()
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text
-
-
 def build_api_prompt(market: str) -> tuple[str, str]:
-    """Build a self-contained prompt for Anthropic API mode.
+    """Build a self-contained prompt from pre-fetched market data.
 
-    In API mode, Claude has no MCP access, so we pre-fetch all data
-    and inject it into the prompt. Predictions are returned as JSON
-    for the script to parse and log.
+    This legacy helper remains importable for programmatic callers that cannot
+    let an agent fetch data itself; scheduled jobs do not use it.
 
     Args:
         market: "US" or "KR".
@@ -1005,12 +806,12 @@ def build_api_prompt(market: str) -> tuple[str, str]:
 
 
 def parse_predictions(response: str) -> list[dict]:
-    """Extract prediction JSON from Claude's response.
+    """Extract prediction JSON from an LLM response.
 
     Looks for JSON arrays inside ```json code blocks.
 
     Args:
-        response: Full response text from Claude.
+        response: Full LLM response text.
 
     Returns:
         List of prediction dicts parsed from JSON blocks.
@@ -1124,11 +925,11 @@ def _news_item_obj(item):
 def log_predictions(predictions: list[dict], macro_risk_level: str = "NORMAL") -> int:
     """Insert parsed predictions into the database.
 
-    Only used in API mode — in Claude Code mode, predictions are
-    logged directly by Claude via MCP create_prediction calls.
+    Scheduled Codex jobs log predictions directly through ``bin/stock-cli``;
+    this helper remains available to programmatic callers with pre-fetched data.
 
     Args:
-        predictions: List of prediction dicts from Claude's response.
+        predictions: List of prediction dicts from an LLM response.
         macro_risk_level: Assessed macro risk ("NORMAL" / "ELEVATED" /
             "RISK_OFF") from the risk-off switch. RISK_OFF deterministically
             skips LIVE BULL inserts here — the prompt already caps labels at
@@ -1274,57 +1075,30 @@ def run_briefing(
 
     Args:
         market: "US", "KR", or "ALL".
-        mode: "codex-cli" (default, codex CLI), "claude-code" (claude CLI),
-            or "api" (Anthropic API directly).
-        deep_dive: Run an independent `claude -p` deep dive per scanner pick
-            and inject the results into the briefing prompt (stage 5;
-            claude-code/codex-cli modes only — API mode ignores it).
+        mode: ``"codex-cli"``.
+        deep_dive: Run an independent Codex deep dive per scanner pick and
+            inject the results into the briefing prompt (stage 5).
         deep_dive_cap: Max picks dived per market.
     """
+    if mode != "codex-cli":
+        raise ValueError(f"unsupported briefing mode: {mode}")
     markets = ["US", "KR"] if market == "ALL" else [market.upper()]
 
     for mkt in markets:
         logger.info("Generating %s market briefing (mode: %s)", mkt, mode)
 
         try:
-            if mode == "claude-code":
-                prompt = build_claude_code_prompt(
-                    mkt, deep_dive_enabled=deep_dive, deep_dive_cap=deep_dive_cap
+            prompt = build_agent_prompt(
+                mkt, deep_dive_enabled=deep_dive, deep_dive_cap=deep_dive_cap
+            )
+            logger.info("Calling codex CLI for %s briefing", mkt)
+            response = run_codex(prompt)
+            stripped = response.strip()
+            if len(stripped) < 500 or "Daily Market Briefing" not in stripped:
+                raise RuntimeError(
+                    f"codex returned suspiciously short/non-briefing output "
+                    f"({len(stripped)} chars). First 200: {stripped[:200]!r}"
                 )
-                logger.info("Calling claude CLI for %s briefing", mkt)
-                response = call_claude_code(prompt)
-                # In claude-code mode, predictions are logged by Claude via MCP.
-                # No need to parse and log separately.
-            elif mode == "codex-cli":
-                prompt = build_claude_code_prompt(
-                    mkt, deep_dive_enabled=deep_dive, deep_dive_cap=deep_dive_cap
-                )
-                logger.info("Calling codex CLI for %s briefing", mkt)
-                response = call_codex_cli(prompt)
-                # In codex-cli mode, predictions are logged by Codex executing
-                # bin/stock-cli predict create via Bash (same as claude-code).
-                # Guard against silent failure: codex sometimes exits 0 with a
-                # short apology message instead of the briefing. The expected
-                # briefing starts with "# 📊 Daily Market Briefing" and runs
-                # several KB. Anything materially smaller indicates the LLM
-                # never produced the deliverable.
-                stripped = response.strip()
-                if len(stripped) < 500 or "Daily Market Briefing" not in stripped:
-                    raise RuntimeError(
-                        f"codex returned suspiciously short/non-briefing output "
-                        f"({len(stripped)} chars). First 200: {stripped[:200]!r}"
-                    )
-            else:
-                prompt, macro_risk_level = build_api_prompt(mkt)
-                logger.info(
-                    "Calling Anthropic API for %s briefing (%d chars)", mkt, len(prompt)
-                )
-                response = call_claude_api(prompt)
-                # In API mode, parse predictions from response and log manually
-                predictions = parse_predictions(response)
-                logger.info("Parsed %d predictions from response", len(predictions))
-                logged = log_predictions(predictions, macro_risk_level=macro_risk_level)
-                logger.info("Logged %d/%d predictions", logged, len(predictions))
 
         except Exception as e:
             logger.error("Briefing generation failed: %s", e)
@@ -1354,20 +1128,17 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--mode",
-        choices=["claude-code", "codex-cli", "api"],
+        choices=["codex-cli"],
         default="codex-cli",
         help=(
-            "codex-cli (default): uses `codex exec` CLI (ChatGPT Plus credit), no API key needed. "
-            "claude-code: uses `claude -p` CLI; subject to Anthropic headless-subscription throttling "
-            "as of 2026-05 (see docs/stage-9/codex-cli-mode.md). "
-            "api: uses Anthropic API directly, requires ANTHROPIC_API_KEY."
+            "codex-cli: uses `codex exec` with gpt-5.6-sol/high; no API key needed."
         ),
     )
     parser.add_argument(
         "--deep-dive",
         action="store_true",
         help=(
-            "Run an independent `claude -p` deep dive (Bull/Bear/Judge) per "
+            "Run an independent Codex deep dive (Bull/Bear/Judge) per "
             "scanner pick and inject the results into the briefing prompt. "
             "Default off — adds up to ~cap dives x minutes per market."
         ),
