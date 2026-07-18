@@ -15,7 +15,7 @@ The live discount cron still defaulted to a Claude CLI collector, so changing on
 
 ## How
 
-Tests first failed because the Codex collector did not exist. The implementation kept the existing collector structure and changed only the CLI boundary and Claude-specific output handling. Worktree tests explicitly used `PYTHONPATH=src` because the shared micromamba environment's editable install points at the original checkout. Verification passed 260 tests with 1 existing live test skipped, compile/static checks, and a real read-only Codex web-search smoke that returned one parseable document containing 51 deals without writing project state.
+Tests first failed because the Codex collector did not exist. The implementation kept the existing collector structure and changed only the CLI boundary and Claude-specific output handling. Worktree tests explicitly used `PYTHONPATH=src` because the shared micromamba environment's editable install points at the original checkout. Verification passed 262 tests with 1 existing live test skipped, compile/static checks, and a real read-only Codex web-search smoke that returned one parseable document containing 51 deals without writing project state.
 
 ## Code locations
 
@@ -34,4 +34,4 @@ Tests first failed because the Codex collector did not exist. The implementation
 
 ## Retrospective
 
-The real smoke test confirmed that native Codex search preserves the structured collector contract. Antigravity's valid configuration-flow finding was fixed; approval, TOML, prompt, legacy-env, and PATH findings were dismissed with CLI smoke/help and live deployment evidence. Its final re-review was clean. Doctor Cho waived Claude review for this migration.
+The real smoke test confirmed that native Codex search preserves the structured collector contract. Antigravity's valid configuration-flow finding was fixed; approval, TOML, prompt, legacy-env, and PATH findings were dismissed with CLI smoke/help and live deployment evidence. Its final re-review was clean, and the Codex PR review found no major issues. Gemini's duplicate-failure-log and timeout-traceback findings were fixed with regression tests. Doctor Cho waived Claude review for this migration.
