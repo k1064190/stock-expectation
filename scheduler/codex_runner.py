@@ -46,7 +46,7 @@ def run_codex(
         "--disable",
         "apps",
         "-m",
-        os.environ.get("CODEX_MODEL", CODEX_MODEL),
+        os.environ.get("CODEX_MODEL") or CODEX_MODEL,
         "--config",
         f'model_reasoning_effort="{CODEX_REASONING_EFFORT}"',
     ]

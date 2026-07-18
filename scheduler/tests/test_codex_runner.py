@@ -93,6 +93,24 @@ def test_run_codex_respects_model_override(monkeypatch, tmp_path):
     assert captured["command"][model_index] == "gpt-account-fallback"
 
 
+def test_run_codex_ignores_empty_model_override(monkeypatch, tmp_path):
+    runner = _runner_module()
+    captured = {}
+
+    monkeypatch.setenv("CODEX_MODEL", "")
+    monkeypatch.setattr(runner.shutil, "which", lambda name: "/usr/bin/codex")
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return SimpleNamespace(returncode=0, stdout="summary", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    assert runner.run_codex("PROMPT", cwd=tmp_path) == "summary"
+    model_index = captured["command"].index("-m") + 1
+    assert captured["command"][model_index] == runner.CODEX_MODEL
+
+
 def test_run_codex_reports_missing_binary_and_cli_errors(monkeypatch, tmp_path):
     runner = _runner_module()
     monkeypatch.setattr(runner.shutil, "which", lambda name: None)
