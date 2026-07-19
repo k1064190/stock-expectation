@@ -207,6 +207,10 @@
       margin-bottom: 0;
     }
 
+    .content-block p + p {
+      margin-top: 12px;
+    }
+
     ul {
       padding-left: 1.3rem;
     }
@@ -306,16 +310,16 @@
       <section aria-labelledby="stage-3-heading">
         <div class="stage-heading">
           <h2 id="stage-3-heading">Stage 3</h2>
-          <p class="stage-summary">A backed-up and validated Codex-only crontab candidate is ready, with installation gated on reviewed deployment.</p>
+          <p class="stage-summary">Deployed and verified: the Codex-only crontab preserves all 12 active schedules and a tested rollback point.</p>
         </div>
 
         <div class="card-grid">
           <article aria-labelledby="live-crontab-candidate-title">
-            <h3 id="live-crontab-candidate-title">Live Crontab Candidate</h3>
+            <h3 id="live-crontab-candidate-title">Live Crontab Deployment</h3>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-why">
               <h4 id="live-crontab-candidate-why">Why</h4>
-              <p>The installed crontab still contains active Claude briefing commands, obsolete Claude/API fallback blocks, an implicit Claude gold default, and an implicit discount collector default. Installing replacements before the feature branches are deployed would break the gold and discount jobs.</p>
+              <p>The live crontab needed to move to Codex only after both repository implementations were reviewed, merged, and deployed, while retaining every unrelated schedule and a verified rollback point.</p>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-what">
@@ -326,13 +330,16 @@
                 <li>Removed commented Claude and Anthropic API fallback blocks.</li>
                 <li>Made gold use <code>--llm-mode codex-cli</code> and discount deals use <code>DEALS_COLLECTORS=codex</code> explicitly.</li>
                 <li>Preserved all 12 active schedules, including the unrelated Gemini video pipeline and pure-Python jobs.</li>
-                <li>Deferred installation until both repository changes are reviewed and deployed.</li>
+                <li>Merged and deployed stock commit <code>bb4c6186a7d9bcef045aade1810e5776e80605c3</code> and discount commit <code>17671c3b0b0132183b5d135f46a7c6c9f2864b41</code>.</li>
+                <li>Installed the candidate on 2026-07-20 KST after confirming the live crontab still matched the backup byte for byte.</li>
+                <li>Verified the installed crontab exactly matches the candidate, retains 12 active jobs, and contains no Claude, Anthropic, or <code>--mode api</code> references.</li>
               </ul>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-how">
               <h4 id="live-crontab-candidate-how">How</h4>
-              <p>The persistent backup is <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code> (<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>) and the candidate is <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code> (<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>). <code>crontab -n</code> accepted the candidate. It contains no Claude/Anthropic/API-mode text, and the non-target active-command hash is identical in backup and candidate (<code>e61a6295e9ae3e7411bd9fc1d61a824cda276d54250275a03039abd5328fd64f</code>).</p>
+              <p>The persistent backup is <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code> (<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>) and the installed candidate is <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code> (<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>). <code>crontab -n</code> accepted the candidate immediately before installation. A fresh <code>crontab -l</code> after installation produced the candidate's exact SHA-256 and showed three Codex daily briefings, one Codex gold job, and one explicit Codex discount job. Rollback remains <code>crontab /home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code>.</p>
+              <p>The deployed stock checkout passed <code>960</code> offline tests with <code>27</code> network tests deselected; the deployed discount checkout passed <code>263</code> tests with one credential-dependent test skipped. Both local base branches matched their remotes after deployment, and pre-existing user changes remained intact.</p>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-code">
@@ -348,7 +355,7 @@
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-retrospective">
               <h4 id="live-crontab-candidate-retrospective">Retrospective</h4>
-              <p class="retrospective"><em>Separating render/validation from installation prevents a mixed-version cron failure. Antigravity's valid persistence finding moved the rollback/candidate files out of <code>/tmp</code>; its summary-index finding was dismissed because the Stage 3 summary entry already existed outside the initially scoped diff. Its final re-review was clean. Doctor Cho waived Claude review, and live installation remains gated on reviewed deployment.</em></p>
+              <p class="retrospective"><em>Separating render/validation from installation prevented a mixed-version cron failure. Antigravity's valid persistence finding moved the rollback/candidate files out of <code>/tmp</code>; its summary-index finding was dismissed because the Stage 3 summary entry already existed outside the initially scoped diff. Its final candidate re-review was clean. Doctor Cho waived Claude review. The reviewed repository deployments and exact post-install hash check closed the live-installation gate successfully. Post-deployment documentation self-review found and fixed a stale Candidate card title; Antigravity's final exact-diff review was clean.</em></p>
             </section>
           </article>
         </div>
