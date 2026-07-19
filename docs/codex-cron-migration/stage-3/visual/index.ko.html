@@ -207,6 +207,10 @@
       margin-bottom: 0;
     }
 
+    .content-block p + p {
+      margin-top: 12px;
+    }
+
     ul {
       padding-left: 1.3rem;
     }
@@ -306,16 +310,16 @@
       <section aria-labelledby="stage-3-heading">
         <div class="stage-heading">
           <h2 id="stage-3-heading">3단계</h2>
-          <p class="stage-summary">백업과 검증을 마친 Codex 전용 crontab 후보가 준비되었으며, 설치는 검토된 배포 이후로 제한됩니다.</p>
+          <p class="stage-summary">배포 및 검증 완료: Codex 전용 crontab은 활성 일정 12개와 검증된 롤백 지점을 모두 유지합니다.</p>
         </div>
 
         <div class="card-grid">
           <article aria-labelledby="live-crontab-candidate-title">
-            <h3 id="live-crontab-candidate-title">Live Crontab Candidate</h3>
+            <h3 id="live-crontab-candidate-title">실제 Crontab 배포</h3>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-why">
               <h4 id="live-crontab-candidate-why">왜</h4>
-              <p>설치된 crontab에는 여전히 활성 Claude 브리핑 명령, 더 이상 필요하지 않은 Claude/API 대체 블록, 암묵적인 Claude 금 작업 기본값, 암묵적인 할인 수집기 기본값이 남아 있습니다. 기능 브랜치가 배포되기 전에 대체 항목을 설치하면 금 및 할인 작업이 중단됩니다.</p>
+              <p>실제 crontab은 두 저장소 구현을 모두 검토, 병합, 배포한 뒤에만 Codex 전용으로 전환해야 했으며, 관련 없는 모든 일정과 검증된 롤백 지점을 유지해야 했습니다.</p>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-what">
@@ -326,13 +330,16 @@
                 <li>주석 처리된 Claude 및 Anthropic API 대체 블록을 제거했습니다.</li>
                 <li>금 작업은 <code>--llm-mode codex-cli</code>를, 할인 정보 작업은 <code>DEALS_COLLECTORS=codex</code>를 명시적으로 사용하도록 했습니다.</li>
                 <li>관련 없는 Gemini 비디오 파이프라인과 pure-Python 작업을 포함해 활성 일정 12개를 모두 유지했습니다.</li>
-                <li>두 저장소 변경 사항이 모두 검토되고 배포될 때까지 설치를 연기했습니다.</li>
+                <li>주식 커밋 <code>bb4c6186a7d9bcef045aade1810e5776e80605c3</code>과 할인 커밋 <code>17671c3b0b0132183b5d135f46a7c6c9f2864b41</code>을 병합하고 배포했습니다.</li>
+                <li>실제 crontab이 여전히 백업과 바이트 단위로 일치함을 확인한 뒤 2026-07-20 KST에 후보를 설치했습니다.</li>
+                <li>설치된 crontab이 후보와 정확히 일치하고 활성 작업 12개를 유지하며 Claude, Anthropic 또는 <code>--mode api</code> 참조가 없음을 검증했습니다.</li>
               </ul>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-how">
               <h4 id="live-crontab-candidate-how">어떻게</h4>
-              <p>영구 백업은 <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code>(<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>)이고 후보는 <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code>(<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>)입니다. 후보는 <code>crontab -n</code> 검사를 통과했습니다. 후보에는 Claude/Anthropic/API-mode 텍스트가 없으며, 비대상 활성 명령 해시는 백업과 후보에서 동일합니다(<code>e61a6295e9ae3e7411bd9fc1d61a824cda276d54250275a03039abd5328fd64f</code>).</p>
+              <p>영구 백업은 <code>/home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code>(<code>sha256: 1e57a283097abffb4bfe04e286bbbd9c93abf93764c044077bc3708e1a888bb3</code>)이고 설치된 후보는 <code>/home/cwh/.local/state/codex-cron-migration/crontab.codex-candidate</code>(<code>sha256: 9f842e8ae82d1ab7f684fff19ec9e9b063b34e97974753de7db2e82c546435db</code>)입니다. 설치 직전에 후보가 <code>crontab -n</code> 검사를 통과했습니다. 설치 후 새로 실행한 <code>crontab -l</code>은 후보의 정확한 SHA-256 해시를 산출했으며 Codex 일일 브리핑 3개, Codex 금 작업 1개, 명시적인 Codex 할인 작업 1개를 보여 주었습니다. 롤백 명령은 <code>crontab /home/cwh/.local/state/codex-cron-migration/crontab.pre-codex-20260719</code>입니다.</p>
+              <p>배포된 주식 체크아웃은 네트워크 테스트 <code>27</code>개를 제외하고 오프라인 테스트 <code>960</code>개를 통과했으며, 배포된 할인 체크아웃은 자격 증명 의존 테스트 1개를 건너뛰고 테스트 <code>263</code>개를 통과했습니다. 배포 후 두 로컬 기본 브랜치는 각각 원격 브랜치와 일치했으며, 기존 사용자 변경 사항은 그대로 유지되었습니다.</p>
             </section>
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-code">
@@ -348,7 +355,7 @@
 
             <section class="content-block" aria-labelledby="live-crontab-candidate-retrospective">
               <h4 id="live-crontab-candidate-retrospective">회고</h4>
-              <p class="retrospective"><em>렌더링/검증과 설치를 분리하면 서로 다른 버전이 섞여 발생하는 Cron 실패를 방지할 수 있습니다. Antigravity가 제기한 유효한 영속성 지적에 따라 롤백/후보 파일을 <code>/tmp</code> 밖으로 옮겼습니다. 요약 인덱스 지적은 3단계 요약 항목이 처음 범위로 지정된 diff 밖에 이미 존재했으므로 기각했습니다. 최종 재검토에서는 지적 사항이 없었습니다. Doctor Cho는 Claude 검토를 면제했으며, 실제 설치는 검토된 배포 이후로 계속 제한됩니다.</em></p>
+              <p class="retrospective"><em>렌더링/검증과 설치를 분리해 서로 다른 버전이 섞여 발생하는 Cron 실패를 방지했습니다. Antigravity가 제기한 유효한 영속성 지적에 따라 롤백/후보 파일을 <code>/tmp</code> 밖으로 옮겼습니다. 요약 인덱스 지적은 3단계 요약 항목이 처음 범위로 지정된 diff 밖에 이미 존재했으므로 기각했습니다. 최종 후보 재검토에서는 지적 사항이 없었습니다. Doctor Cho는 Claude 검토를 면제했습니다. 검토된 저장소 배포와 정확한 설치 후 해시 검사로 실제 설치 관문을 성공적으로 닫았습니다. 배포 후 문서 자체 검토에서 오래된 Candidate 카드 제목을 찾아 수정했으며, Antigravity의 최종 exact-diff 검토에서는 지적 사항이 없었습니다.</em></p>
             </section>
           </article>
         </div>

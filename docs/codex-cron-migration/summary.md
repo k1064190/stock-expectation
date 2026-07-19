@@ -8,6 +8,6 @@
 
 - [discount-collector](stage-2/discount-collector.md) — Replaced the default Claude deals collector with a tested Codex search collector.
 
-## Stage 3 — Live crontab candidate is validated and deployment-gated
+## Stage 3 — Live crontab is migrated and verified
 
-- [live-crontab-candidate](stage-3/live-crontab-candidate.md) — Preserved every active schedule while rendering a Codex-only candidate for post-deployment installation.
+- [live-crontab-candidate](stage-3/live-crontab-candidate.md) — Deployed the validated Codex-only crontab with every active schedule preserved and a verified rollback point.
