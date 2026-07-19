@@ -31,9 +31,6 @@ uv sync
 # Include dev dependencies (pytest)
 uv sync --extra dev
 
-# Include Anthropic API deps (only for --mode api)
-uv sync --extra api
-
 # Include skill script dependencies (jsonschema, pyyaml, scipy)
 uv sync --extra skills
 
@@ -101,27 +98,17 @@ uv run pytest -m "not network"   # fast unit tests only
 uv run pytest                     # includes network tests (hits real APIs)
 ```
 
-## Scheduler — Two Modes
+## Scheduler — Codex CLI
 
-### Claude Code mode (default, no API cost)
-
-Uses `claude -p` CLI. Claude Code uses `bin/stock-cli` via Bash to fetch data
-and log predictions. Reads skills from `.claude/skills/` automatically.
+Scheduled LLM jobs use the shared `scheduler/codex_runner.py`, which invokes
+`codex exec` with high reasoning effort and defaults to `gpt-5.6-sol`.
+`CODEX_MODEL` can override that default for account availability. Codex uses
+`bin/stock-cli` via Bash to fetch data and log predictions.
 
 ```bash
 uv run python scheduler/daily_briefing.py --market US
 uv run python scheduler/daily_briefing.py --market KR
 uv run python scheduler/daily_briefing.py --market ALL
-```
-
-### Anthropic API mode (fallback)
-
-Calls API directly. Pre-fetches data and injects into prompt. Predictions
-returned as JSON, parsed and logged by the script. Requires `ANTHROPIC_API_KEY`
-and `uv sync --extra api`.
-
-```bash
-uv run python scheduler/daily_briefing.py --market US --mode api
 ```
 
 ### Outcome tracker (no LLM needed)
@@ -145,7 +132,7 @@ uv run python scheduler/gold_trend.py --llm-mode none --no-telegram   # dry run
 ### Monthly ISA briefing (Stage 29)
 
 Snapshots the ISA book's NAV (vs ^GSPC/^KS11 benchmarks), then dispatches the
-`/isa-briefing` skill via claude-code/codex-cli and delivers over Telegram.
+`/isa-briefing` skill via Codex and delivers over Telegram.
 The contribution amount is always explicit — never defaulted.
 
 ```bash
@@ -174,7 +161,6 @@ crontab scheduler/crontab.example
 - **(no key needed)** Global macro/geopolitical news — `stock-cli macro-news` fetches market-moving world news (wars, oil, central banks, tariffs) from wire-service RSS (BBC/CNBC/Yonhap) with a GDELT fallback; no API key. GDELT is rate-limited per-IP (1 req/5s) so RSS is the primary; wired into the daily briefing's macro-context block.
 - `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — for Telegram delivery
 - `TOSS_CLIENT_ID` + `TOSS_CLIENT_SECRET` — 토스증권 공식 Open API (OAuth2) for `portfolio sync`. Issued in the Toss Securities app (더보기 → Open API). When set, `portfolio sync` uses the official API; otherwise it falls back to the legacy `tossctl` CLI. Optional `TOSS_OPENAPI_BASE_URL` overrides the default base URL.
-- `ANTHROPIC_API_KEY` — only needed with `--mode api`
 
 ## Skills
 
@@ -203,3 +189,30 @@ Scripts that call FMP/FINVIZ APIs can still be run standalone (US only):
 ```bash
 uv run python .claude/skills/{skill}/scripts/{script}.py --api-key $FMP_API_KEY
 ```
+
+# Failure Log
+
+- [2026-07-17] Baseline test setup initially failed because the selected micromamba environment lacked the locked PyYAML dependency; the replacement uv-managed environment then lacked the dev extra, resolved with `uv sync --extra dev`.
+- [2026-07-17] The full live-network baseline had 1 failure because the KR fundamentals provider returned Samsung Electronics with both P/E and P/B as null; the unrelated offline baseline passed 949 tests.
+- [2026-07-17] The first Stage 1 diff secret-scan command did not run because mixed shell quoting left an unmatched double quote; no data was sent, and the retry used quote-free fixed secret prefixes plus assignment-name checks.
+- [2026-07-17] The first Stage 1 external-review calls produced no review: Claude CLI could not refresh its expired OAuth session, while Antigravity's `@patch` inclusion requested a headless command permission and was auto-denied. The retry path uses an inline patch for Antigravity and audits available Claude credential variable names without reading values.
+- [2026-07-17] The new model-override regression test failed as intended because the first shared-runner implementation hardcoded `gpt-5.6-sol`; the implementation was updated to preserve the existing `CODEX_MODEL` environment override.
+- [2026-07-19] A Stage 2 inspection command exited 2 after including nonexistent `README.template.md`; the repository uses `src/discount_please/templates/index.md.j2` as the generated README source, and subsequent inspection targeted that file.
+- [2026-07-19] The Stage 2 RED test collection failed as intended because `discount_please.deals.collectors.codex` did not exist before the Claude collector was migrated.
+- [2026-07-19] The first Stage 2 GREEN run still imported the original checkout because the selected micromamba environment's editable `.pth` points to `/home/cwh/projects/discount_please/src`; evidence showed `PYTHONPATH=src` imports the worktree correctly, so all worktree verification now sets it explicitly without mutating the shared environment.
+- [2026-07-19] The first full Stage 2 regression run had 1 failure because an existing prompt test still required Claude's `WebFetch` tool name; the migration intentionally uses Codex's native web-search wording, so the assertion was updated to the equivalent generic official-page-open contract.
+- [2026-07-19] Stage 2 reviewer-fix RED tests failed as intended because `CODEX_MODEL` was still read directly inside the collector and `DealsConfig` had no `codex_model`; the setting was moved into the existing config flow.
+- [2026-07-19] The first Stage 2 re-review secret scan stopped on a false positive: the generic assignment regex treated `os.environ.get(...)` after `GEMINI_API_KEY` as a literal credential. No patch was sent; the retry retained concrete credential/private-key/Bearer checks and separately inspected added credential-name lines.
+- [2026-07-19] The first combined pre-commit static-check command did not run because a regex containing mixed quote characters broke shell parsing; tests were unaffected, and the retry used separate quote-free fixed patterns.
+- [2026-07-19] The second pre-commit static scan matched the regression tests' intentional forbidden-pattern fixtures rather than production code; the final scan excluded `scheduler/tests/**`.
+- [2026-07-19] The final full live-network retry reproduced the baseline provider issue: 977 tests passed and 7 skipped, but Samsung fundamentals still returned both P/E and P/B as null. The migration's offline suite and live Codex smoke checks pass; the unrelated external-provider defect was not changed.
+- [2026-07-19] Updating the two same-repository draft PRs initially returned GitHub 422 because `maintainer_can_modify` is only valid for cross-repository PRs; retrying the metadata-only update without that field succeeded.
+- [2026-07-19] The Codex-review regression test failed as intended because `cron_setting.md` still recommended the removed `--mode api` recovery path; the runbook now documents only Codex re-authentication and `CODEX_MODEL` recovery.
+- [2026-07-19] The first refreshed-dashboard verification stopped because it searched for uppercase `<!DOCTYPE html>` while the valid document uses lowercase `<!doctype html>`; the case-insensitive retry verified the file and its review-update content.
+- [2026-07-19] The empty-model regression test failed as intended because an empty `CODEX_MODEL` produced an empty CLI `-m` argument; the shared runner now falls back to its default model for unset or empty overrides.
+- [2026-07-19] Two Stage 2 review regression tests failed as intended because Codex CLI failures were also labeled as empty output and timeouts produced generic tracebacks; the collector now emits one precise warning for each case.
+- [2026-07-19] The first Stage 2 dashboard refresh check searched for `262 passed`, while the generated prose says `passed 262 tests`; separated checks confirmed the correct counts, doctype, and review outcomes.
+- [2026-07-19] The first final PR mergeability query used an unsupported `gh pr view` field (`baseRefOid`) and exited before reading state; the corrected supported-field query confirmed both draft PRs are clean and mergeable at their latest heads.
+- [2026-07-19] The explicit-approval regression test failed as intended because scheduled Codex commands inherited the host approval policy; the shared runner now pins `-a never`, and a real closed-input smoke completed without prompting.
+- [2026-07-19] The Stage 2 isolation command-contract test failed as intended because the collector still inherited Codex user config and exposed the local shell tool; both were disabled, and the full suite plus an isolated live web-search smoke passed.
+- [2026-07-19] The Stage 2 legacy-setting regression failed as intended because an old collector name reached registry lookup unchanged; the config now normalizes it one-way to `codex`, after which the zero-Claude static test was narrowed to permit only that exact migration expression.

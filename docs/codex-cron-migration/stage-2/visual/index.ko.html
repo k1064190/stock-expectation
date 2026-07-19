@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stock-expectation / codex-cron-migration — 2단계</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f7f7f5;
+      --surface: #fffefb;
+      --border: #deded8;
+      --text: #252927;
+      --muted: #6b726f;
+      --accent: #176b68;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+        "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .page-shell {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: clamp(1.45rem, 4vw, 2rem);
+      line-height: 1.25;
+      letter-spacing: -0.025em;
+    }
+
+    .subtitle,
+    .language-switcher .current,
+    .stage-summary {
+      color: var(--muted);
+    }
+
+    .subtitle {
+      margin-bottom: 0;
+    }
+
+    .language-switcher {
+      flex: 0 0 auto;
+      padding-top: 5px;
+      white-space: nowrap;
+      font-size: 0.94rem;
+    }
+
+    .language-switcher a {
+      color: var(--accent);
+      font-weight: 650;
+      text-underline-offset: 3px;
+    }
+
+    .language-switcher .separator {
+      margin: 0 8px;
+      color: var(--border);
+    }
+
+    .timeline {
+      padding: 36px 0 42px;
+    }
+
+    .timeline ol {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      max-width: 520px;
+      margin: 0;
+      margin-inline: auto;
+      padding: 0;
+      list-style: none;
+    }
+
+    .timeline ol::before {
+      position: absolute;
+      top: 16px;
+      right: 16.6667%;
+      left: 16.6667%;
+      height: 2px;
+      background: var(--border);
+      content: "";
+    }
+
+    .timeline li {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      min-width: 120px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .timeline-node {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: var(--background);
+      color: var(--accent);
+    }
+
+    .timeline .current {
+      color: var(--accent);
+    }
+
+    .timeline .current .timeline-node {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .timeline .earlier .timeline-node {
+      border-color: var(--muted);
+      background: var(--muted);
+      color: #ffffff;
+    }
+
+    .stage-heading {
+      margin-bottom: 24px;
+    }
+
+    .stage-heading h2 {
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 1.5rem;
+      line-height: 1.3;
+    }
+
+    .stage-summary {
+      max-width: 760px;
+      margin-bottom: 0;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    article {
+      grid-column: 1 / -1;
+      padding: 30px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    article h3 {
+      margin-bottom: 26px;
+      font-size: 1.3rem;
+      line-height: 1.3;
+    }
+
+    .content-block + .content-block {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid #ecece7;
+    }
+
+    .content-block h4 {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .content-block p,
+    .content-block ul {
+      margin-bottom: 0;
+    }
+
+    ul {
+      padding-left: 1.3rem;
+    }
+
+    li + li {
+      margin-top: 5px;
+    }
+
+    code {
+      color: #33413e;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9em;
+    }
+
+    .code-locations {
+      columns: 2;
+      column-gap: 32px;
+    }
+
+    .code-locations li {
+      break-inside: avoid;
+    }
+
+    .retrospective {
+      color: #4d5552;
+    }
+
+    @media (max-width: 720px) {
+      .page-shell {
+        width: min(100% - 28px, 1080px);
+        padding-top: 30px;
+      }
+
+      header {
+        gap: 20px;
+      }
+
+      .timeline li {
+        min-width: 0;
+      }
+
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      article {
+        grid-column: auto;
+        padding: 22px;
+      }
+
+      .code-locations {
+        columns: 1;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+      }
+
+      .language-switcher {
+        padding-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header>
+      <div>
+        <h1>stock-expectation / codex-cron-migration</h1>
+        <p class="subtitle">단계별 진행 상황</p>
+      </div>
+      <nav class="language-switcher" aria-label="언어">
+        <a href="index.html" lang="en">EN</a><span class="separator">|</span><span class="current">한국어</span>
+      </nav>
+    </header>
+
+    <nav class="timeline" aria-label="단계 진행">
+      <ol>
+        <li class="earlier">
+          <span class="timeline-node">1</span>
+          <span>1단계</span>
+        </li>
+        <li class="current" aria-current="step">
+          <span class="timeline-node">2</span>
+          <span>2단계</span>
+        </li>
+        <li class="later">
+          <span class="timeline-node">3</span>
+          <span>3단계</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section aria-labelledby="stage-2-heading">
+        <div class="stage-heading">
+          <h2 id="stage-2-heading">2단계</h2>
+          <p class="stage-summary">실제 할인 Cron 작업은 구조화되고 격리된 수집 계약을 유지하면서 이제 네이티브 Codex 수집기를 사용합니다.</p>
+        </div>
+
+        <div class="card-grid">
+          <article aria-labelledby="discount-collector-title">
+            <h3 id="discount-collector-title">Discount Collector</h3>
+
+            <section class="content-block" aria-labelledby="discount-collector-why">
+              <h4 id="discount-collector-why">왜</h4>
+              <p>실제 할인 Cron 작업은 여전히 Claude CLI 수집기를 기본값으로 사용했으므로, 주식 스케줄러만 변경하면 설치된 Claude 실행 경로 하나가 활성 상태로 남게 됩니다.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-what">
+              <h4 id="discount-collector-what">무엇을</h4>
+              <ul>
+                <li><code>ClaudeCollector</code>와 <code>claude</code> 레지스트리 키를 <code>CodexCollector</code>와 <code>codex</code>로 교체했습니다.</li>
+                <li><code>codex</code>를 기본 <code>DEALS_COLLECTORS</code> 값으로 지정하고 생성되는 README 템플릿을 업데이트했습니다.</li>
+                <li>명시적 비대화형 승인, 읽기 전용 sandbox, 임시 세션, 닫힌 <code>stdin</code>, 기존 제공자의 제한 시간 및 동시성 범위를 적용해 네이티브 Codex 실시간 웹 검색을 활성화했습니다.</li>
+                <li>제공자당 1회 호출 범위, 공식 event page 기준점, 제공자별 실패 격리 및 grounding document 출력을 유지했습니다.</li>
+                <li>Claude 전용 JSON envelope 구문 분석과 <code>WebFetch</code> 프롬프트 문구를 제거했습니다.</li>
+                <li>정확한 Codex 명령, 모델 재정의, 레지스트리/설정 기본값, 실패, 동시성 동작 및 Claude 소스 경로 부재에 대한 회귀 테스트를 추가했습니다.</li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-how">
+              <h4 id="discount-collector-how">어떻게</h4>
+              <p>Codex 수집기가 존재하지 않아 테스트가 먼저 실패했습니다. 구현에서는 기존 수집기 구조를 유지하고 CLI 경계와 Claude 전용 출력 처리만 변경했습니다. 공유 micromamba 환경의 editable install이 원본 checkout을 가리키므로 worktree 테스트에서는 <code>PYTHONPATH=src</code>를 명시적으로 사용했습니다. 검증에서는 테스트 260개가 통과하고 기존 실시간 테스트 1개가 건너뛰어졌으며, 컴파일/정적 검사와 실제 읽기 전용 Codex 웹 검색 스모크 테스트를 완료했습니다. 이 스모크 테스트는 프로젝트 상태를 작성하지 않고 51개 할인 정보를 포함한 구문 분석 가능한 문서 하나를 반환했습니다.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-code">
+              <h4 id="discount-collector-code">코드 위치</h4>
+              <ul class="code-locations">
+                <li><code>src/discount_please/deals/collectors/codex.py</code></li>
+                <li><code>src/discount_please/deals/collectors/claude.py</code> (삭제됨)</li>
+                <li><code>src/discount_please/deals/run.py</code></li>
+                <li><code>src/discount_please/config.py</code></li>
+                <li><code>src/discount_please/deals/extract.py</code></li>
+                <li><code>src/discount_please/prompts/deals_grounding.j2</code></li>
+                <li><code>src/discount_please/templates/index.md.j2</code></li>
+                <li><code>tests/test_deals_codex.py</code></li>
+                <li><code>tests/test_codex_migration.py</code></li>
+                <li><code>tests/test_deals_extract.py</code></li>
+                <li><code>tests/test_deals_run.py</code></li>
+                <li><code>tests/test_config.py</code></li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-retrospective">
+              <h4 id="discount-collector-retrospective">회고</h4>
+              <p class="retrospective"><em>실제 스모크 테스트에서 네이티브 Codex 검색이 구조화된 수집기 계약을 유지함을 확인했습니다. Antigravity가 지적한 유효한 설정 흐름 문제를 수정했습니다. 승인, TOML, 프롬프트, legacy-env 및 PATH 관련 지적은 CLI 스모크/도움말과 실제 배포 증거를 근거로 기각했습니다. 최종 재검토에서는 지적 사항이 없었습니다. Doctor Cho는 이 마이그레이션의 Claude 검토를 면제했습니다.</em></p>
+            </section>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

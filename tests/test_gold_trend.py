@@ -346,10 +346,10 @@ def test_run_llm_summary_none_mode_returns_none():
 
 def test_run_llm_summary_failopen_on_subprocess_error(monkeypatch):
     def boom(*a, **k):
-        raise OSError("no claude binary")
+        raise OSError("no codex binary")
 
-    monkeypatch.setattr(gt.subprocess, "run", boom)
-    assert gt.run_llm_summary("prompt", mode="claude-code") is None
+    monkeypatch.setattr(gt, "run_codex", boom)
+    assert gt.run_llm_summary("prompt", mode="codex-cli") is None
 
 
 def test_build_llm_prompt_grounds_on_numbers():

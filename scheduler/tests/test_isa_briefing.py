@@ -52,8 +52,7 @@ def test_dry_run_has_no_side_effects(monkeypatch, capsys):
         return STATUS
 
     monkeypatch.setattr(isa_briefing, "_stock_cli_json", fake_cli)
-    monkeypatch.setattr(isa_briefing, "call_claude_code", _no_call("claude runner"))
-    monkeypatch.setattr(isa_briefing, "call_codex_cli", _no_call("codex runner"))
+    monkeypatch.setattr(isa_briefing, "run_codex", _no_call("codex runner"))
     monkeypatch.setattr(isa_briefing, "send_briefing", _no_call("telegram"))
     monkeypatch.setattr(isa_briefing, "_macro_block", lambda: "MACRO")
 
@@ -73,7 +72,7 @@ def test_missing_target_exits_before_llm(monkeypatch, capsys):
         "_stock_cli_json",
         lambda cli_args: {"error": "no ISA target — run isa init"},
     )
-    monkeypatch.setattr(isa_briefing, "call_claude_code", _no_call("claude runner"))
+    monkeypatch.setattr(isa_briefing, "run_codex", _no_call("codex runner"))
     monkeypatch.setattr(isa_briefing, "send_briefing", _no_call("telegram"))
 
     rc = isa_briefing.main(["--amount", "1000000"])
@@ -95,7 +94,7 @@ def test_full_run_snapshots_and_sends(monkeypatch):
     sent = {}
     monkeypatch.setattr(isa_briefing, "_stock_cli_json", fake_cli)
     monkeypatch.setattr(isa_briefing, "_macro_block", lambda: "MACRO")
-    monkeypatch.setattr(isa_briefing, "call_claude_code", lambda p: "브리핑 본문")
+    monkeypatch.setattr(isa_briefing, "run_codex", lambda p: "브리핑 본문")
     monkeypatch.setattr(
         isa_briefing,
         "send_briefing",
@@ -119,7 +118,7 @@ def test_no_telegram_flag(monkeypatch):
 
     monkeypatch.setattr(isa_briefing, "_stock_cli_json", fake_cli)
     monkeypatch.setattr(isa_briefing, "_macro_block", lambda: "MACRO")
-    monkeypatch.setattr(isa_briefing, "call_claude_code", lambda p: "본문")
+    monkeypatch.setattr(isa_briefing, "run_codex", lambda p: "본문")
     monkeypatch.setattr(isa_briefing, "send_briefing", _no_call("telegram"))
 
     rc = isa_briefing.main(["--amount", "1000000", "--no-telegram"])
@@ -131,7 +130,7 @@ def test_dry_run_prompt_keeps_rebalance_contract(monkeypatch, capsys):
     (min_contribution_to_restore present, clearly marked as not computed)."""
     monkeypatch.setattr(isa_briefing, "_stock_cli_json", lambda cli_args: STATUS)
     monkeypatch.setattr(isa_briefing, "_macro_block", lambda: "MACRO")
-    monkeypatch.setattr(isa_briefing, "call_claude_code", _no_call("claude runner"))
+    monkeypatch.setattr(isa_briefing, "run_codex", _no_call("codex runner"))
     monkeypatch.setattr(isa_briefing, "send_briefing", _no_call("telegram"))
 
     rc = isa_briefing.main(["--amount", "1000000", "--dry-run"])

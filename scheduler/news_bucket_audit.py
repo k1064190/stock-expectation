@@ -6,7 +6,7 @@ The per-ticker catalyst tables (``news_features.EVENT_KEYWORDS``,
 false positive (the 2026-06 "blockade" incident: a ballot-counting-site
 blockade tripped the war_conflict bucket and trimmed every pick). This job
 samples recent LIVE headlines, shows the current matcher verdicts to a
-`claude -p` auditor, and writes a report estimating precision (false-positive
+Codex auditor, and writes a report estimating precision (false-positive
 matches) and recall (missed catalysts) with suggested keyword edits.
 
 REPORT-ONLY: nothing here edits the keyword tables — a human applies accepted
@@ -37,7 +37,7 @@ try:
 except ImportError:
     pass
 
-from deep_dive import _call_claude
+from deep_dive import _call_codex
 from macro_news import MACRO_RISK_BUCKETS, _match_risk_bucket, get_macro_news
 from news_features import (
     EVENT_KEYWORDS,
@@ -269,7 +269,7 @@ def main() -> int:
         return 0
     annotated = annotate(rows)
 
-    llm_output = _call_claude(build_audit_prompt(annotated), timeout=LLM_TIMEOUT)
+    llm_output = _call_codex(build_audit_prompt(annotated), timeout=LLM_TIMEOUT)
 
     report_date = datetime.now(KR_TZ).strftime("%Y-%m-%d")
     md = render_report(llm_output, annotated, report_date)

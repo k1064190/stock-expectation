@@ -468,6 +468,26 @@ def test_build_api_prompt_returns_prompt_and_risk_level(monkeypatch):
     assert "MARKET_DATA" in prompt
 
 
+def test_run_briefing_dispatches_through_shared_codex_runner(monkeypatch):
+    response = "# 📊 Daily Market Briefing\n" + ("x" * 600)
+    calls = []
+    monkeypatch.setattr(
+        daily_briefing,
+        "build_agent_prompt",
+        lambda market, **kwargs: f"PROMPT:{market}",
+    )
+    monkeypatch.setattr(
+        daily_briefing,
+        "run_codex",
+        lambda prompt: calls.append(prompt) or response,
+    )
+    monkeypatch.setattr(daily_briefing, "send_briefing", lambda *a, **k: True)
+
+    daily_briefing.run_briefing("US")
+
+    assert calls == ["PROMPT:US"]
+
+
 def _real_get_connection(path):
     import models as pred_models
 

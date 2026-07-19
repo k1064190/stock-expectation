@@ -1,8 +1,8 @@
-"""Per-stock claude -p deep-dive fan-out (accuracy stage 5).
+"""Per-stock Codex deep-dive fan-out (accuracy stage 5).
 
 The daily briefing analyzes 5-6 candidates in ONE LLM call, so each stock gets
 shallow, shared context — and /expect's LLM_CONTEXT rigor degrades to 0 for
-most names. This module runs an independent `claude -p` deep dive per
+most names. This module runs an independent Codex deep dive per
 candidate (Bull/Bear/Judge debate + the full pre-fetched headline set +
 `bin/stock-cli` data access) and returns structured per-ticker context that
 the briefing injects into its prompt.
@@ -11,8 +11,7 @@ Design constraints:
   - Fail-open everywhere: a timeout, CLI error, or unparseable output simply
     drops that ticker back to the current shallow path. The briefing never
     blocks on a dive.
-  - Bounded fan-out (default parallelism 2) — `claude -p` is subject to
-    subscription throttling; more workers buys little and risks 429s.
+  - Bounded fan-out (default parallelism 2) limits quota pressure.
   - Deep dives NEVER log predictions. The single logging path (briefing →
     predict create / log_predictions) keeps every store gate authoritative.
 
@@ -26,14 +25,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-import shutil
-import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 logger = logging.getLogger("deep_dive")
 
 PROJECT_ROOT = Path(__file__).parent.parent
+
+from codex_runner import run_codex
 
 SCORE_MIN = -5.0
 SCORE_MAX = 3.0
@@ -104,38 +103,20 @@ Then output EXACTLY ONE fenced JSON block as the final element of your reply:
 Rules: context_score 0.0 means "no specific macro/narrative signal" — use it when the debate is genuinely balanced. |score| >= 2.0 requires a concrete cited signal in summary. risks/catalysts max {MAX_LIST_ITEMS} items each, each one specific (no "market volatility" filler)."""
 
 
-def _call_claude(prompt: str, timeout: int) -> str:
-    """Run one `claude -p` invocation from the project root.
+def _call_codex(prompt: str, timeout: int) -> str:
+    """Run one ``codex exec`` invocation from the project root.
 
     Raises:
         RuntimeError / subprocess.TimeoutExpired on failure (caller fails open).
     """
-    # Prompt passed as an argv element, matching daily_briefing.call_claude_code.
-    # ~4KB at 20 headlines — far under ARG_MAX; revisit (stdin pipe) if the
-    # context ever grows 100x. subprocess.run's timeout kills the direct child
-    # only; watch for orphaned CLI workers if timeouts become common.
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        raise RuntimeError("claude CLI not found")
-    result = subprocess.run(
-        [claude_path, "-p", prompt, "--output-format", "text"],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        cwd=str(PROJECT_ROOT),
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"claude CLI failed (exit {result.returncode}): {result.stderr[:300]}"
-        )
-    return result.stdout
+    return run_codex(prompt, cwd=PROJECT_ROOT, timeout=timeout)
 
 
 def parse_deep_dive_output(text: str, ticker: str) -> dict | None:
     """Extract and validate the dive's JSON result.
 
     Args:
-        text: Raw `claude -p` stdout.
+        text: Raw Codex final-message stdout.
         ticker: Expected ticker — a mismatched payload is rejected (a confused
             dive must not attach context to the wrong stock).
 
@@ -204,7 +185,7 @@ def run_deep_dives(
         news_by_ticker: ``{ticker: [news_item_dict]}`` pre-fetched headlines.
         cap: Max candidates dived (the first ``cap`` in list order — the
             funnel already ranks them).
-        parallelism: Concurrent `claude -p` processes.
+        parallelism: Concurrent Codex processes.
         timeout: Per-dive wall-clock ceiling in seconds.
         market: Market override when candidates lack ``.market``.
 
@@ -224,7 +205,7 @@ def run_deep_dives(
             prompt = build_deep_dive_prompt(
                 c.ticker, mkt, news_by_ticker.get(c.ticker) or []
             )
-            futures[pool.submit(_call_claude, prompt, timeout)] = c.ticker
+            futures[pool.submit(_call_codex, prompt, timeout)] = c.ticker
         for fut in as_completed(futures):
             tkr = futures[fut]
             try:

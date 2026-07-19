@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>stock-expectation / codex-cron-migration — Stage 2</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f7f7f5;
+      --surface: #fffefb;
+      --border: #deded8;
+      --text: #252927;
+      --muted: #6b726f;
+      --accent: #176b68;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+        "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .page-shell {
+      width: min(1080px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: clamp(1.45rem, 4vw, 2rem);
+      line-height: 1.25;
+      letter-spacing: -0.025em;
+    }
+
+    .subtitle,
+    .language-switcher .current,
+    .stage-summary {
+      color: var(--muted);
+    }
+
+    .subtitle {
+      margin-bottom: 0;
+    }
+
+    .language-switcher {
+      flex: 0 0 auto;
+      padding-top: 5px;
+      white-space: nowrap;
+      font-size: 0.94rem;
+    }
+
+    .language-switcher a {
+      color: var(--accent);
+      font-weight: 650;
+      text-underline-offset: 3px;
+    }
+
+    .language-switcher .separator {
+      margin: 0 8px;
+      color: var(--border);
+    }
+
+    .timeline {
+      padding: 36px 0 42px;
+    }
+
+    .timeline ol {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      max-width: 520px;
+      margin: 0;
+      margin-inline: auto;
+      padding: 0;
+      list-style: none;
+    }
+
+    .timeline ol::before {
+      position: absolute;
+      top: 16px;
+      right: 16.6667%;
+      left: 16.6667%;
+      height: 2px;
+      background: var(--border);
+      content: "";
+    }
+
+    .timeline li {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      min-width: 120px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .timeline-node {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: var(--background);
+      color: var(--accent);
+    }
+
+    .timeline .current {
+      color: var(--accent);
+    }
+
+    .timeline .current .timeline-node {
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .timeline .earlier .timeline-node {
+      border-color: var(--muted);
+      background: var(--muted);
+      color: #ffffff;
+    }
+
+    .stage-heading {
+      margin-bottom: 24px;
+    }
+
+    .stage-heading h2 {
+      margin-bottom: 6px;
+      color: var(--accent);
+      font-size: 1.5rem;
+      line-height: 1.3;
+    }
+
+    .stage-summary {
+      max-width: 760px;
+      margin-bottom: 0;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    article {
+      grid-column: 1 / -1;
+      padding: 30px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    article h3 {
+      margin-bottom: 26px;
+      font-size: 1.3rem;
+      line-height: 1.3;
+    }
+
+    .content-block + .content-block {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid #ecece7;
+    }
+
+    .content-block h4 {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .content-block p,
+    .content-block ul {
+      margin-bottom: 0;
+    }
+
+    ul {
+      padding-left: 1.3rem;
+    }
+
+    li + li {
+      margin-top: 5px;
+    }
+
+    code {
+      color: #33413e;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9em;
+    }
+
+    .code-locations {
+      columns: 2;
+      column-gap: 32px;
+    }
+
+    .code-locations li {
+      break-inside: avoid;
+    }
+
+    .retrospective {
+      color: #4d5552;
+    }
+
+    @media (max-width: 720px) {
+      .page-shell {
+        width: min(100% - 28px, 1080px);
+        padding-top: 30px;
+      }
+
+      header {
+        gap: 20px;
+      }
+
+      .timeline li {
+        min-width: 0;
+      }
+
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      article {
+        grid-column: auto;
+        padding: 22px;
+      }
+
+      .code-locations {
+        columns: 1;
+      }
+    }
+
+    @media (max-width: 480px) {
+      header {
+        flex-direction: column;
+      }
+
+      .language-switcher {
+        padding-top: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header>
+      <div>
+        <h1>stock-expectation / codex-cron-migration</h1>
+        <p class="subtitle">Staged plan progress</p>
+      </div>
+      <nav class="language-switcher" aria-label="Language">
+        <span class="current">EN</span><span class="separator">|</span><a href="index.ko.html" lang="ko">한국어</a>
+      </nav>
+    </header>
+
+    <nav class="timeline" aria-label="Stage progress">
+      <ol>
+        <li class="earlier">
+          <span class="timeline-node">1</span>
+          <span>Stage 1</span>
+        </li>
+        <li class="current" aria-current="step">
+          <span class="timeline-node">2</span>
+          <span>Stage 2</span>
+        </li>
+        <li class="later">
+          <span class="timeline-node">3</span>
+          <span>Stage 3</span>
+        </li>
+      </ol>
+    </nav>
+
+    <main>
+      <section aria-labelledby="stage-2-heading">
+        <div class="stage-heading">
+          <h2 id="stage-2-heading">Stage 2</h2>
+          <p class="stage-summary">The live discount cron now uses a native Codex collector while preserving the structured, isolated collection contract.</p>
+        </div>
+
+        <div class="card-grid">
+          <article aria-labelledby="discount-collector-title">
+            <h3 id="discount-collector-title">Discount Collector</h3>
+
+            <section class="content-block" aria-labelledby="discount-collector-why">
+              <h4 id="discount-collector-why">Why</h4>
+              <p>The live discount cron still defaulted to a Claude CLI collector, so changing only the stock schedulers would leave one installed Claude execution path active.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-what">
+              <h4 id="discount-collector-what">What</h4>
+              <ul>
+                <li>Replaced <code>ClaudeCollector</code> and the <code>claude</code> registry key with <code>CodexCollector</code> and <code>codex</code>.</li>
+                <li>Made <code>codex</code> the default <code>DEALS_COLLECTORS</code> value and updated the generated README template.</li>
+                <li>Enabled native Codex live web search with explicit non-interactive approval, read-only sandboxing, ephemeral sessions, closed stdin, and the existing provider timeout/concurrency bounds.</li>
+                <li>Preserved one-call-per-provider coverage, official event-page anchoring, per-provider failure isolation, and grounding-document output.</li>
+                <li>Removed Claude-specific JSON-envelope parsing and <code>WebFetch</code> prompt wording.</li>
+                <li>Added regression tests for the exact Codex command, model override, registry/config defaults, failures, concurrency behavior, and absence of Claude source paths.</li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-how">
+              <h4 id="discount-collector-how">How</h4>
+              <p>Tests first failed because the Codex collector did not exist. The implementation kept the existing collector structure and changed only the CLI boundary and Claude-specific output handling. Worktree tests explicitly used <code>PYTHONPATH=src</code> because the shared micromamba environment's editable install points at the original checkout. Verification passed 263 tests with 1 existing live test skipped, compile/static checks, the original read-only Codex web-search smoke that returned one parseable document containing 51 deals, and an isolated follow-up smoke that returned one 20,237-byte document with user config and local shell access disabled.</p>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-code">
+              <h4 id="discount-collector-code">Code locations</h4>
+              <ul class="code-locations">
+                <li><code>src/discount_please/deals/collectors/codex.py</code></li>
+                <li><code>src/discount_please/deals/collectors/claude.py</code> (removed)</li>
+                <li><code>src/discount_please/deals/run.py</code></li>
+                <li><code>src/discount_please/config.py</code></li>
+                <li><code>src/discount_please/deals/extract.py</code></li>
+                <li><code>src/discount_please/prompts/deals_grounding.j2</code></li>
+                <li><code>src/discount_please/templates/index.md.j2</code></li>
+                <li><code>tests/test_deals_codex.py</code></li>
+                <li><code>tests/test_codex_migration.py</code></li>
+                <li><code>tests/test_deals_extract.py</code></li>
+                <li><code>tests/test_deals_run.py</code></li>
+                <li><code>tests/test_config.py</code></li>
+              </ul>
+            </section>
+
+            <section class="content-block" aria-labelledby="discount-collector-retrospective">
+              <h4 id="discount-collector-retrospective">Retrospective</h4>
+              <p class="retrospective"><em>The real smoke tests confirmed that native Codex search preserves the structured collector contract. Antigravity's valid configuration-flow finding was fixed; approval, TOML, prompt, legacy-env, and PATH findings were dismissed with CLI smoke/help and live deployment evidence. Its final re-review was clean. Gemini's duplicate-failure-log and timeout-traceback findings were fixed with regression tests. Codex follow-ups found user-config inheritance, local shell exposure, and legacy collector-value outage risk; <code>--ignore-user-config</code>, <code>--disable shell_tool</code>, and a one-way legacy-value-to-<code>codex</code> normalization fixed all three without restoring a Claude execution alias. Doctor Cho waived Claude review for this migration.</em></p>
+            </section>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

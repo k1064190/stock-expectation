@@ -204,9 +204,6 @@ uv sync
 # 개발 의존성 포함 (pytest)
 uv sync --extra dev
 
-# Anthropic API 모드 (scheduler --mode api 사용 시)
-uv sync --extra api
-
 # 스킬 스크립트 직접 실행 시 (jsonschema, pyyaml, scipy)
 uv sync --extra skills
 
@@ -217,7 +214,7 @@ uv sync --extra memory
 uv sync --extra graph
 
 # 전부 한꺼번에
-uv sync --extra dev --extra api --extra skills --extra memory --extra graph
+uv sync --extra dev --extra skills --extra memory --extra graph
 ```
 
 `uv sync`는 `.python-version`을 보고 Python 3.11을 자동으로 가져오고, `pyproject.toml`의 의존성을 `.venv/`에 설치한다. memory/graph extras는 무거우므로 기본 설치에 포함하지 않고, 사용할 때만 추가한다. 미설치 상태에서 `memory`/`graph` 서브커맨드를 호출하면 "install with `uv sync --extra X`" 안내 메시지를 출력하고 종료한다.
@@ -264,7 +261,6 @@ NAVER_CLIENT_SECRET="your_secret"      # 미설정 시 finance.naver.com 스크�
 # 자동화/알림
 TELEGRAM_BOT_TOKEN="your_bot_token"    # Telegram 알림 (선택)
 TELEGRAM_CHAT_ID="your_chat_id"
-ANTHROPIC_API_KEY="your_key"           # scheduler --mode api 사용 시에만
 
 # Stage 7-B 그래프 (Neo4j docker compose 사용 시)
 NEO4J_PASSWORD="changeme123"           # compose.yml이 이 값 없으면 부팅 실패
@@ -397,10 +393,6 @@ uv run python scheduler/daily_briefing.py --market US
 uv run python scheduler/daily_briefing.py --market KR
 uv run python scheduler/daily_briefing.py --market ALL
 
-# Anthropic API 모드 (ANTHROPIC_API_KEY 필요)
-uv sync --extra api
-uv run python scheduler/daily_briefing.py --market US --mode api
-
 # 결과 판정 (LLM 불필요, 가격만 조회)
 uv run python scheduler/outcome_tracker.py
 
@@ -427,17 +419,12 @@ crontab scheduler/crontab.example
 | 06:00 매일 | `outcome_tracker.py` | 오픈 예측 결과 판정 |
 | 22:00 일요일 | `weekly_calibration.py` | 주간 캘리브레이션 + 트렌드 저장 |
 
-### 자동화 모드 비교
+### 자동화 LLM 실행
 
-| | Codex CLI 모드 (기본) | Claude Code 모드 | Anthropic API 모드 |
-|--|----------------------|------------------|-------------------|
-| 실행 방식 | `codex exec` CLI 호출 | `claude -p` CLI 호출 | `anthropic.Anthropic()` API 호출 |
-| 데이터 조회 | Codex가 `bin/stock-cli` via Bash | Claude가 `bin/stock-cli` via Bash | 스크립트가 provider 직접 호출 |
-| 예측 저장 | Codex가 `bin/stock-cli predict create` | Claude가 `bin/stock-cli predict create` | 스크립트가 JSON 파싱 후 저장 |
-| 추가 비용 | ChatGPT/Codex CLI credit | Claude Code 구독 | ~$5-15/월 (Sonnet) |
-| 필요 환경변수 | 없음 (`CODEX_MODEL` 선택) | 없음 | `ANTHROPIC_API_KEY` |
-| 필요 의존성 | 기본 (`uv sync`) | 기본 (`uv sync`) | `uv sync --extra api` |
-| 장점 | 스킬 파일 그대로 사용, cron 기본 경로 | Codex 장애 시 fallback | CLI 없는 서버에서 가능 |
+모든 scheduler LLM 작업은 `scheduler/codex_runner.py`를 통해
+`codex exec`로 실행되며 기본 모델은 `gpt-5.6-sol`(high reasoning)입니다.
+계정별 모델 가용성에 따라 `CODEX_MODEL` 환경변수로 덮어쓸 수 있습니다. Codex가
+`bin/stock-cli`로 데이터를 조회하고 예측을 저장하며, Claude/API fallback은 없습니다.
 
 ## 프로젝트 구조
 
@@ -518,12 +505,13 @@ stock-expectation/
 │   └── tests/
 │
 ├── scheduler/                         # 자동화 스크립트
-│   ├── daily_briefing.py              #   일일 브리핑 (codex-cli / claude-code / api 모드)
+│   ├── codex_runner.py                 #   공통 비대화형 Codex 실행기
+│   ├── daily_briefing.py              #   Codex 일일 브리핑
 │   ├── outcome_tracker.py             #   HIT/MISS/EXPIRED 판정
 │   ├── weekly_calibration.py          #   Stage 6 주간 캘리브레이션 (cron 일 22:00)
 │   ├── telegram_sender.py             #   Telegram 전송 모듈
 │   ├── crontab.example                #   cron 설정 템플릿
-│   ├── prompts/                       #   API 모드용 프롬프트 템플릿
+│   ├── prompts/                       #   pre-fetched prompt 템플릿
 │   └── tests/
 │
 ├── data/                              # SQLite DB + 캐시 (gitignore)

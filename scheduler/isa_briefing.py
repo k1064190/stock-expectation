@@ -15,8 +15,8 @@ Flow:
      --dry-run because it logs a decision row; the status payload's band
      check stands in for the prompt preview).
   4. Build the prompt (status + rebalance + macro block + amount + pointer to
-     .claude/skills/isa-briefing/SKILL.md) and dispatch via claude-code or
-     codex-cli; send the briefing over Telegram unless --no-telegram.
+    .claude/skills/isa-briefing/SKILL.md) and dispatch via Codex; send the
+    briefing over Telegram unless --no-telegram.
 
 The monthly amount is ALWAYS an explicit --amount argument — never hardcoded,
 never defaulted. Usage:
@@ -35,7 +35,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scheduler"))
 
-from daily_briefing import _macro_block, call_claude_code, call_codex_cli  # noqa: E402
+from codex_runner import run_codex  # noqa: E402
+from daily_briefing import _macro_block  # noqa: E402
 from telegram_sender import send_briefing  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -134,9 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["claude-code", "codex-cli"],
-        default="claude-code",
-        help="LLM CLI runner (default claude-code)",
+        choices=["codex-cli"],
+        default="codex-cli",
+        help="LLM CLI runner (Codex only)",
     )
     parser.add_argument(
         "--no-telegram", action="store_true", help="Skip Telegram delivery"
@@ -176,10 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     rebalance = _stock_cli_json(["isa", "rebalance"])
 
     prompt = build_prompt(args.amount, status, rebalance, _macro_block())
-    runner = call_claude_code if args.mode == "claude-code" else call_codex_cli
     logger.info("dispatching ISA briefing via %s", args.mode)
     try:
-        briefing = runner(prompt)
+        briefing = run_codex(prompt)
     except Exception as e:
         print(f"ISA briefing runner failed: {e}", file=sys.stderr)
         return 1
